@@ -1,0 +1,54 @@
+# ===== Unity 用 .gitignore =====
+# 自動生成される巨大フォルダ・一時ファイルを除外します。
+# （これらは Unity が再生成するため、git で管理する必要がありません）
+
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+
+# Asset メタデータのうち不要なもの
+/[Aa]ssets/[Aa]ssetStoreTools*
+/[Aa]ssets/[Pp]lugins/[Ee]ditor/JetBrains*
+
+# IDE / エディタ
+.vs/
+.idea/
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# OS が生成するファイル
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ビルド成果物
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# Unity が生成するクラッシュレポート
+sysinfo.txt
+
+# Visual Scripting の生成物
+/[Aa]ssets/[Vv]isualScripting/[Gg]enerated/
