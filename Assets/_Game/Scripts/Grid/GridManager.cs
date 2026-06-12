@@ -30,7 +30,12 @@ public class GridManager : MonoBehaviour
     private Sprite squareSprite;               // コードで生成する白い四角スプライト
     private Vector3 originWorld;               // マス(0,0)の中心のワールド座標
 
-    void Start()
+    /// <summary>ユニットなど他スクリプトが流用できる共通の四角スプライト。</summary>
+    public Sprite SquareSprite => squareSprite;
+
+    // グリッドは Awake で作る。こうすると、他のスクリプトが Start で
+    // ユニットを配置するときには、すでに盤面が完成している（順序の保証）。
+    void Awake()
     {
         squareSprite = CreateSquareSprite();
         BuildGrid();
@@ -145,7 +150,18 @@ public class GridManager : MonoBehaviour
 
         selectedCell = cell;
         cellRenderers[cell.x, cell.y].color = highlightColor;
-        Debug.Log($"マスを選択: {cell}");
+
+        // そのマスにユニットがいれば、その情報を表示する（選択）。
+        TileData tile = GetTile(cell);
+        if (tile != null && tile.Occupant != null)
+        {
+            Unit u = tile.Occupant;
+            Debug.Log($"ユニットを選択: {u.Data.unitName}（{u.Faction}） HP={u.CurrentHP}/{u.Data.maxHP} 位置={cell}");
+        }
+        else
+        {
+            Debug.Log($"マスを選択: {cell}（ユニットなし）");
+        }
     }
 
     // ===== 仮素材スプライトの生成 =====

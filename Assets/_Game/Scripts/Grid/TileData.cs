@@ -16,9 +16,11 @@ public class TileData
     /// </summary>
     public bool IsWalkable = true;
 
+    /// <summary>このマスにいるユニット（いなければ null）。</summary>
+    public Unit Occupant;
+
     // ── 今後ここに追加していく予定 ──
     //  public TerrainData Terrain;   // 地形（移動コスト・防御補正）
-    //  public Unit Occupant;         // このマスにいるユニット（いなければ null）
 
     public TileData(Vector2Int gridPosition)
     {

@@ -129,8 +129,9 @@ GameObject:
   m_Component:
   - component: {fileID: 1854418882}
   - component: {fileID: 1854418881}
+  - component: {fileID: 1854418883}
   m_Layer: 0
-  m_Name: GameObject
+  m_Name: GridManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -169,6 +170,28 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1854418883
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1854418880}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b6f0d3383e67ea4bb3864e4046dd372, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BattleSetup
+  grid: {fileID: 1854418881}
+  spawns:
+  - unitData: {fileID: 11400000, guid: 746437a2906efd846b321b19e8f92480, type: 2}
+    cell: {x: 2, y: 2}
+  - unitData: {fileID: 11400000, guid: 746437a2906efd846b321b19e8f92480, type: 2}
+    cell: {x: 3, y: 2}
+  - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
+    cell: {x: 6, y: 7}
+  - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
+    cell: {x: 7, y: 7}
 --- !u!1 &1892261005
 GameObject:
   m_ObjectHideFlags: 0
