@@ -60,6 +60,9 @@ public class BattleController : MonoBehaviour
 
     private void OnCellClicked(Vector2Int cell)
     {
+        // 座標確認用：クリックしたマスを常にログに出す（左下が(0,0)、右へX+、上へY+）
+        Debug.Log($"クリック: {cell}");
+
         TileData tile = grid.GetTile(cell);
         Unit clickedUnit = tile != null ? tile.Occupant : null;
 
