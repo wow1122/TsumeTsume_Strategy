@@ -11,6 +11,10 @@
 /[Uu]ser[Ss]ettings/
 /[Mm]emoryCaptures/
 
+# Unity のクラッシュ復旧用フォルダ（自動生成・一時的なので管理しない）
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
+
 # Asset メタデータのうち不要なもの
 /[Aa]ssets/[Aa]ssetStoreTools*
 /[Aa]ssets/[Pp]lugins/[Ee]ditor/JetBrains*
