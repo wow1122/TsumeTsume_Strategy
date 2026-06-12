@@ -22,6 +22,12 @@ public class TileData
     /// </summary>
     public int MoveCost = 1;
 
+    /// <summary>
+    /// このマスにいる防御側が得る防御ボーナス（地形効果）。今は常に 0。
+    /// Phase 5b で森・山などの地形を入れるときに使います。
+    /// </summary>
+    public int DefenseBonus = 0;
+
     /// <summary>このマスにいるユニット（いなければ null）。</summary>
     public Unit Occupant;
 

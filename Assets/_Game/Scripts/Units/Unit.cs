@@ -17,8 +17,12 @@ public class Unit : MonoBehaviour
     /// <summary>このターンに行動済みか（移動・攻撃を終えたか）。</summary>
     public bool HasActed { get; private set; }
 
+    /// <summary>まだ生存しているか。</summary>
+    public bool IsAlive => CurrentHP > 0;
+
     private SpriteRenderer spriteRenderer;
     private Color baseColor;   // 行動済みで暗くする前の、元の色
+    private GridManager grid;  // 戦闘不能時にマスの占有を外すため保持
 
     /// <summary>
     /// 生成直後に呼んで初期化する。
@@ -29,6 +33,7 @@ public class Unit : MonoBehaviour
         Data = data;
         CurrentHP = data.maxHP;
         GridPosition = cell;
+        this.grid = grid;
 
         // 見た目：陣営で色分け（自軍=青 / 敵=赤）。スプライトはグリッドのものを流用。
         spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
@@ -84,5 +89,46 @@ public class Unit : MonoBehaviour
                 ? new Color(baseColor.r * 0.5f, baseColor.g * 0.5f, baseColor.b * 0.5f, baseColor.a)
                 : baseColor;
         }
+    }
+
+    /// <summary>ダメージを受ける。HPが0になったら戦闘不能。</summary>
+    public void TakeDamage(int amount)
+    {
+        CurrentHP -= amount;
+        if (CurrentHP < 0) CurrentHP = 0;
+        if (CurrentHP == 0) Die();
+    }
+
+    /// <summary>戦闘不能：マスの占有を外して盤上から消える。</summary>
+    private void Die()
+    {
+        if (grid != null)
+        {
+            TileData tile = grid.GetTile(GridPosition);
+            if (tile != null && tile.Occupant == this) tile.Occupant = null;
+        }
+        Debug.Log($"{Data.unitName} は戦闘不能になった");
+        Destroy(gameObject);
+    }
+
+    // 各ユニットの頭上あたりに現在HPを表示する（簡易・Canvas不要）。
+    void OnGUI()
+    {
+        if (Camera.main == null) return;
+
+        Vector3 sp = Camera.main.WorldToScreenPoint(transform.position);
+        if (sp.z <= 0) return; // カメラの後ろなら描かない
+
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 14,
+            alignment = TextAnchor.MiddleCenter,
+            fontStyle = FontStyle.Bold
+        };
+        style.normal.textColor = Color.white;
+
+        // GUI座標は左上原点・Y下向きなので、スクリーンYを反転する
+        var rect = new Rect(sp.x - 25, Screen.height - sp.y - 12, 50, 22);
+        GUI.Label(rect, CurrentHP.ToString(), style);
     }
 }

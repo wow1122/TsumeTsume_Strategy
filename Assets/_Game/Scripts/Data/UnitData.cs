@@ -21,6 +21,7 @@ public class UnitData : ScriptableObject
     [Tooltip("1ターンに移動できるマス数")]
     public int move = 4;
 
-    // 武器は戦闘フェーズ(Phase 5)で追加します:
-    //   public WeaponData weapon;
+    [Header("装備")]
+    [Tooltip("装備する武器。攻撃の威力・射程・相性に使われます")]
+    public WeaponData weapon;
 }

@@ -18,3 +18,4 @@ MonoBehaviour:
   attack: 5
   defense: 2
   move: 4
+  weapon: {fileID: 11400000, guid: a0f6faa61c579d448b3f9bcf09b572cf, type: 2}
