@@ -1,11 +1,11 @@
 using UnityEngine;
-using UnityEngine.InputSystem; // 新 Input System を使うため
 
 /// <summary>
-/// マス目マップを管理する中心スクリプト。
+/// マス目マップを管理する「盤面」スクリプト。
 ///  ・指定した幅×高さのマスを「仮素材（色付きの四角）」で生成する
 ///  ・ワールド座標 ⇔ グリッド座標 の変換を行う
-///  ・マウス左クリックされたマスをハイライトする
+///  ・マスの色（ハイライト）を変える道具を提供する
+/// クリックや選択の操作は BattleController が担当します（役割分担）。
 /// グリッドの中心が、この GameObject の位置に来るように配置されます。
 /// </summary>
 public class GridManager : MonoBehaviour
@@ -20,13 +20,10 @@ public class GridManager : MonoBehaviour
     public Color colorLight = new Color(0.85f, 0.85f, 0.85f);
     [Tooltip("市松模様の暗い方の色")]
     public Color colorDark = new Color(0.70f, 0.70f, 0.70f);
-    [Tooltip("クリックで選択中のマスの色")]
-    public Color highlightColor = new Color(1f, 0.9f, 0.4f);
 
     // ── 内部データ ──
     private TileData[,] tiles;                 // 各マスの論理データ
     private SpriteRenderer[,] cellRenderers;   // 各マスの見た目（色を変える用）
-    private Vector2Int? selectedCell;          // 現在選択中のマス（無ければ null）
     private Sprite squareSprite;               // コードで生成する白い四角スプライト
     private Vector3 originWorld;               // マス(0,0)の中心のワールド座標
 
@@ -39,11 +36,6 @@ public class GridManager : MonoBehaviour
     {
         squareSprite = CreateSquareSprite();
         BuildGrid();
-    }
-
-    void Update()
-    {
-        HandleClick();
     }
 
     // ===== グリッド生成 =====
@@ -90,7 +82,7 @@ public class GridManager : MonoBehaviour
         return ((x + y) % 2 == 0) ? colorLight : colorDark;
     }
 
-    // ===== 座標変換 =====
+    // ===== 座標変換・問い合わせ =====
 
     /// <summary>グリッド座標 → ワールド座標（マスの中心）。</summary>
     public Vector3 CellToWorld(Vector2Int cell)
@@ -120,48 +112,21 @@ public class GridManager : MonoBehaviour
         return IsInside(cell) ? tiles[cell.x, cell.y] : null;
     }
 
-    // ===== クリック処理 =====
+    // ===== ハイライト（色変更）の道具 =====
 
-    private void HandleClick()
+    /// <summary>全マスの色を、元の市松模様に戻す（ハイライトを消す）。</summary>
+    public void ResetAllHighlights()
     {
-        if (Mouse.current == null || Camera.main == null) return;
-
-        if (Mouse.current.leftButton.wasPressedThisFrame)
-        {
-            Vector2 screenPos = Mouse.current.position.ReadValue();
-            Vector3 worldPos = Camera.main.ScreenToWorldPoint(screenPos);
-
-            if (TryWorldToCell(worldPos, out var cell))
-            {
-                SelectCell(cell);
-            }
-        }
+        for (int x = 0; x < width; x++)
+            for (int y = 0; y < height; y++)
+                cellRenderers[x, y].color = GetDefaultColor(x, y);
     }
 
-    /// <summary>マスを選択し、ハイライト表示する（前の選択は元の色に戻す）。</summary>
-    private void SelectCell(Vector2Int cell)
+    /// <summary>指定マスを好きな色に塗る（ハイライト表示）。</summary>
+    public void SetHighlight(Vector2Int cell, Color color)
     {
-        // 前に選択していたマスの色を元に戻す
-        if (selectedCell.HasValue)
-        {
-            Vector2Int prev = selectedCell.Value;
-            cellRenderers[prev.x, prev.y].color = GetDefaultColor(prev.x, prev.y);
-        }
-
-        selectedCell = cell;
-        cellRenderers[cell.x, cell.y].color = highlightColor;
-
-        // そのマスにユニットがいれば、その情報を表示する（選択）。
-        TileData tile = GetTile(cell);
-        if (tile != null && tile.Occupant != null)
-        {
-            Unit u = tile.Occupant;
-            Debug.Log($"ユニットを選択: {u.Data.unitName}（{u.Faction}） HP={u.CurrentHP}/{u.Data.maxHP} 位置={cell}");
-        }
-        else
-        {
-            Debug.Log($"マスを選択: {cell}（ユニットなし）");
-        }
+        if (IsInside(cell))
+            cellRenderers[cell.x, cell.y].color = color;
     }
 
     // ===== 仮素材スプライトの生成 =====

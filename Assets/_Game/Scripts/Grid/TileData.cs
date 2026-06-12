@@ -16,6 +16,12 @@ public class TileData
     /// </summary>
     public bool IsWalkable = true;
 
+    /// <summary>
+    /// このマスに入るのに必要な移動コスト。今は常に 1。
+    /// 後のフェーズで地形（森=2 など）を入れるときに使います。
+    /// </summary>
+    public int MoveCost = 1;
+
     /// <summary>このマスにいるユニット（いなければ null）。</summary>
     public Unit Occupant;
 

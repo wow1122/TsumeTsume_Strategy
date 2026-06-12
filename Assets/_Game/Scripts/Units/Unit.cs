@@ -44,4 +44,23 @@ public class Unit : MonoBehaviour
 
         gameObject.name = $"Unit_{data.unitName}_{cell.x}_{cell.y}";
     }
+
+    /// <summary>
+    /// 指定マスへ移動する。元のマスの占有を解除し、移動先を占有する。
+    /// 見た目（位置）も移す。
+    /// </summary>
+    public void MoveTo(GridManager grid, Vector2Int target)
+    {
+        // 元いたマスの占有を外す
+        TileData oldTile = grid.GetTile(GridPosition);
+        if (oldTile != null && oldTile.Occupant == this) oldTile.Occupant = null;
+
+        // 新しいマスへ
+        GridPosition = target;
+        TileData newTile = grid.GetTile(target);
+        if (newTile != null) newTile.Occupant = this;
+
+        transform.position = grid.CellToWorld(target);
+        gameObject.name = $"Unit_{Data.unitName}_{target.x}_{target.y}";
+    }
 }
