@@ -131,6 +131,7 @@ GameObject:
   - component: {fileID: 1854418881}
   - component: {fileID: 1854418883}
   - component: {fileID: 1854418884}
+  - component: {fileID: 1854418885}
   m_Layer: 0
   m_Name: GridManager
   m_TagString: Untagged
@@ -205,8 +206,22 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BattleController
   grid: {fileID: 1854418881}
+  turnManager: {fileID: 1854418885}
   selectColor: {r: 1, g: 0.9, b: 0.4, a: 1}
   moveRangeColor: {r: 0.5, g: 0.8, b: 1, a: 1}
+--- !u!114 &1854418885
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1854418880}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 54a7d3faebdce0d41b1cb80bc5785dd3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TurnManager
+  enemyPhaseDelay: 0.6
 --- !u!1 &1892261005
 GameObject:
   m_ObjectHideFlags: 0

@@ -14,6 +14,9 @@ public class BattleController : MonoBehaviour
     [Tooltip("グリッド（GridManager）への参照")]
     public GridManager grid;
 
+    [Tooltip("ターン管理（TurnManager）への参照")]
+    public TurnManager turnManager;
+
     [Header("ハイライト色")]
     [Tooltip("選択中ユニットのマス")]
     public Color selectColor = new Color(1f, 0.9f, 0.4f);   // 黄
@@ -25,7 +28,16 @@ public class BattleController : MonoBehaviour
 
     void Update()
     {
-        if (grid == null || Mouse.current == null || Camera.main == null) return;
+        if (grid == null || turnManager == null) return;
+
+        // 自軍フェイズ以外は操作できない。選択が残っていれば消す。
+        if (turnManager.CurrentPhase != TurnPhase.Player)
+        {
+            if (selectedUnit != null) Deselect();
+            return;
+        }
+
+        if (Mouse.current == null || Camera.main == null) return;
 
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -46,8 +58,8 @@ public class BattleController : MonoBehaviour
 
         if (selectedUnit == null)
         {
-            // 未選択：味方ユニットをクリックしたら選択する
-            if (clickedUnit != null && clickedUnit.Faction == Faction.Player)
+            // 未選択：未行動の味方ユニットをクリックしたら選択する
+            if (clickedUnit != null && clickedUnit.Faction == Faction.Player && !clickedUnit.HasActed)
                 Select(clickedUnit);
         }
         else
@@ -55,13 +67,15 @@ public class BattleController : MonoBehaviour
             // 選択中
             if (reachableCells != null && reachableCells.Contains(cell))
             {
-                // 移動できるマスをクリック → 移動して選択解除
+                // 移動できるマスをクリック → 移動 → 行動済みにして選択解除
                 selectedUnit.MoveTo(grid, cell);
+                selectedUnit.SetActed(true);
                 Deselect();
+                turnManager.NotifyUnitActed(); // 全員行動済みなら自動でターン終了
             }
-            else if (clickedUnit != null && clickedUnit.Faction == Faction.Player)
+            else if (clickedUnit != null && clickedUnit.Faction == Faction.Player && !clickedUnit.HasActed)
             {
-                // 別の味方をクリック → そちらに選択を切り替え
+                // 別の未行動の味方をクリック → そちらに選択を切り替え
                 Select(clickedUnit);
             }
             else

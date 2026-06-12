@@ -14,7 +14,11 @@ public class Unit : MonoBehaviour
     /// <summary>陣営（UnitData から取得）。</summary>
     public Faction Faction => Data.faction;
 
+    /// <summary>このターンに行動済みか（移動・攻撃を終えたか）。</summary>
+    public bool HasActed { get; private set; }
+
     private SpriteRenderer spriteRenderer;
+    private Color baseColor;   // 行動済みで暗くする前の、元の色
 
     /// <summary>
     /// 生成直後に呼んで初期化する。
@@ -33,6 +37,8 @@ public class Unit : MonoBehaviour
             ? new Color(0.30f, 0.50f, 1.00f)   // 青
             : new Color(1.00f, 0.40f, 0.40f);  // 赤
         spriteRenderer.sortingOrder = 1;       // マス(0)より手前に表示
+        baseColor = spriteRenderer.color;      // 元の色を覚えておく
+        HasActed = false;
 
         // 盤上の位置とサイズ（マスより少し小さく）
         transform.position = grid.CellToWorld(cell);
@@ -62,5 +68,21 @@ public class Unit : MonoBehaviour
 
         transform.position = grid.CellToWorld(target);
         gameObject.name = $"Unit_{Data.unitName}_{target.x}_{target.y}";
+    }
+
+    /// <summary>
+    /// 行動済み状態を設定する。行動済みなら暗く表示し、
+    /// フェイズが新しくなったら false に戻して元の色に戻す。
+    /// </summary>
+    public void SetActed(bool acted)
+    {
+        HasActed = acted;
+        if (spriteRenderer != null)
+        {
+            // 行動済みは暗く（RGBだけ半分に。透明度は保つ）
+            spriteRenderer.color = acted
+                ? new Color(baseColor.r * 0.5f, baseColor.g * 0.5f, baseColor.b * 0.5f, baseColor.a)
+                : baseColor;
+        }
     }
 }
