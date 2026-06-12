@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -16,11 +17,16 @@ public class TurnManager : MonoBehaviour
     public TurnPhase CurrentPhase { get; private set; } = TurnPhase.Player;
     public int TurnNumber { get; private set; } = 1;
 
-    [Tooltip("敵フェイズの待ち時間(秒)。AIは後のフェーズで実装します")]
+    [Tooltip("敵フェイズに入ってから最初の行動までの待ち時間(秒)")]
     public float enemyPhaseDelay = 0.6f;
+    [Tooltip("敵1体ごとの行動の間隔(秒)。動きが見やすくなる")]
+    public float enemyActionDelay = 0.4f;
+
+    private GridManager grid;
 
     void Start()
     {
+        grid = FindAnyObjectByType<GridManager>();
         StartPlayerPhase();
     }
 
@@ -40,8 +46,23 @@ public class TurnManager : MonoBehaviour
         if (CurrentPhase != TurnPhase.Player) return;
 
         CurrentPhase = TurnPhase.Enemy;
-        Debug.Log($"ターン {TurnNumber}：敵フェイズ（今は行動なし）");
-        Invoke(nameof(EndEnemyPhase), enemyPhaseDelay);
+        Debug.Log($"ターン {TurnNumber}：敵フェイズ 開始");
+        StartCoroutine(EnemyPhaseRoutine());
+    }
+
+    /// <summary>敵を1体ずつ、少し間を置いて行動させる。</summary>
+    private IEnumerator EnemyPhaseRoutine()
+    {
+        yield return new WaitForSeconds(enemyPhaseDelay);
+
+        foreach (Unit enemy in GetUnits(Faction.Enemy))
+        {
+            if (enemy == null || !enemy.IsAlive) continue;
+            EnemyAI.TakeAction(enemy, grid);
+            yield return new WaitForSeconds(enemyActionDelay);
+        }
+
+        EndEnemyPhase();
     }
 
     private void EndEnemyPhase()

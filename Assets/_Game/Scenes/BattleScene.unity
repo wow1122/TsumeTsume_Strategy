@@ -209,6 +209,7 @@ MonoBehaviour:
   turnManager: {fileID: 1854418885}
   selectColor: {r: 1, g: 0.9, b: 0.4, a: 1}
   moveRangeColor: {r: 0.5, g: 0.8, b: 1, a: 1}
+  attackColor: {r: 1, g: 0.45, b: 0.45, a: 1}
 --- !u!114 &1854418885
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -222,6 +223,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TurnManager
   enemyPhaseDelay: 0.6
+  enemyActionDelay: 0.4
 --- !u!1 &1892261005
 GameObject:
   m_ObjectHideFlags: 0
