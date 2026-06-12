@@ -37,6 +37,13 @@ public class BattleController : MonoBehaviour
     {
         if (grid == null || turnManager == null) return;
 
+        // 決着後は操作不可。
+        if (turnManager.IsGameOver)
+        {
+            if (state != State.Idle) CancelSelection();
+            return;
+        }
+
         // 自軍フェイズ以外は操作不可。選択が残っていれば消す。
         if (turnManager.CurrentPhase != TurnPhase.Player)
         {

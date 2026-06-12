@@ -17,6 +17,13 @@ public class TurnManager : MonoBehaviour
     public TurnPhase CurrentPhase { get; private set; } = TurnPhase.Player;
     public int TurnNumber { get; private set; } = 1;
 
+    /// <summary>勝敗の結果。</summary>
+    public enum GameResult { None, Win, Lose }
+    public GameResult Result { get; private set; } = GameResult.None;
+
+    /// <summary>決着がついたか。</summary>
+    public bool IsGameOver => Result != GameResult.None;
+
     [Tooltip("敵フェイズに入ってから最初の行動までの待ち時間(秒)")]
     public float enemyPhaseDelay = 0.6f;
     [Tooltip("敵1体ごとの行動の間隔(秒)。動きが見やすくなる")]
@@ -43,6 +50,7 @@ public class TurnManager : MonoBehaviour
     /// <summary>自軍フェイズを終了して敵フェイズへ（ボタン or 全員行動で呼ばれる）。</summary>
     public void EndPlayerPhase()
     {
+        if (IsGameOver) return;
         if (CurrentPhase != TurnPhase.Player) return;
 
         CurrentPhase = TurnPhase.Enemy;
@@ -59,6 +67,10 @@ public class TurnManager : MonoBehaviour
         {
             if (enemy == null || !enemy.IsAlive) continue;
             EnemyAI.TakeAction(enemy, grid);
+
+            CheckGameEnd();
+            if (IsGameOver) yield break; // 決着がついたら敵フェイズを止める
+
             yield return new WaitForSeconds(enemyActionDelay);
         }
 
@@ -76,11 +88,44 @@ public class TurnManager : MonoBehaviour
     /// </summary>
     public void NotifyUnitActed()
     {
+        CheckGameEnd();
+        if (IsGameOver) return;
+
         if (AllActed(Faction.Player))
         {
             Debug.Log("全味方が行動済み → 自動でターン終了");
             EndPlayerPhase();
         }
+    }
+
+    // ===== 勝敗判定 =====
+
+    /// <summary>敵全滅で勝ち、味方全滅で負け。決着済みなら何もしない。</summary>
+    private void CheckGameEnd()
+    {
+        if (IsGameOver) return;
+
+        int players = CountAlive(Faction.Player);
+        int enemies = CountAlive(Faction.Enemy);
+
+        if (enemies == 0)
+        {
+            Result = GameResult.Win;
+            Debug.Log("★ 勝利！ 敵を全滅させた ★");
+        }
+        else if (players == 0)
+        {
+            Result = GameResult.Lose;
+            Debug.Log("× 敗北… 味方が全滅した ×");
+        }
+    }
+
+    private int CountAlive(Faction faction)
+    {
+        int count = 0;
+        foreach (Unit u in FindObjectsByType<Unit>(FindObjectsSortMode.None))
+            if (u.Faction == faction && u.IsAlive) count++;
+        return count;
     }
 
     // ===== ユニットの問い合わせ =====
@@ -108,6 +153,22 @@ public class TurnManager : MonoBehaviour
 
         var style = new GUIStyle(GUI.skin.label) { fontSize = 18 };
         GUI.Label(new Rect(12, 10, 360, 28), $"ターン {TurnNumber} ／ {phaseLabel}", style);
+
+        // 決着後：画面中央に結果を大きく表示（ボタンは出さない）
+        if (IsGameOver)
+        {
+            var bigStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 48,
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold
+            };
+            bigStyle.normal.textColor = (Result == GameResult.Win) ? Color.yellow : Color.red;
+
+            string text = (Result == GameResult.Win) ? "勝利！" : "敗北…";
+            GUI.Label(new Rect(0, Screen.height * 0.4f, Screen.width, 80), text, bigStyle);
+            return;
+        }
 
         if (CurrentPhase == TurnPhase.Player)
         {
