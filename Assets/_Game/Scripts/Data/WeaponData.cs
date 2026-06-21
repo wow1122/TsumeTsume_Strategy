@@ -2,10 +2,10 @@ using UnityEngine;
 
 /// <summary>
 /// 武器1種類分のデータ。Project で右クリック →
-/// Create → TsumiTsumi → Weapon Data から作れます。
+/// Create → TsumeTsume → Weapon Data から作れます。
 /// 射程は「最小〜最大」で表し、近接武器は 1〜1、弓・魔法は 2〜2 など。
 /// </summary>
-[CreateAssetMenu(fileName = "WeaponData", menuName = "TsumiTsumi/Weapon Data")]
+[CreateAssetMenu(fileName = "WeaponData", menuName = "TsumeTsume/Weapon Data")]
 public class WeaponData : ScriptableObject
 {
     [Header("基本情報")]

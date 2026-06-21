@@ -2,11 +2,11 @@ using UnityEngine;
 
 /// <summary>
 /// ユニット1種類分の「能力値データ」。ScriptableObject なので、
-/// Project ウィンドウで右クリック → Create → TsumiTsumi → Unit Data から
+/// Project ウィンドウで右クリック → Create → TsumeTsume → Unit Data から
 /// アセットとして何個でも作れます（味方剣士・敵戦士…など）。
 /// 数値はここを編集するだけで調整できます。
 /// </summary>
-[CreateAssetMenu(fileName = "UnitData", menuName = "TsumiTsumi/Unit Data")]
+[CreateAssetMenu(fileName = "UnitData", menuName = "TsumeTsume/Unit Data")]
 public class UnitData : ScriptableObject
 {
     [Header("基本情報")]

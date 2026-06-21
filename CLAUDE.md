@@ -1,4 +1,4 @@
-# TsumiTsumi_Strategy
+# TsumeTsume_Strategy
 
 ファイアーエムブレムif暗夜をモデルにした 2D タクティクスSRPG。Unity 6 (6000.3.10f1) + URP。
 作者はプログラミングほぼ初心者。日本語で、専門用語をかみ砕いて丁寧に説明すること。絵文字は使わない。
