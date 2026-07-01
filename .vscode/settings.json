@@ -60,12 +60,33 @@
         "*.asset": "yaml",
         "*.meta": "yaml",
         "*.prefab": "yaml",
-        "*.unity": "yaml",
+        "*.unity": "yaml"
     },
     "explorer.fileNesting.enabled": true,
     "explorer.fileNesting.patterns": {
         "*.sln": "*.csproj",
         "*.slnx": "*.csproj"
     },
-    "dotnet.defaultSolution": "TsumeTsume_Strategy.slnx"
+    "dotnet.defaultSolution": "TsumeTsume_Strategy.slnx",
+    "editor.tokenColorCustomizations": {
+        "[Monokai Dimmed]": {
+            "textMateRules": [
+                {
+                    // 適用したい箇所をscopeとして入力。今回は生成された配色テーマからそのままコピーして再利用
+                    "scope": [
+                        "variable.parameter.function",
+                        "meta.jsx.children",
+                        "meta.block",
+                        "meta.tag.attributes",
+                        "entity.name.constant",
+                        "meta.object.member",
+                        "meta.embedded.expression"
+                    ],
+                    "settings": {
+                        "foreground": "#DCDCAA"
+                    }
+                }
+            ]
+        }
+    }
 }
