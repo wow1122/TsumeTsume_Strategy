@@ -16,7 +16,8 @@ public static class MovementCalculator
 
     /// <summary>
     /// unit が移動できるマスの集合を返す（出発マスは含めない）。
-    /// ・盤外、通行不可(IsWalkable=false)、他ユニットがいるマスには入れない
+    /// ・盤外、通行不可(IsWalkable=false)、敵ユニットがいるマスには入れない
+    /// ・味方がいるマスは「通過」できるが、移動先（停止位置）には選べない
     /// ・累計移動コストが unit の移動力以下のマスだけ到達可能
     /// </summary>
     public static HashSet<Vector2Int> GetReachableCells(GridManager grid, Unit unit)
@@ -40,17 +41,24 @@ public static class MovementCalculator
                 TileData tile = grid.GetTile(next);
                 if (tile == null) continue;            // 盤外
                 if (!tile.IsWalkable) continue;        // 壁など
-                if (tile.Occupant != null) continue;   // 他ユニットがいる（簡易版では通れない）
+
+                // 敵ユニットのマスは侵入も通過も不可。味方のマスは「通過だけ」できる。
+                bool occupiedByAlly = false;
+                if (tile.Occupant != null)
+                {
+                    if (tile.Occupant.Faction != unit.Faction) continue; // 敵は通せんぼ
+                    occupiedByAlly = true;
+                }
 
                 int newCost = costSoFar[current] + tile.MoveCost;
-                if (newCost > unit.Data.move) continue; // 移動力オーバー
+                if (newCost > unit.Move) continue; // 移動力オーバー
 
                 // 未到達、またはより安い経路が見つかったら更新
                 if (!costSoFar.ContainsKey(next) || newCost < costSoFar[next])
                 {
                     costSoFar[next] = newCost;
                     frontier.Enqueue(next);
-                    reachable.Add(next);
+                    if (!occupiedByAlly) reachable.Add(next); // 味方マスには止まれない
                 }
             }
         }

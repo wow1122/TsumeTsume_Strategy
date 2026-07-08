@@ -2,8 +2,11 @@ using UnityEngine;
 
 /// <summary>
 /// ダメージ計算（決定論的・命中判定なし）。
-///   ダメージ = max(0, 攻撃 + 武器威力 + 三すくみ補正 − (防御 + 地形防御))
+///   物理武器（剣・斧・槍・弓）： ダメージ = max(0, 力   + 武器威力 + 三すくみ補正 − (守備 + 地形防御))
+///   魔法武器　　　　　　　　　： ダメージ = max(0, 魔力 + 武器威力 + 三すくみ補正 − (魔防 + 地形防御))
+/// 地形防御は物理・魔法の両方に効く（作者合意）。
 /// 三すくみ： 剣 ＞ 斧 ＞ 槍 ＞ 剣。弓・魔法は中立（補正なし）。
+/// ※三すくみを技・速さベースの新補正式 max(2, 差) に変えるのは Phase 9 で行う。
 /// </summary>
 public static class DamageCalculator
 {
@@ -12,17 +15,21 @@ public static class DamageCalculator
 
     public static int Calculate(Unit attacker, Unit defender, GridManager grid)
     {
-        WeaponData aWeapon = attacker.Data.weapon;
+        WeaponData aWeapon = attacker.Weapon;
         int might = aWeapon != null ? aWeapon.might : 0;
 
-        int triangle = GetTriangleBonus(aWeapon, defender.Data.weapon);
+        int triangle = GetTriangleBonus(aWeapon, defender.Weapon);
 
         // 防御側がいるマスの地形防御ボーナス
         TileData defTile = grid.GetTile(defender.GridPosition);
         int terrainDef = defTile != null ? defTile.DefenseBonus : 0;
 
-        int damage = attacker.Data.attack + might + triangle
-                     - (defender.Data.defense + terrainDef);
+        // 魔法武器なら 魔力 vs 魔防、それ以外は 力 vs 守備
+        bool isMagic = aWeapon != null && aWeapon.type == WeaponType.Magic;
+        int attackPower = isMagic ? attacker.Magic : attacker.Strength;
+        int guardPower = isMagic ? defender.Resistance : defender.Defense;
+
+        int damage = attackPower + might + triangle - (guardPower + terrainDef);
 
         return Mathf.Max(0, damage);
     }

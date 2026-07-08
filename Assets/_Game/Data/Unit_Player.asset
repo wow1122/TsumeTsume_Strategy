@@ -14,8 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::UnitData
   unitName: "\u5473\u65B9\u5175"
   faction: 0
+  unitClass: 0
   maxHP: 20
-  attack: 6
+  strength: 6
+  magic: 0
+  skill: 5
+  speed: 5
   defense: 3
+  resistance: 0
   move: 4
   weapon: {fileID: 11400000, guid: 9bd17bf5451e17949960a7fc64eb7eca, type: 2}

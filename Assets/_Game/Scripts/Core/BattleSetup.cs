@@ -1,26 +1,18 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 戦闘開始時に、指定したユニットを盤上へ配置する。
-/// Inspector の一覧に「どの UnitData を、どのマス(x,y)に置くか」を並べておくと、
-/// 再生時に自動で生成する（プレハブ不要・見た目はコードで作る）。
+/// 戦闘開始時に、StageData（ステージの初期配置アセット）を読んで
+/// ユニットを盤上へ配置する。
+/// 「どのユニットをどこに置くか」はシーンではなく StageData アセット側で管理する。
+/// 配置を変えたいときは Stage_Test.asset を編集すればよい（シーン操作は不要）。
 /// </summary>
 public class BattleSetup : MonoBehaviour
 {
-    /// <summary>1体分の配置情報（Inspector で編集できる）。</summary>
-    [System.Serializable]
-    public class SpawnEntry
-    {
-        public UnitData unitData;   // 配置するユニットの能力値
-        public Vector2Int cell;     // 配置するマス（x, y）
-    }
-
     [Tooltip("グリッド（GridManager）への参照")]
     public GridManager grid;
 
-    [Tooltip("配置するユニットの一覧")]
-    public List<SpawnEntry> spawns = new List<SpawnEntry>();
+    [Tooltip("このステージの初期配置データ（StageData アセット）")]
+    public StageData stage;
 
     // グリッドは Awake で作られるので、配置は Start で行えば盤面は完成済み。
     void Start()
@@ -31,7 +23,13 @@ public class BattleSetup : MonoBehaviour
             return;
         }
 
-        foreach (SpawnEntry entry in spawns)
+        if (stage == null)
+        {
+            Debug.LogError("BattleSetup: StageData が設定されていません。Inspector で Stage_Test を割り当ててください。");
+            return;
+        }
+
+        foreach (StageData.Placement entry in stage.placements)
         {
             if (entry.unitData == null) continue;
 

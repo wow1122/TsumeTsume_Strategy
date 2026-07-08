@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>戦闘のフェイズ（どちらの軍の番か）。</summary>
@@ -42,7 +41,7 @@ public class TurnManager : MonoBehaviour
     private void StartPlayerPhase()
     {
         CurrentPhase = TurnPhase.Player;
-        foreach (Unit u in GetUnits(Faction.Player))
+        foreach (Unit u in UnitRegistry.GetUnits(Faction.Player))
             u.SetActed(false); // 全味方を「未行動」に戻す
         Debug.Log($"── ターン {TurnNumber}：自軍フェイズ 開始 ──");
     }
@@ -63,7 +62,7 @@ public class TurnManager : MonoBehaviour
     {
         yield return new WaitForSeconds(enemyPhaseDelay);
 
-        foreach (Unit enemy in GetUnits(Faction.Enemy))
+        foreach (Unit enemy in UnitRegistry.GetUnits(Faction.Enemy))
         {
             if (enemy == null || !enemy.IsAlive) continue;
             EnemyAI.TakeAction(enemy, grid);
@@ -105,8 +104,9 @@ public class TurnManager : MonoBehaviour
     {
         if (IsGameOver) return;
 
-        int players = CountAlive(Faction.Player);
-        int enemies = CountAlive(Faction.Enemy);
+        // 名簿（UnitRegistry）で数える。格納中（非アクティブ）でも生きていれば数に入る。
+        int players = UnitRegistry.CountAlive(Faction.Player);
+        int enemies = UnitRegistry.CountAlive(Faction.Enemy);
 
         if (enemies == 0)
         {
@@ -120,29 +120,13 @@ public class TurnManager : MonoBehaviour
         }
     }
 
-    private int CountAlive(Faction faction)
-    {
-        int count = 0;
-        foreach (Unit u in FindObjectsByType<Unit>(FindObjectsSortMode.None))
-            if (u.Faction == faction && u.IsAlive) count++;
-        return count;
-    }
-
     // ===== ユニットの問い合わせ =====
 
     private bool AllActed(Faction faction)
     {
-        foreach (Unit u in GetUnits(faction))
+        foreach (Unit u in UnitRegistry.GetUnits(faction))
             if (!u.HasActed) return false;
         return true;
-    }
-
-    private List<Unit> GetUnits(Faction faction)
-    {
-        var result = new List<Unit>();
-        foreach (Unit u in FindObjectsByType<Unit>(FindObjectsSortMode.None))
-            if (u.Faction == faction) result.Add(u);
-        return result;
     }
 
     // ===== 簡易UI（Canvas不要・コードで画面に直接描画）=====

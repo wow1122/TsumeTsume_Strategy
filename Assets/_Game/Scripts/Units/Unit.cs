@@ -4,6 +4,8 @@ using UnityEngine;
 /// 盤上に存在するユニット1体。能力値(UnitData)を参照し、
 /// 自分のグリッド座標・現在HPを持ち、仮素材(色付き四角)で表示する。
 /// 自軍は青、敵軍は赤で表示する。
+/// 能力値は Initialize のときに UnitData からコピーした「ランタイム能力値」を使う。
+/// （将来、一時的な強化・弱体や成長を入れるとき、元データ(アセット)を汚さずに書き換えられる）
 /// </summary>
 public class Unit : MonoBehaviour
 {
@@ -11,8 +13,24 @@ public class Unit : MonoBehaviour
     public Vector2Int GridPosition { get; private set; }
     public int CurrentHP { get; private set; }
 
+    // ── ランタイム能力値（Initialize で UnitData からコピーされる）──
+    public int MaxHP { get; private set; }        // HP（最大値）
+    public int Strength { get; private set; }     // 力（物理攻撃）
+    public int Magic { get; private set; }        // 魔力（魔法攻撃）
+    public int Skill { get; private set; }        // 技（三すくみ補正・Phase 9 から使用）
+    public int Speed { get; private set; }        // 速さ（三すくみ補正・Phase 9 から使用）
+    public int Defense { get; private set; }      // 守備（物理防御）
+    public int Resistance { get; private set; }   // 魔防（魔法防御）
+    public int Move { get; private set; }         // 移動力
+
     /// <summary>陣営（UnitData から取得）。</summary>
     public Faction Faction => Data.faction;
+
+    /// <summary>兵種（UnitData から取得）。</summary>
+    public UnitClass Class => Data.unitClass;
+
+    /// <summary>装備中の武器。武器はこの窓口から読む（Data.weapon の直読みはしない約束）。</summary>
+    public WeaponData Weapon => Data.weapon;
 
     /// <summary>このターンに行動済みか（移動・攻撃を終えたか）。</summary>
     public bool HasActed { get; private set; }
@@ -26,14 +44,24 @@ public class Unit : MonoBehaviour
 
     /// <summary>
     /// 生成直後に呼んで初期化する。
-    /// 見た目の作成・盤上への配置・マスへの占有登録まで行う。
+    /// 能力値のコピー・見た目の作成・盤上への配置・マスへの占有登録・名簿への登録まで行う。
     /// </summary>
     public void Initialize(UnitData data, GridManager grid, Vector2Int cell)
     {
         Data = data;
-        CurrentHP = data.maxHP;
         GridPosition = cell;
         this.grid = grid;
+
+        // 能力値を UnitData からコピー（ランタイム能力値）
+        MaxHP = data.maxHP;
+        Strength = data.strength;
+        Magic = data.magic;
+        Skill = data.skill;
+        Speed = data.speed;
+        Defense = data.defense;
+        Resistance = data.resistance;
+        Move = data.move;
+        CurrentHP = MaxHP;
 
         // 見た目：陣営で色分け（自軍=青 / 敵=赤）。スプライトはグリッドのものを流用。
         spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
@@ -52,6 +80,9 @@ public class Unit : MonoBehaviour
         // このマスの「占有者」として登録（後の移動・戦闘判定で使う）
         TileData tile = grid.GetTile(cell);
         if (tile != null) tile.Occupant = this;
+
+        // 全ユニットの名簿（レジストリ）に登録。勝敗判定・AI・対象探しはこの名簿を使う。
+        UnitRegistry.Register(this);
 
         gameObject.name = $"Unit_{data.unitName}_{cell.x}_{cell.y}";
     }
@@ -99,7 +130,7 @@ public class Unit : MonoBehaviour
         if (CurrentHP == 0) Die();
     }
 
-    /// <summary>戦闘不能：マスの占有を外して盤上から消える。</summary>
+    /// <summary>戦闘不能：マスの占有を外し、名簿からも外して盤上から消える。</summary>
     private void Die()
     {
         if (grid != null)
@@ -107,8 +138,45 @@ public class Unit : MonoBehaviour
             TileData tile = grid.GetTile(GridPosition);
             if (tile != null && tile.Occupant == this) tile.Occupant = null;
         }
+        UnitRegistry.Unregister(this);
         Debug.Log($"{Data.unitName} は戦闘不能になった");
         Destroy(gameObject);
+    }
+
+    // ── 非アクティブ化とマス占有の整合 ──
+    // ユニットが非アクティブ化されて盤上から見えなくなるとき（動作確認テストや、
+    // 将来の救出での「格納」）、マスの占有が残ると「見えない壁」ができて
+    // 移動範囲がおかしくなる。そこで無効化で占有を明け渡し、有効化で取り直す。
+
+    void OnEnable()
+    {
+        if (grid == null) return; // 生成直後（Initialize 前）はまだ盤面を知らない
+
+        TileData tile = grid.GetTile(GridPosition);
+        if (tile == null) return;
+
+        if (tile.Occupant == null)
+        {
+            tile.Occupant = this;
+        }
+        else if (tile.Occupant != this)
+        {
+            Debug.LogWarning($"{Data.unitName} を再アクティブ化しましたが、マス {GridPosition} は先に {tile.Occupant.Data.unitName} が占有しています。");
+        }
+    }
+
+    void OnDisable()
+    {
+        if (grid == null) return;
+
+        TileData tile = grid.GetTile(GridPosition);
+        if (tile != null && tile.Occupant == this) tile.Occupant = null;
+    }
+
+    // 何らかの理由で破棄されたときの保険（名簿から二重に外しても害はない）
+    void OnDestroy()
+    {
+        UnitRegistry.Unregister(this);
     }
 
     // 各ユニットの頭上あたりに現在HPを表示する（簡易・Canvas不要）。

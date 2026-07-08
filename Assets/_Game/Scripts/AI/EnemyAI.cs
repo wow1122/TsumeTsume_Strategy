@@ -25,7 +25,7 @@ public static class EnemyAI
     {
         if (enemy == null || !enemy.IsAlive) return;
 
-        List<Unit> players = GetUnits(Faction.Player);
+        List<Unit> players = UnitRegistry.GetUnits(Faction.Player);
         if (players.Count == 0) return;
 
         // 立てる候補マス：移動できるマス ＋ 現在地（動かない選択）
@@ -38,7 +38,7 @@ public static class EnemyAI
         int bestScore = int.MinValue;
         int bestMoveDist = int.MaxValue; // 同点なら移動が少ない方を選ぶための比較用
 
-        WeaponData weapon = enemy.Data.weapon;
+        WeaponData weapon = enemy.Weapon;
         if (weapon != null)
         {
             foreach (Vector2Int cell in candidates)
@@ -139,13 +139,5 @@ public static class EnemyAI
     private static int Manhattan(Vector2Int a, Vector2Int b)
     {
         return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
-    }
-
-    private static List<Unit> GetUnits(Faction faction)
-    {
-        var result = new List<Unit>();
-        foreach (Unit u in Object.FindObjectsByType<Unit>(FindObjectsSortMode.None))
-            if (u.Faction == faction) result.Add(u);
-        return result;
     }
 }

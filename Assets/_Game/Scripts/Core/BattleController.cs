@@ -189,12 +189,13 @@ public class BattleController : MonoBehaviour
     private List<Unit> FindAttackTargets(Unit unit)
     {
         var targets = new List<Unit>();
-        WeaponData weapon = unit.Data.weapon;
+        WeaponData weapon = unit.Weapon;
         if (weapon == null) return targets; // 武器なしは攻撃できない
 
-        foreach (Unit other in FindObjectsByType<Unit>(FindObjectsSortMode.None))
+        // 相手陣営の盤上ユニット（名簿）から、武器の射程内にいるものを探す
+        Faction enemyFaction = (unit.Faction == Faction.Player) ? Faction.Enemy : Faction.Player;
+        foreach (Unit other in UnitRegistry.GetUnits(enemyFaction))
         {
-            if (other.Faction == unit.Faction) continue; // 味方は対象外
             int dist = ManhattanDistance(unit.GridPosition, other.GridPosition);
             if (dist >= weapon.minRange && dist <= weapon.maxRange)
                 targets.Add(other);

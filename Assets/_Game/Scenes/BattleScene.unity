@@ -184,15 +184,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BattleSetup
   grid: {fileID: 1854418881}
-  spawns:
-  - unitData: {fileID: 11400000, guid: 746437a2906efd846b321b19e8f92480, type: 2}
-    cell: {x: 2, y: 2}
-  - unitData: {fileID: 11400000, guid: 746437a2906efd846b321b19e8f92480, type: 2}
-    cell: {x: 3, y: 2}
-  - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
-    cell: {x: 6, y: 7}
-  - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
-    cell: {x: 7, y: 7}
+  stage: {fileID: 11400000, guid: 8e48a25368e6499b86d56948cf022d0f, type: 2}
 --- !u!114 &1854418884
 MonoBehaviour:
   m_ObjectHideFlags: 0
