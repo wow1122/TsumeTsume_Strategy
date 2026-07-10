@@ -9,10 +9,15 @@ using UnityEngine;
 ///   それぞれに点数を付けて、一番点数の高い行動を実行する。
 ///
 /// 攻撃する行動の点数（ScoreAttack）：
-///   合計ダメージ = 自分の攻撃ダメージ ＋（挟撃が成立するなら）味方の追撃ダメージ
+///   合計ダメージ = CombatSystem.PredictTotalDamage（本体＋挟撃−無効化まで込みの共有予測）
 ///   点数        = 合計ダメージ ＋（その合計で相手を倒せるなら 撃破ボーナス）
 ///   ・反撃は無いので「攻撃する＝ノーリスク」。だから迷わず最大火力・撃破・挟撃を狙う。
 ///   ・点数が同じなら、移動が少ない（あまり前に出ない）マスを選ぶ。
+///
+/// 射程・攻撃可否は CombatRules に任せる（プレイヤー操作と同じ判定）。
+/// これにより後衛武器の敵（弓兵など）は自然に
+///   「静止したままなら武器上限まで撃つ／隣接されたら離れたマスへ移動して撃つ」
+/// という動きになる（動くと射程が2マスちょうどに縮むため）。
 ///
 /// 射程に入る相手が一人もいなければ、一番近い味方へ近づくだけ移動する。
 /// </summary>
@@ -38,27 +43,25 @@ public static class EnemyAI
         int bestScore = int.MinValue;
         int bestMoveDist = int.MaxValue; // 同点なら移動が少ない方を選ぶための比較用
 
-        WeaponData weapon = enemy.Weapon;
-        if (weapon != null)
+        foreach (Vector2Int cell in candidates)
         {
-            foreach (Vector2Int cell in candidates)
+            // そのマスに立ったとき「移動した扱い」か（後衛武器は移動すると射程が縮む）
+            bool hasMoved = cell != enemy.GridPosition;
+
+            foreach (Unit target in players)
             {
-                foreach (Unit target in players)
+                if (!CombatRules.CanAttack(enemy, cell, target, hasMoved)) continue; // 射程外・武装無し
+
+                int score = ScoreAttack(enemy, cell, target, grid);
+                int moveDist = CombatRules.Manhattan(enemy.GridPosition, cell);
+
+                // 点数が高い方を採用。同点なら移動が少ない方を採用。
+                if (score > bestScore || (score == bestScore && moveDist < bestMoveDist))
                 {
-                    int range = Manhattan(cell, target.GridPosition);
-                    if (range < weapon.minRange || range > weapon.maxRange) continue; // 射程外
-
-                    int score = ScoreAttack(enemy, cell, target, grid);
-                    int moveDist = Manhattan(enemy.GridPosition, cell);
-
-                    // 点数が高い方を採用。同点なら移動が少ない方を採用。
-                    if (score > bestScore || (score == bestScore && moveDist < bestMoveDist))
-                    {
-                        bestScore = score;
-                        bestMoveDist = moveDist;
-                        bestCell = cell;
-                        bestTarget = target;
-                    }
+                    bestScore = score;
+                    bestMoveDist = moveDist;
+                    bestCell = cell;
+                    bestTarget = target;
                 }
             }
         }
@@ -93,37 +96,16 @@ public static class EnemyAI
 
     /// <summary>
     /// 「cell に立って target を攻撃する」行動の点数。
-    /// 合計ダメージ（自分＋挟撃の追撃）に、倒せるなら撃破ボーナスを足す。
+    /// 合計ダメージの予測は CombatSystem.PredictTotalDamage に一元化されている
+    /// （挟撃の成立・ガードによる無効化も織り込み済み。実際の戦闘結果と必ず一致する）。
     /// </summary>
     private static int ScoreAttack(Unit enemy, Vector2Int cell, Unit target, GridManager grid)
     {
-        int damage = DamageCalculator.Calculate(enemy, target, grid);
-        damage += PredictPincerDamage(enemy, cell, target, grid);
+        int damage = CombatSystem.PredictTotalDamage(enemy, cell, target, grid);
 
         int score = damage;
         if (damage >= target.CurrentHP) score += KillBonus; // この一手で倒せるなら最優先
         return score;
-    }
-
-    /// <summary>
-    /// cell から target を近接攻撃したとき、挟撃で増える追撃ダメージを予測する。
-    /// 判定は CombatSystem.TryPincer と同じ：
-    ///   ・cell が target の上下左右に隣接していること（近接攻撃）
-    ///   ・target を挟んだ反対側のマスに、自分以外の味方（敵陣営）がいること
-    /// 成立しなければ 0 を返す。
-    /// </summary>
-    private static int PredictPincerDamage(Unit enemy, Vector2Int cell, Unit target, GridManager grid)
-    {
-        Vector2Int diff = target.GridPosition - cell;
-        if (Mathf.Abs(diff.x) + Mathf.Abs(diff.y) != 1) return 0; // 隣接でない＝遠距離なので挟撃なし
-
-        Vector2Int oppositeCell = target.GridPosition + diff;
-        TileData tile = grid.GetTile(oppositeCell);
-        Unit ally = tile != null ? tile.Occupant : null;
-
-        if (ally == null || ally == enemy || ally.Faction != enemy.Faction) return 0;
-
-        return DamageCalculator.Calculate(ally, target, grid);
     }
 
     // ===== 補助 =====
@@ -132,12 +114,7 @@ public static class EnemyAI
     {
         int min = int.MaxValue;
         foreach (Unit p in players)
-            min = Mathf.Min(min, Manhattan(cell, p.GridPosition));
+            min = Mathf.Min(min, CombatRules.Manhattan(cell, p.GridPosition));
         return min;
-    }
-
-    private static int Manhattan(Vector2Int a, Vector2Int b)
-    {
-        return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
     }
 }

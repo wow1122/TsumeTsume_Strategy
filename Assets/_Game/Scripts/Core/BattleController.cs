@@ -84,12 +84,14 @@ public class BattleController : MonoBehaviour
             case State.AwaitingMove:
                 if (cell == selectedUnit.GridPosition)
                 {
-                    BeginAttackPhase(); // 動かずその場で（攻撃 or 待機へ）
+                    // 動かずその場で（攻撃 or 待機へ）。
+                    // 静止＝hasMoved false → 後衛武器（弓・魔法）は武器上限まで射程が伸びる
+                    BeginAttackPhase(hasMoved: false);
                 }
                 else if (reachableCells.Contains(cell))
                 {
                     selectedUnit.MoveTo(grid, cell);
-                    BeginAttackPhase();
+                    BeginAttackPhase(hasMoved: true); // 移動後 → 後衛武器は基本射程（2マスちょうど）のみ
                 }
                 else if (IsSelectablePlayer(clickedUnit))
                 {
@@ -134,12 +136,12 @@ public class BattleController : MonoBehaviour
     }
 
     /// <summary>移動後（または据え置き後）、攻撃できる敵を探して表示する。</summary>
-    private void BeginAttackPhase()
+    private void BeginAttackPhase(bool hasMoved)
     {
         grid.ResetAllHighlights();
         grid.SetHighlight(selectedUnit.GridPosition, selectColor);
 
-        attackTargets = FindAttackTargets(selectedUnit);
+        attackTargets = FindAttackTargets(selectedUnit, hasMoved);
 
         if (attackTargets.Count == 0)
         {
@@ -185,26 +187,21 @@ public class BattleController : MonoBehaviour
         return u != null && u.Faction == Faction.Player && !u.HasActed;
     }
 
-    /// <summary>unit の武器射程内にいる敵ユニットの一覧を返す。</summary>
-    private List<Unit> FindAttackTargets(Unit unit)
+    /// <summary>
+    /// unit がいまの位置から攻撃できる敵ユニットの一覧を返す。
+    /// 射程の判定は CombatRules に任せる（移動有無で後衛武器の射程が変わる。敵AIと共通ルール）。
+    /// </summary>
+    private List<Unit> FindAttackTargets(Unit unit, bool hasMoved)
     {
         var targets = new List<Unit>();
-        WeaponData weapon = unit.Weapon;
-        if (weapon == null) return targets; // 武器なしは攻撃できない
 
-        // 相手陣営の盤上ユニット（名簿）から、武器の射程内にいるものを探す
+        // 相手陣営の盤上ユニット（名簿）から、攻撃可能なものを探す
         Faction enemyFaction = (unit.Faction == Faction.Player) ? Faction.Enemy : Faction.Player;
         foreach (Unit other in UnitRegistry.GetUnits(enemyFaction))
         {
-            int dist = ManhattanDistance(unit.GridPosition, other.GridPosition);
-            if (dist >= weapon.minRange && dist <= weapon.maxRange)
+            if (CombatRules.CanAttack(unit, unit.GridPosition, other, hasMoved))
                 targets.Add(other);
         }
         return targets;
-    }
-
-    private static int ManhattanDistance(Vector2Int a, Vector2Int b)
-    {
-        return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
     }
 }

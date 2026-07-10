@@ -21,3 +21,11 @@ MonoBehaviour:
     cell: {x: 6, y: 7}
   - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
     cell: {x: 7, y: 7}
+  - unitData: {fileID: 11400000, guid: 0ab9e65ec8ef4d5bacbc7d208ca03791, type: 2}
+    cell: {x: 2, y: 1}
+  - unitData: {fileID: 11400000, guid: 391970494cef46cb8f56b50cb656988b, type: 2}
+    cell: {x: 4, y: 1}
+  - unitData: {fileID: 11400000, guid: 9e41d5db67904853a08890ea666d4e7b, type: 2}
+    cell: {x: 2, y: 7}
+  - unitData: {fileID: 11400000, guid: e1acbf8f29054987be8982bf4cb078b0, type: 2}
+    cell: {x: 7, y: 8}

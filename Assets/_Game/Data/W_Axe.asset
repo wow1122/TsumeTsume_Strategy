@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
   weaponName: "\u65A7"
   type: 2
+  category: 0
   might: 5
   minRange: 1
   maxRange: 1

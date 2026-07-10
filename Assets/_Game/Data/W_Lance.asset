@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 32e55d14b0762954b995b6a4a5afad15, type: 3}
-  m_Name: W_Sword
+  m_Name: W_Lance
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
-  weaponName: "\u5263"
-  type: 0
+  weaponName: "槍"
+  type: 1
   category: 0
   might: 5
   minRange: 1

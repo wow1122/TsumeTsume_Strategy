@@ -1,56 +1,65 @@
 using UnityEngine;
 
 /// <summary>
+/// ダメージ1回分の内訳。合計だけでなく「何がいくつ効いたか」を持ち、
+/// Console のログ表示と、将来の戦闘予測UI（ダメージ見込み表示）の共有基盤になる。
+/// </summary>
+public struct DamageBreakdown
+{
+    public bool isMagic;       // 魔法攻撃か（魔力 vs 魔防で計算したか）
+    public int attackPower;    // 力 または 魔力
+    public int might;          // 武器威力
+    public int triangle;       // 三すくみ補正（有利で＋、不利で−、なしは0）
+    public int guardPower;     // 守備 または 魔防
+    public int terrainDefense; // 地形防御（防御側のマス）
+
+    /// <summary>最終ダメージ（0未満にはならない）。</summary>
+    public int Total => Mathf.Max(0, attackPower + might + triangle - (guardPower + terrainDefense));
+
+    /// <summary>ログ用の内訳文字列。例：「力6＋威力5＋相性+2 − (守備2＋地形0) = 11」</summary>
+    public string ToLogString()
+    {
+        string atkName = isMagic ? "魔力" : "力";
+        string grdName = isMagic ? "魔防" : "守備";
+        string triText = triangle == 0 ? "" : $"＋相性{(triangle > 0 ? "+" : "")}{triangle}";
+        return $"{atkName}{attackPower}＋威力{might}{triText} − ({grdName}{guardPower}＋地形{terrainDefense}) = {Total}";
+    }
+}
+
+/// <summary>
 /// ダメージ計算（決定論的・命中判定なし）。
 ///   物理武器（剣・斧・槍・弓）： ダメージ = max(0, 力   + 武器威力 + 三すくみ補正 − (守備 + 地形防御))
 ///   魔法武器　　　　　　　　　： ダメージ = max(0, 魔力 + 武器威力 + 三すくみ補正 − (魔防 + 地形防御))
 /// 地形防御は物理・魔法の両方に効く（作者合意）。
-/// 三すくみ： 剣 ＞ 斧 ＞ 槍 ＞ 剣。弓・魔法は中立（補正なし）。
-/// ※三すくみを技・速さベースの新補正式 max(2, 差) に変えるのは Phase 9 で行う。
+/// 三すくみ補正の中身（技・速さの差、最低2）は CombatRules.GetTriangleModifier が担当。
 /// </summary>
 public static class DamageCalculator
 {
-    /// <summary>三すくみで有利なときに加算／不利なときに減算する量（バランス調整用）。</summary>
-    public const int WeaponTriangleBonus = 1;
-
-    public static int Calculate(Unit attacker, Unit defender, GridManager grid)
+    /// <summary>ダメージの内訳付き計算。ログや予測表示に使う。</summary>
+    public static DamageBreakdown CalculateBreakdown(Unit attacker, Unit defender, GridManager grid)
     {
-        WeaponData aWeapon = attacker.Weapon;
-        int might = aWeapon != null ? aWeapon.might : 0;
-
-        int triangle = GetTriangleBonus(aWeapon, defender.Weapon);
+        WeaponData weapon = attacker.Weapon;
 
         // 防御側がいるマスの地形防御ボーナス
         TileData defTile = grid.GetTile(defender.GridPosition);
-        int terrainDef = defTile != null ? defTile.DefenseBonus : 0;
 
         // 魔法武器なら 魔力 vs 魔防、それ以外は 力 vs 守備
-        bool isMagic = aWeapon != null && aWeapon.type == WeaponType.Magic;
-        int attackPower = isMagic ? attacker.Magic : attacker.Strength;
-        int guardPower = isMagic ? defender.Resistance : defender.Defense;
+        bool isMagic = weapon != null && weapon.type == WeaponType.Magic;
 
-        int damage = attackPower + might + triangle - (guardPower + terrainDef);
-
-        return Mathf.Max(0, damage);
+        return new DamageBreakdown
+        {
+            isMagic = isMagic,
+            attackPower = isMagic ? attacker.Magic : attacker.Strength,
+            might = weapon != null ? weapon.might : 0,
+            triangle = CombatRules.GetTriangleModifier(attacker, defender),
+            guardPower = isMagic ? defender.Resistance : defender.Defense,
+            terrainDefense = defTile != null ? defTile.DefenseBonus : 0,
+        };
     }
 
-    /// <summary>
-    /// 攻撃側の武器が防御側の武器に対し有利なら +、不利なら −、それ以外 0。
-    /// </summary>
-    private static int GetTriangleBonus(WeaponData attacker, WeaponData defender)
+    /// <summary>最終ダメージだけが欲しいときの窓口。</summary>
+    public static int Calculate(Unit attacker, Unit defender, GridManager grid)
     {
-        if (attacker == null || defender == null) return 0;
-
-        if (Beats(attacker.type, defender.type)) return WeaponTriangleBonus;
-        if (Beats(defender.type, attacker.type)) return -WeaponTriangleBonus;
-        return 0;
-    }
-
-    /// <summary>x が y に三すくみで勝つか（剣＞斧＞槍＞剣）。</summary>
-    private static bool Beats(WeaponType x, WeaponType y)
-    {
-        return (x == WeaponType.Sword && y == WeaponType.Axe)
-            || (x == WeaponType.Axe && y == WeaponType.Lance)
-            || (x == WeaponType.Lance && y == WeaponType.Sword);
+        return CalculateBreakdown(attacker, defender, grid).Total;
     }
 }
