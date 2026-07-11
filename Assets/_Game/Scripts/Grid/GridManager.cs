@@ -1,6 +1,21 @@
 using UnityEngine;
 
 /// <summary>
+/// マスのハイライトの「種類」。1マスに複数の種類を重ねられ（多層管理）、
+/// 表示は優先度の高い順（Selection > TargetChoice > AttackRange > MoveRange > 基本色）。
+/// ある種類だけを消すと、下に重なっていた種類の色が現れる。
+/// </summary>
+[System.Flags]
+public enum HighlightKind
+{
+    None = 0,
+    MoveRange = 1 << 0,    // 移動できるマス（水色）
+    AttackRange = 1 << 1,  // 攻撃が届くマス（橙。将来の射程表示用）
+    TargetChoice = 1 << 2, // 攻撃対象の候補（赤）
+    Selection = 1 << 3,    // 選択中ユニットのマス（黄）
+}
+
+/// <summary>
 /// マス目マップを管理する「盤面」スクリプト。
 ///  ・指定した幅×高さのマスを「仮素材（色付きの四角）」で生成する
 ///  ・ワールド座標 ⇔ グリッド座標 の変換を行う
@@ -21,9 +36,20 @@ public class GridManager : MonoBehaviour
     [Tooltip("市松模様の暗い方の色")]
     public Color colorDark = new Color(0.70f, 0.70f, 0.70f);
 
+    [Header("ハイライト色")]
+    [Tooltip("選択中ユニットのマス")]
+    public Color selectionColor = new Color(1f, 0.9f, 0.4f);      // 黄
+    [Tooltip("攻撃対象の候補のマス")]
+    public Color targetChoiceColor = new Color(1f, 0.45f, 0.45f); // 赤
+    [Tooltip("攻撃が届くマス（将来の射程表示用）")]
+    public Color attackRangeColor = new Color(1f, 0.70f, 0.50f);  // 橙
+    [Tooltip("移動できるマス")]
+    public Color moveRangeColor = new Color(0.5f, 0.8f, 1f);      // 水色
+
     // ── 内部データ ──
     private TileData[,] tiles;                 // 各マスの論理データ
     private SpriteRenderer[,] cellRenderers;   // 各マスの見た目（色を変える用）
+    private HighlightKind[,] highlights;       // 各マスに重なっているハイライトの種類
     private Sprite squareSprite;               // コードで生成する白い四角スプライト
     private Vector3 originWorld;               // マス(0,0)の中心のワールド座標
 
@@ -44,6 +70,7 @@ public class GridManager : MonoBehaviour
     {
         tiles = new TileData[width, height];
         cellRenderers = new SpriteRenderer[width, height];
+        highlights = new HighlightKind[width, height];
 
         // グリッドの中心がこの GameObject の位置に来るよう、左下マスの基準点を計算
         originWorld = transform.position
@@ -114,19 +141,63 @@ public class GridManager : MonoBehaviour
 
     // ===== ハイライト（色変更）の道具 =====
 
-    /// <summary>全マスの色を、元の市松模様に戻す（ハイライトを消す）。</summary>
+    /// <summary>指定マスに指定種類のハイライトを重ねる。</summary>
+    public void AddHighlight(Vector2Int cell, HighlightKind kind)
+    {
+        if (!IsInside(cell)) return;
+        highlights[cell.x, cell.y] |= kind;
+        RepaintCell(cell.x, cell.y);
+    }
+
+    /// <summary>指定マスから指定種類のハイライトだけを外す（他の種類は残る）。</summary>
+    public void RemoveHighlight(Vector2Int cell, HighlightKind kind)
+    {
+        if (!IsInside(cell)) return;
+        highlights[cell.x, cell.y] &= ~kind;
+        RepaintCell(cell.x, cell.y);
+    }
+
+    /// <summary>盤面全体から指定種類のハイライトだけを消す（例：移動範囲だけ消す）。</summary>
+    public void ClearHighlights(HighlightKind kind)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                highlights[x, y] &= ~kind;
+                RepaintCell(x, y);
+            }
+        }
+    }
+
+    /// <summary>全マスの全ハイライトを消して、元の市松模様に戻す。</summary>
     public void ResetAllHighlights()
     {
         for (int x = 0; x < width; x++)
+        {
             for (int y = 0; y < height; y++)
-                cellRenderers[x, y].color = GetDefaultColor(x, y);
+            {
+                highlights[x, y] = HighlightKind.None;
+                RepaintCell(x, y);
+            }
+        }
     }
 
-    /// <summary>指定マスを好きな色に塗る（ハイライト表示）。</summary>
-    public void SetHighlight(Vector2Int cell, Color color)
+    /// <summary>そのマスの表示色を、重なっているハイライトの優先度に従って塗り直す。</summary>
+    private void RepaintCell(int x, int y)
     {
-        if (IsInside(cell))
-            cellRenderers[cell.x, cell.y].color = color;
+        cellRenderers[x, y].color = ResolveColor(x, y);
+    }
+
+    /// <summary>重なっているハイライトのうち、最も優先度の高い色を返す（無ければ市松模様の色）。</summary>
+    private Color ResolveColor(int x, int y)
+    {
+        HighlightKind kinds = highlights[x, y];
+        if ((kinds & HighlightKind.Selection) != 0) return selectionColor;
+        if ((kinds & HighlightKind.TargetChoice) != 0) return targetChoiceColor;
+        if ((kinds & HighlightKind.AttackRange) != 0) return attackRangeColor;
+        if ((kinds & HighlightKind.MoveRange) != 0) return moveRangeColor;
+        return GetDefaultColor(x, y);
     }
 
     // ===== 仮素材スプライトの生成 =====
