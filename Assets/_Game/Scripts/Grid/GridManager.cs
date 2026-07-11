@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// マスのハイライトの「種類」。1マスに複数の種類を重ねられ（多層管理）、
@@ -31,10 +32,12 @@ public class GridManager : MonoBehaviour
     public float cellSize = 1f;     // 1マスの大きさ（ワールド単位）
 
     [Header("見た目（仮素材）")]
-    [Tooltip("市松模様の明るい方の色")]
-    public Color colorLight = new Color(0.85f, 0.85f, 0.85f);
-    [Tooltip("市松模様の暗い方の色")]
-    public Color colorDark = new Color(0.70f, 0.70f, 0.70f);
+    [Tooltip("市松模様の暗い方のマスに掛ける明るさ（地形色 × この値。1で市松なし）")]
+    [Range(0.5f, 1f)]
+    public float checkerDarken = 0.85f;
+    [Tooltip("ハイライト色を地形色にどれだけ混ぜるか（1で地形色を完全に上書き）")]
+    [Range(0f, 1f)]
+    public float highlightBlend = 0.7f;
 
     [Header("ハイライト色")]
     [Tooltip("選択中ユニットのマス")]
@@ -103,10 +106,74 @@ public class GridManager : MonoBehaviour
         return sr;
     }
 
-    /// <summary>市松模様になるよう、マスの基本色を返す。</summary>
+    // 地形が未設定（ApplyTerrain 前や記号不明）のときに使う平地相当の色
+    private static readonly Color FallbackColor = new Color(0.85f, 0.85f, 0.85f);
+
+    /// <summary>マスの基本色（地形色 × 市松模様の明暗）を返す。</summary>
     private Color GetDefaultColor(int x, int y)
     {
-        return ((x + y) % 2 == 0) ? colorLight : colorDark;
+        TerrainDef terrain = tiles[x, y].Terrain;
+        Color baseColor = terrain != null ? terrain.color : FallbackColor;
+        if ((x + y) % 2 == 0) return baseColor;
+
+        // 暗い方のマスは地形色を少し暗くする（市松模様で座標が読みやすくなる）
+        Color dark = baseColor * checkerDarken;
+        dark.a = 1f;
+        return dark;
+    }
+
+    // ===== 地形の適用（Phase 13） =====
+
+    /// <summary>
+    /// StageData の文字マップ（terrainRows）を読んで、各マスに地形を割り当てて色を塗る。
+    /// BattleSetup が Start で呼ぶ（グリッドは Awake で生成済みなので順序は安全）。
+    /// 行数・文字数の不一致や未知の記号は警告を出して「平地扱い」にする。
+    /// </summary>
+    public void ApplyTerrain(StageData stage)
+    {
+        if (stage == null || stage.terrainTable == null)
+        {
+            Debug.LogWarning("GridManager: StageData か TerrainTable が未設定のため、全マスを平地扱いにします。");
+            return;
+        }
+
+        TerrainTable table = stage.terrainTable;
+
+        if (stage.terrainRows == null || stage.terrainRows.Count != height)
+        {
+            int rows = stage.terrainRows != null ? stage.terrainRows.Count : 0;
+            Debug.LogWarning($"GridManager: terrainRows の行数({rows})が盤面の高さ({height})と違います。全マスを平地扱いにします。");
+            return;
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            // リストの先頭が「盤面の一番上の行」なので、y 座標（下が0）とは上下逆になる
+            string row = stage.terrainRows[height - 1 - y];
+
+            if (row == null || row.Length != width)
+            {
+                Debug.LogWarning($"GridManager: terrainRows の {height - 1 - y} 行目の文字数が盤面の幅({width})と違います。この行は平地扱いにします。");
+                for (int x = 0; x < width; x++) tiles[x, y].Terrain = table.DefaultTerrain;
+                continue;
+            }
+
+            for (int x = 0; x < width; x++)
+            {
+                TerrainDef def = table.FindBySymbol(row[x]);
+                if (def == null)
+                {
+                    Debug.LogWarning($"GridManager: マス({x},{y}) の記号 '{row[x]}' が TerrainTable にありません。平地扱いにします。");
+                    def = table.DefaultTerrain;
+                }
+                tiles[x, y].Terrain = def;
+            }
+        }
+
+        // 地形色で全マスを塗り直す
+        for (int x = 0; x < width; x++)
+            for (int y = 0; y < height; y++)
+                RepaintCell(x, y);
     }
 
     // ===== 座標変換・問い合わせ =====
@@ -189,15 +256,51 @@ public class GridManager : MonoBehaviour
         cellRenderers[x, y].color = ResolveColor(x, y);
     }
 
-    /// <summary>重なっているハイライトのうち、最も優先度の高い色を返す（無ければ市松模様の色）。</summary>
+    /// <summary>
+    /// 重なっているハイライトのうち最も優先度の高い色を、地形色に混ぜて返す（無ければ地形色そのまま）。
+    /// 完全な上書きではなく Color.Lerp で混ぜることで、ハイライト中でも下の地形が判別できる。
+    /// </summary>
     private Color ResolveColor(int x, int y)
     {
+        Color baseColor = GetDefaultColor(x, y);
+
         HighlightKind kinds = highlights[x, y];
-        if ((kinds & HighlightKind.Selection) != 0) return selectionColor;
-        if ((kinds & HighlightKind.TargetChoice) != 0) return targetChoiceColor;
-        if ((kinds & HighlightKind.AttackRange) != 0) return attackRangeColor;
-        if ((kinds & HighlightKind.MoveRange) != 0) return moveRangeColor;
-        return GetDefaultColor(x, y);
+        Color highlightColor;
+        if ((kinds & HighlightKind.Selection) != 0) highlightColor = selectionColor;
+        else if ((kinds & HighlightKind.TargetChoice) != 0) highlightColor = targetChoiceColor;
+        else if ((kinds & HighlightKind.AttackRange) != 0) highlightColor = attackRangeColor;
+        else if ((kinds & HighlightKind.MoveRange) != 0) highlightColor = moveRangeColor;
+        else return baseColor;
+
+        return Color.Lerp(baseColor, highlightColor, highlightBlend);
+    }
+
+    // ===== カーソル下のマスの地形情報（画面左下に1行表示） =====
+
+    void OnGUI()
+    {
+        if (tiles == null || Mouse.current == null) return;
+
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        Vector2 mousePos = Mouse.current.position.ReadValue();
+        Vector3 world = cam.ScreenToWorldPoint(mousePos);
+        if (!TryWorldToCell(world, out Vector2Int cell)) return;
+
+        TileData tile = GetTile(cell);
+        string name = tile.Terrain != null ? tile.Terrain.displayName : "平地";
+        string text = tile.IsWalkable
+            ? $"{name}　移動コスト {tile.MoveCost}　地形防御 +{tile.DefenseBonus}"
+            : $"{name}　通行不可";
+
+        var style = new GUIStyle(GUI.skin.box)
+        {
+            alignment = TextAnchor.MiddleLeft,
+            fontSize = 14,
+            padding = new RectOffset(8, 8, 2, 2),
+        };
+        GUI.Box(new Rect(12, Screen.height - 36, 280, 26), text, style);
     }
 
     // ===== 仮素材スプライトの生成 =====

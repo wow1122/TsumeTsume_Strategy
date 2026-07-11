@@ -11,28 +11,22 @@ public class TileData
     public Vector2Int GridPosition { get; private set; }
 
     /// <summary>
-    /// 通行可能かどうか。今は常に true。
-    /// 後のフェーズで「壁」などを表現するときに使います。
+    /// このマスの地形定義（Phase 13）。GridManager.ApplyTerrain が設定する。
+    /// null のときは「平地相当」（通行可・コスト1・防御0）として扱う。
     /// </summary>
-    public bool IsWalkable = true;
+    public TerrainDef Terrain;
 
-    /// <summary>
-    /// このマスに入るのに必要な移動コスト。今は常に 1。
-    /// 後のフェーズで地形（森=2 など）を入れるときに使います。
-    /// </summary>
-    public int MoveCost = 1;
+    /// <summary>通行可能かどうか（壁だけ false）。</summary>
+    public bool IsWalkable => Terrain == null || Terrain.isWalkable;
 
-    /// <summary>
-    /// このマスにいる防御側が得る防御ボーナス（地形効果）。今は常に 0。
-    /// Phase 5b で森・山などの地形を入れるときに使います。
-    /// </summary>
-    public int DefenseBonus = 0;
+    /// <summary>このマスに入るのに必要な移動コスト（平地1・森2など）。</summary>
+    public int MoveCost => Terrain != null ? Terrain.moveCost : 1;
+
+    /// <summary>このマスにいる防御側が得る防御ボーナス（地形効果）。</summary>
+    public int DefenseBonus => Terrain != null ? Terrain.defenseBonus : 0;
 
     /// <summary>このマスにいるユニット（いなければ null）。</summary>
     public Unit Occupant;
-
-    // ── 今後ここに追加していく予定 ──
-    //  public TerrainData Terrain;   // 地形（移動コスト・防御補正）
 
     public TileData(Vector2Int gridPosition)
     {

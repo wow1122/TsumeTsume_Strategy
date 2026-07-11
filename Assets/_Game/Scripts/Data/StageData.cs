@@ -21,4 +21,12 @@ public class StageData : ScriptableObject
 
     [Tooltip("このステージに配置するユニットの一覧")]
     public List<Placement> placements = new List<Placement>();
+
+    [Header("地形（Phase 13）")]
+    [Tooltip("地形定義の一覧表（TerrainTable アセット）")]
+    public TerrainTable terrainTable;
+
+    [Tooltip("地形の文字マップ。1行が盤面の横1列で、リストの先頭が「盤面の一番上の行」。\n" +
+             "記号は TerrainTable で定義（例: .=平地 F=森 M=山 T=砦 #=壁）")]
+    public List<string> terrainRows = new List<string>();
 }

@@ -29,6 +29,9 @@ public class BattleSetup : MonoBehaviour
             return;
         }
 
+        // 先に地形を盤面へ適用してから、ユニットを配置する（Phase 13）
+        grid.ApplyTerrain(stage);
+
         foreach (StageData.Placement entry in stage.placements)
         {
             if (entry.unitData == null) continue;
@@ -40,6 +43,11 @@ public class BattleSetup : MonoBehaviour
             }
 
             TileData tile = grid.GetTile(entry.cell);
+            if (tile != null && !tile.IsWalkable)
+            {
+                Debug.LogWarning($"マス {entry.cell} は通行不可の地形です。スキップします。");
+                continue;
+            }
             if (tile != null && tile.Occupant != null)
             {
                 Debug.LogWarning($"マス {entry.cell} はすでに埋まっています。スキップします。");

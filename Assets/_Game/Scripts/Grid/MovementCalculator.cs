@@ -3,8 +3,9 @@ using UnityEngine;
 
 /// <summary>
 /// ユニットが移動できるマスの集合を計算する（経路探索）。
-/// 幅優先探索（BFS）で、移動力の範囲内に到達できるマスを調べます。
-/// 移動コストは各マスの MoveCost を使うので、後で地形(森=2など)を入れても動きます。
+/// Phase 13 からマスごとに移動コストが違う（森=2 など）ので、
+/// 「累計コストが小さいマスから順に調べる」ダイクストラ法を使います。
+/// これで「森を突っ切るより平地の遠回りが安い」経路も正しく見つかります。
 /// </summary>
 public static class MovementCalculator
 {
@@ -13,6 +14,16 @@ public static class MovementCalculator
     {
         Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right
     };
+
+    /// <summary>
+    /// unit がこのマスに入るときの移動コスト。
+    /// 今は地形のコストそのまま（全兵種共通）。
+    /// Phase 14 で「飛翔中は常に 1」をここに差し込む予定の拡張点。
+    /// </summary>
+    public static int GetMoveCost(Unit unit, TileData tile)
+    {
+        return tile.MoveCost;
+    }
 
     /// <summary>
     /// unit が移動できるマスの集合を返す（出発マスは含めない）。
@@ -28,7 +39,7 @@ public static class MovementCalculator
     /// <summary>
     /// 移動予算（moveBudget）を指定する版。救出後の再移動は
     /// 「移動力 − すでに使った移動コスト」を予算にして呼ぶ（Phase 11）。
-    /// costOut を渡すと、到達できる各マスまでの移動コストを書き込んで返す
+    /// costOut を渡すと、到達できる各マスまでの最短移動コストを書き込んで返す
     /// （呼び出し側が「どこまで移動したらコストいくつ使ったか」を記録できる）。
     /// </summary>
     public static HashSet<Vector2Int> GetReachableCells(
@@ -36,19 +47,32 @@ public static class MovementCalculator
     {
         var reachable = new HashSet<Vector2Int>();
         var costSoFar = new Dictionary<Vector2Int, int>();
-        var frontier = new Queue<Vector2Int>();
+        var open = new List<Vector2Int>();      // まだ展開していないマス（探索候補）
+        var done = new HashSet<Vector2Int>();   // 最短コストが確定したマス
 
         Vector2Int start = unit.GridPosition;
         costSoFar[start] = 0;
-        frontier.Enqueue(start);
+        open.Add(start);
 
-        while (frontier.Count > 0)
+        while (open.Count > 0)
         {
-            Vector2Int current = frontier.Dequeue();
+            // 候補の中から累計コストが最小のマスを取り出す（ダイクストラ法の核心）。
+            // 10x10 程度の盤面なので、リストの全走査で十分速い。
+            int best = 0;
+            for (int i = 1; i < open.Count; i++)
+            {
+                if (costSoFar[open[i]] < costSoFar[open[best]]) best = i;
+            }
+            Vector2Int current = open[best];
+            open.RemoveAt(best);
+
+            // 同じマスが複数回 open に入ることがあるので、確定済みなら飛ばす
+            if (!done.Add(current)) continue;
 
             foreach (Vector2Int dir in Directions)
             {
                 Vector2Int next = current + dir;
+                if (done.Contains(next)) continue;     // すでに最短が確定
 
                 TileData tile = grid.GetTile(next);
                 if (tile == null) continue;            // 盤外
@@ -62,14 +86,14 @@ public static class MovementCalculator
                     occupiedByAlly = true;
                 }
 
-                int newCost = costSoFar[current] + tile.MoveCost;
+                int newCost = costSoFar[current] + GetMoveCost(unit, tile);
                 if (newCost > moveBudget) continue; // 移動力（予算）オーバー
 
                 // 未到達、またはより安い経路が見つかったら更新
                 if (!costSoFar.ContainsKey(next) || newCost < costSoFar[next])
                 {
                     costSoFar[next] = newCost;
-                    frontier.Enqueue(next);
+                    open.Add(next);
                     if (!occupiedByAlly) reachable.Add(next); // 味方マスには止まれない
                 }
             }
