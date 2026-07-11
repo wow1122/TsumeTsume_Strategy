@@ -8,8 +8,8 @@
 バーティカルスライス完成（Phase 0〜7）、Phase 8（データ基盤刷新）、
 Phase 9（前衛・後衛武器と新三すくみ、CombatRules による判定一元化）、
 Phase 10（コマンドメニューUI・移動取り消し）、
-Phase 11（救出システム）まで Play 確認済み・コミット済み。
-次は Phase 12（輸送隊）。着手前にプランファイルの確認事項 (a)〜(c) を作者と合意すること。
+Phase 11（救出システム）、Phase 12（輸送隊・輸送隊死亡で敗北）まで Play 確認済み・コミット済み。
+次は Phase 13（地形）。
 
 全体計画（Phase 8〜15 ロードマップ）は
 `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md` 参照（WSL側）。
@@ -63,6 +63,22 @@ Phase 11（救出システム）まで Play 確認済み・コミット済み。
   生存数（CountAlive）には数える → 「救出中の騎兵＋格納歩兵」だけでも敗北しない
 - 可否判定は RescueRules に一元化（CombatRules と同じ方針）
 
+### 輸送隊の合意仕様（Phase 12・2026-07-11 作者合意）
+
+- 輸送隊は容量4。騎乗ユニット（騎兵・飛行兵）も救出・引き受けできる（通常の騎乗兵は歩兵のみ）
+- 誰も輸送隊を救出できない。輸送隊自身も他へ格納されない（乗り込みも不可）
+- 入れ子救出は禁止：貨物を持っているユニットは救出・乗り込みの対象にならない（合意(a)）
+- 乗り込む：輸送隊に隣接した歩兵・騎乗兵が自分から格納される。
+  自分は行動終了、輸送隊の行動は消費しない
+- 貨物が複数のとき、降ろす・引き受け・代わりに降ろすは貨物リスト（CargoListMenu）から
+  対象を選ぶ。1体だけなら自動選択でリストは出ない
+- 引き受けの種別制限：通常の騎乗兵が受け取れるのは歩兵の貨物のみ。輸送隊は何でも受け取れる
+- **味方の輸送隊が倒されたら敗北（ゲームオーバー）**。貨物の有無は問わない。
+  FE上級者向けに自由度より機能・挙動を守る方針（作者）。
+  通常の騎乗兵の死亡は従来どおり（貨物はその場に降ろされて生存、ゲームは続く）
+- 輸送隊は当面プレイヤー専用（敵AIは救出系を使わないため。合意(c)）
+- 輸送隊は武器なしユニット（攻撃コマンドが出ない。Phase 9 の武装無し分岐の実地例）
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -75,12 +91,14 @@ Phase 11（救出システム）まで Play 確認済み・コミット済み。
 
 ## コード構成（Assets/_Game/Scripts/）
 
-- Core/ … BattleController(操作の司令塔・6状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect),
+- Core/ … BattleController(操作の司令塔・7状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect),
   ActionContext(1行動の文脈・移動取り消し・再移動予算・取り消し不能点Commit), TurnManager(フェイズ・勝敗・簡易UI), BattleSetup(StageDataを読んで初期配置)
 - Grid/ … GridManager(盤面・座標変換・多層ハイライト・HighlightKind), TileData(1マスの論理データ), MovementCalculator(BFS移動範囲・味方すり抜け)
-- UI/ … ActionMenu(IMGUI行動メニュー。Entryリスト駆動・BattleControllerが自動生成)
+- UI/ … ActionMenu(IMGUI行動メニュー。Entryリスト駆動・BattleControllerが自動生成),
+  CargoListMenu(貨物リスト選択。名前+HP表示・BattleControllerが自動生成)
 - Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried), UnitClass(兵種enum+IsMounted),
-  RescueRules(救出系コマンドの可否判定一元化), UnitRegistry(全ユニットの名簿), Faction(陣営enum)
+  RescueRules(救出系コマンドの可否判定一元化・乗り込む判定・死亡時配置先探索FindReleaseCells),
+  UnitRegistry(全ユニットの名簿・輸送隊死亡フラグPlayerTransporterLost), Faction(陣営enum)
 - Combat/ … CombatSystem(攻撃解決・挟撃・ガード・反撃フック・PredictTotalDamage), CombatRules(射程・三すくみ・挟撃可否の一元判定),
   DamageCalculator(物理/魔法分岐・DamageBreakdown内訳), WeaponType, WeaponCategory(前衛/後衛)
 - Data/ … UnitData(7能力値+兵種), WeaponData, StageData(初期配置) (ScriptableObject定義)
@@ -89,15 +107,15 @@ Phase 11（救出システム）まで Play 確認済み・コミット済み。
 
 アセット実体: Assets/_Game/Data/
 （Unit_Player, Unit_Enemy, Unit_Player_Archer, Unit_Player_Mage, Unit_Player_Cavalry,
-  Unit_Enemy_Lancer, Unit_Enemy_Archer, W_Sword, W_Axe, W_Lance, W_Bow, W_Tome, Stage_Test）
+  Unit_Player_Transport, Unit_Enemy_Lancer, Unit_Enemy_Archer,
+  W_Sword, W_Axe, W_Lance, W_Bow, W_Tome, Stage_Test）
 シーン: Assets/_Game/Scenes/BattleScene.unity
 
 ## 次にやること
 
 ロードマップ（上記プランファイル）に従って進行:
-- Phase 12: 輸送隊 ← 次はここ。着手前にプランの確認事項 (a)〜(c)（入れ子救出の禁止、
-  輸送隊死亡時の複数貨物、当面プレイヤー専用か）を作者と合意してから実装する
-- Phase 13: 地形 → Phase 14: 空中移動（飛翔） → Phase 15: 統合仕上げ（Phase 13 は前倒し可）
+- Phase 13: 地形 ← 次はここ（TerrainType/TerrainTable・文字マップ・移動コスト・地形防御・色分け）
+- Phase 14: 空中移動（飛翔） → Phase 15: 統合仕上げ
 
 ## 環境・運用の注意
 
