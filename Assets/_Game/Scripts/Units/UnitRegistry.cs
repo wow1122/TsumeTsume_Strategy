@@ -14,12 +14,27 @@ public static class UnitRegistry
 {
     private static readonly List<Unit> units = new List<Unit>();
 
+    /// <summary>
+    /// 味方の輸送隊が倒されたか（Phase 12・敗北条件）。
+    /// 死亡と同時に名簿から消えるため、後から数えても分からない。
+    /// そこで Unit.Die() が死亡の瞬間にここへ記録し、勝敗判定（TurnManager）が読む。
+    /// </summary>
+    public static bool PlayerTransporterLost { get; private set; }
+
     // Enter Play Mode Options（ドメインリロード無効）でも、static な名簿が
     // 前回プレイの内容を引きずらないよう、プレイ開始のたびに空にする。
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
     {
         units.Clear();
+        PlayerTransporterLost = false;
+    }
+
+    /// <summary>戦闘不能の発生を記録する（Unit.Die から呼ばれる）。</summary>
+    public static void NotifyDeath(Unit unit)
+    {
+        if (unit.Faction == Faction.Player && unit.Class == UnitClass.Transporter)
+            PlayerTransporterLost = true;
     }
 
     /// <summary>名簿に登録する（Unit.Initialize から呼ばれる）。</summary>

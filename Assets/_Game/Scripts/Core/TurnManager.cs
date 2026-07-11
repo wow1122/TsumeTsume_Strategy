@@ -99,7 +99,10 @@ public class TurnManager : MonoBehaviour
 
     // ===== 勝敗判定 =====
 
-    /// <summary>敵全滅で勝ち、味方全滅で負け。決着済みなら何もしない。</summary>
+    /// <summary>
+    /// 敵全滅で勝ち、味方全滅で負け。味方の輸送隊が倒されても負け（Phase 12・作者合意）。
+    /// 決着済みなら何もしない。
+    /// </summary>
     private void CheckGameEnd()
     {
         if (IsGameOver) return;
@@ -112,6 +115,11 @@ public class TurnManager : MonoBehaviour
         {
             Result = GameResult.Win;
             Debug.Log("★ 勝利！ 敵を全滅させた ★");
+        }
+        else if (UnitRegistry.PlayerTransporterLost)
+        {
+            Result = GameResult.Lose;
+            Debug.Log("× 敗北… 輸送隊が倒された ×");
         }
         else if (players == 0)
         {

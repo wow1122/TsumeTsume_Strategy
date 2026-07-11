@@ -193,16 +193,24 @@ public class Unit : MonoBehaviour
             if (tile != null && tile.Occupant == this) tile.Occupant = null;
         }
 
-        // 貨物はその場（死亡したマス）に降ろされて生存する（作者合意(a)）。
-        // 自分の占有を外した後なので、死亡マスは空いている。
-        // ※Phase 11 は最大1体。複数貨物（輸送隊）の死亡時処理は Phase 12 で拡張する。
+        // 貨物は全員生存し、死亡マス → 隣接 → さらに外側の最寄り空きマスの順に降ろされる
+        // （Phase 11 合意(a) + Phase 12 合意(b)）。自分の占有を外した後なので、死亡マスは空いている。
         if (IsRescuing && grid != null)
         {
-            Unit cargo = Carried[0];
-            ReleaseUnitAt(cargo, grid, GridPosition);
-            Debug.Log($"{Data.unitName} が倒れ、{cargo.Data.unitName} は {GridPosition} に降ろされた");
+            List<Vector2Int> cells = RescueRules.FindReleaseCells(GridPosition, Carried.Count, grid);
+            foreach (Vector2Int cell in cells)
+            {
+                Unit cargo = Carried[0];
+                ReleaseUnitAt(cargo, grid, cell);
+                Debug.Log($"{Data.unitName} が倒れ、{cargo.Data.unitName} は {cell} に降ろされた");
+            }
+
+            // 盤面が埋まり尽くして置き場が無い場合の保険（通常は起こらない）
+            if (IsRescuing)
+                Debug.LogWarning($"{Data.unitName} の貨物 {Carried.Count} 体は空きマスが無く降ろせなかった");
         }
 
+        UnitRegistry.NotifyDeath(this); // 味方輸送隊の死亡＝敗北（Phase 12）を勝敗判定へ伝える
         UnitRegistry.Unregister(this);
         Debug.Log($"{Data.unitName} は戦闘不能になった");
         Destroy(gameObject);
@@ -261,8 +269,10 @@ public class Unit : MonoBehaviour
         style.normal.textColor = Color.white;
 
         // GUI座標は左上原点・Y下向きなので、スクリーンYを反転する
-        // 救出中は HP の横に「救」を添える（例: 「20 救」）
-        string label = IsRescuing ? $"{CurrentHP} 救" : CurrentHP.ToString();
+        // 救出中は HP の横に「救」を添える（例: 「20 救」。複数格納中は「救x2」のように数も出す）
+        string label = CurrentHP.ToString();
+        if (IsRescuing)
+            label += Carried.Count > 1 ? $" 救x{Carried.Count}" : " 救";
         var rect = new Rect(sp.x - 30, Screen.height - sp.y - 12, 60, 22);
         GUI.Label(rect, label, style);
     }

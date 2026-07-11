@@ -18,6 +18,11 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  「代わりに降ろす」→ 救出中の味方を選択 → その隣の空きマスを選択 → 行動終了（歩兵専用）
 ///  救出・引き受けを実行すると「取り消し不能」になり、以後は選択解除できない
 ///  （選択解除できると移動力を使い直せてしまうため）。
+///
+/// Phase 12（輸送隊）で追加された流れ：
+///  「乗り込む」→ 隣接する輸送隊を選択 → 自分が格納されて行動終了（輸送隊の行動は消費しない）
+///  貨物が複数のとき、「降ろす」「引き受け」「代わりに降ろす」は貨物リスト【CargoSelect】から
+///  対象を選ぶ（1体だけなら自動選択でリストは出ない）。
 /// </summary>
 public class BattleController : MonoBehaviour
 {
@@ -28,14 +33,16 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect }
+    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect }
     private State state = State.Idle;
 
-    // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）が「どのコマンドのためか」
-    private enum UnitSelectPurpose { Rescue, TakeOver, ProxyDropCarrier }
+    // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
+    private enum UnitSelectPurpose { Rescue, TakeOver, ProxyDropCarrier, Board }
     private enum TileSelectPurpose { Drop, ProxyDrop }
+    private enum CargoSelectPurpose { Drop, TakeOver, ProxyDrop }
     private UnitSelectPurpose unitSelectPurpose;
     private TileSelectPurpose tileSelectPurpose;
+    private CargoSelectPurpose cargoSelectPurpose;
 
     private ActionContext context;              // いま行動中のユニットの文脈（移動取り消し用）
     private HashSet<Vector2Int> reachableCells; // 移動できるマス
@@ -44,13 +51,18 @@ public class BattleController : MonoBehaviour
     private List<Unit> unitCandidates;          // 救出・引き受け・代わりに降ろすの相手候補
     private List<Vector2Int> tileCandidates;    // 降ろす先のマス候補
     private Unit proxyCarrier;                  // 「代わりに降ろす」で選んだ運び手
+    private Unit takeOverCarrier;               // 「引き受け」で選んだ運び手（貨物選択のあいだ保持）
+    private Unit selectedCargo;                 // 貨物リストで選んだ（または自動選択された）貨物
     private ActionMenu menu;                    // 行動メニュー（IMGUI）
+    private CargoListMenu cargoMenu;            // 貨物リストメニュー（IMGUI・Phase 12）
 
     void Awake()
     {
         // メニューは自分と同じ GameObject に自動で用意する（シーンへの追加作業を不要にするため）
         menu = GetComponent<ActionMenu>();
         if (menu == null) menu = gameObject.AddComponent<ActionMenu>();
+        cargoMenu = GetComponent<CargoListMenu>();
+        if (cargoMenu == null) cargoMenu = gameObject.AddComponent<CargoListMenu>();
     }
 
     void Update()
@@ -76,9 +88,9 @@ public class BattleController : MonoBehaviour
 
         if (Mouse.current == null || Camera.main == null) return;
 
-        // メニュー表示中のセルクリックは無効。ボタンの処理は ActionMenu（IMGUI）側が
+        // メニュー表示中のセルクリックは無効。ボタンの処理は ActionMenu / CargoListMenu（IMGUI）側が
         // 行うので、ここで盤面まで反応すると二重処理になるのを防ぐ
-        if (state == State.CommandMenu) return;
+        if (state == State.CommandMenu || state == State.CargoSelect) return;
 
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -148,11 +160,15 @@ public class BattleController : MonoBehaviour
                     switch (unitSelectPurpose)
                     {
                         case UnitSelectPurpose.Rescue: ExecuteRescue(clickedUnit); break;
-                        case UnitSelectPurpose.TakeOver: ExecuteTakeOver(clickedUnit); break;
+                        case UnitSelectPurpose.TakeOver:
+                            takeOverCarrier = clickedUnit;
+                            EnterTakeOverCargoSelect();
+                            break;
                         case UnitSelectPurpose.ProxyDropCarrier:
                             proxyCarrier = clickedUnit;
-                            EnterProxyDropTileSelect();
+                            EnterProxyDropCargoSelect();
                             break;
+                        case UnitSelectPurpose.Board: ExecuteBoard(clickedUnit); break;
                     }
                 }
                 break;
@@ -181,9 +197,31 @@ public class BattleController : MonoBehaviour
                 break;
 
             case State.TileSelect:
-                // 「代わりに降ろす」のマス選択からは、運び手の選択へ1段階戻る
-                if (tileSelectPurpose == TileSelectPurpose.ProxyDrop) EnterProxyCarrierSelect();
-                else OpenCommandMenu();
+                // マス選択からは1段階戻る。貨物リストを経由していた（貨物が複数だった）なら
+                // リストへ、そうでなければさらに前の段階へ戻る
+                if (tileSelectPurpose == TileSelectPurpose.ProxyDrop)
+                {
+                    if (RescueRules.GetProxyDropCargoes(context.unit, proxyCarrier).Count > 1)
+                        EnterProxyDropCargoSelect();
+                    else
+                        EnterProxyCarrierSelect();
+                }
+                else
+                {
+                    if (context.unit.Carried.Count > 1) EnterDropCargoSelect();
+                    else OpenCommandMenu();
+                }
+                break;
+
+            case State.CargoSelect:
+                // 貨物リストから1段階戻る
+                cargoMenu.Hide();
+                switch (cargoSelectPurpose)
+                {
+                    case CargoSelectPurpose.Drop: OpenCommandMenu(); break;
+                    case CargoSelectPurpose.TakeOver: EnterTakeOverCarrierSelect(); break;
+                    case CargoSelectPurpose.ProxyDrop: EnterProxyCarrierSelect(); break;
+                }
                 break;
 
             case State.CommandMenu:
@@ -263,9 +301,8 @@ public class BattleController : MonoBehaviour
         // 引き受けを使った後は「降ろす / 待機」だけ（合意(f)）
         if (context.usedTakeOver)
         {
-            tileCandidates = RescueRules.GetDropCells(unit, grid);
-            if (unit.IsRescuing && tileCandidates.Count > 0)
-                commands.Add(new ActionMenu.Entry("降ろす", EnterDropTileSelect));
+            if (unit.IsRescuing && RescueRules.GetDropCells(unit, grid).Count > 0)
+                commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
         }
@@ -274,24 +311,26 @@ public class BattleController : MonoBehaviour
         if (attackTargets.Count > 0)
             commands.Add(new ActionMenu.Entry("攻撃", EnterTargetSelect));
 
-        // 救出：騎乗ユニットが、隣接する同陣営の歩兵を格納する（救出中の攻撃は可＝合意(d)）
+        // 救出：騎乗ユニットが、隣接する同陣営の歩兵を格納する（救出中の攻撃は可＝合意(d)。
+        // 輸送隊は騎乗ユニットも救出できる＝Phase 12）
         List<Unit> rescueTargets = RescueRules.FindRescueTargets(unit, grid);
         if (rescueTargets.Count > 0)
             commands.Add(new ActionMenu.Entry("救出", () => EnterUnitTargetSelect(UnitSelectPurpose.Rescue, rescueTargets)));
 
+        // 乗り込む：隣接する輸送隊に自分から格納される（Phase 12。自分は行動終了）
+        List<Unit> transporters = RescueRules.FindBoardTransporters(unit, grid);
+        if (transporters.Count > 0)
+            commands.Add(new ActionMenu.Entry("乗り込む", () => EnterUnitTargetSelect(UnitSelectPurpose.Board, transporters)));
+
         // 降ろす：救出中で、隣に空きマスがあるとき（救出と同一行動では不可＝合意(e)。
         // usedRescue のときは上で分岐済みなので、ここに来るのは前のターンに救出した場合）
-        if (unit.IsRescuing)
-        {
-            tileCandidates = RescueRules.GetDropCells(unit, grid);
-            if (tileCandidates.Count > 0)
-                commands.Add(new ActionMenu.Entry("降ろす", EnterDropTileSelect));
-        }
+        if (unit.IsRescuing && RescueRules.GetDropCells(unit, grid).Count > 0)
+            commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
 
         // 引き受け：隣接する救出中の味方から貨物をもらう
-        List<Unit> carriers = RescueRules.FindTakeOverCarriers(unit, grid);
-        if (carriers.Count > 0)
-            commands.Add(new ActionMenu.Entry("引き受け", () => EnterUnitTargetSelect(UnitSelectPurpose.TakeOver, carriers)));
+        // （通常の騎乗ユニットは歩兵の貨物のみ。輸送隊は何でも＝Phase 12）
+        if (RescueRules.FindTakeOverCarriers(unit, grid).Count > 0)
+            commands.Add(new ActionMenu.Entry("引き受け", EnterTakeOverCarrierSelect));
 
         // 代わりに降ろす：歩兵が、隣接する救出中の味方の貨物を降ろしてあげる
         List<Unit> proxyCarriers = RescueRules.FindProxyDropCarriers(unit, grid);
@@ -331,11 +370,82 @@ public class BattleController : MonoBehaviour
     /// <summary>「代わりに降ろす」の最初の段階：どの運び手の貨物を降ろすかを選ぶ。</summary>
     private void EnterProxyCarrierSelect()
     {
-        // マス選択から戻ってきた場合もあるので、候補を取り直してハイライトも付け直す
+        // マス選択・貨物選択から戻ってきた場合もあるので、候補を取り直してハイライトも付け直す
         grid.ResetAllHighlights();
         grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
         EnterUnitTargetSelect(UnitSelectPurpose.ProxyDropCarrier,
                               RescueRules.FindProxyDropCarriers(context.unit, grid));
+    }
+
+    /// <summary>「引き受け」の最初の段階：どの運び手からもらうかを選ぶ。</summary>
+    private void EnterTakeOverCarrierSelect()
+    {
+        // 貨物選択から戻ってきた場合もあるので、候補を取り直してハイライトも付け直す
+        grid.ResetAllHighlights();
+        grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
+        EnterUnitTargetSelect(UnitSelectPurpose.TakeOver,
+                              RescueRules.FindTakeOverCarriers(context.unit, grid));
+    }
+
+    // ===== 貨物選択（Phase 12）=====
+    // 貨物が1体だけなら自動選択してリストは出さない。複数のときだけ CargoListMenu を開く。
+
+    /// <summary>「降ろす」の貨物選択：自分の貨物からどれを降ろすかを選ぶ。</summary>
+    private void EnterDropCargoSelect()
+    {
+        Unit unit = context.unit;
+        if (unit.Carried.Count == 1)
+        {
+            selectedCargo = unit.Carried[0];
+            EnterDropTileSelect();
+            return;
+        }
+        ShowCargoList(CargoSelectPurpose.Drop, unit, new List<Unit>(unit.Carried),
+                      cargo => { cargoMenu.Hide(); selectedCargo = cargo; EnterDropTileSelect(); });
+    }
+
+    /// <summary>「引き受け」の貨物選択：運び手の貨物からどれをもらうかを選ぶ。</summary>
+    private void EnterTakeOverCargoSelect()
+    {
+        List<Unit> cargoes = RescueRules.GetTakeOverCargoes(context.unit, takeOverCarrier);
+        if (cargoes.Count == 1)
+        {
+            ExecuteTakeOver(cargoes[0]);
+            return;
+        }
+        ShowCargoList(CargoSelectPurpose.TakeOver, takeOverCarrier, cargoes,
+                      cargo => { cargoMenu.Hide(); ExecuteTakeOver(cargo); });
+    }
+
+    /// <summary>「代わりに降ろす」の貨物選択：運び手の貨物からどれを降ろすかを選ぶ。</summary>
+    private void EnterProxyDropCargoSelect()
+    {
+        List<Unit> cargoes = RescueRules.GetProxyDropCargoes(context.unit, proxyCarrier);
+        if (cargoes.Count == 1)
+        {
+            selectedCargo = cargoes[0];
+            EnterProxyDropTileSelect();
+            return;
+        }
+        ShowCargoList(CargoSelectPurpose.ProxyDrop, proxyCarrier, cargoes,
+                      cargo => { cargoMenu.Hide(); selectedCargo = cargo; EnterProxyDropTileSelect(); });
+    }
+
+    /// <summary>貨物リストメニューを開いて CargoSelect 状態に入る（共通処理）。</summary>
+    private void ShowCargoList(CargoSelectPurpose purpose, Unit anchor, List<Unit> cargoes,
+                               System.Action<Unit> onSelect)
+    {
+        menu.Hide();
+        cargoSelectPurpose = purpose;
+
+        grid.ResetAllHighlights();
+        grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
+        if (anchor != context.unit)
+            grid.AddHighlight(anchor.GridPosition, HighlightKind.TargetChoice);
+
+        cargoMenu.Show(grid.CellToWorld(anchor.GridPosition), grid.cellSize, cargoes, onSelect);
+        state = State.CargoSelect;
+        Debug.Log($"貨物を選択（{cargoes.Count} 体）。右クリック/ESCで戻る。");
     }
 
     /// <summary>「降ろす」が選ばれた：自分の隣の空きマスを赤表示して、クリックを待つ。</summary>
@@ -384,25 +494,35 @@ public class BattleController : MonoBehaviour
             OpenCommandMenu(); // 動けるマスが無ければそのまま待機メニューへ
     }
 
-    /// <summary>引き受けを実行：運び手から貨物をもらい、メニューへ（降ろす/待機のみ）。</summary>
-    private void ExecuteTakeOver(Unit carrier)
+    /// <summary>引き受けを実行：運び手から選んだ貨物をもらい、メニューへ（降ろす/待機のみ）。</summary>
+    private void ExecuteTakeOver(Unit cargo)
     {
         Unit unit = context.unit;
-        Unit cargo = carrier.Carried[0];
-        carrier.RemoveCargo(cargo);
+        takeOverCarrier.RemoveCargo(cargo);
         unit.StoreUnit(cargo);
         context.usedTakeOver = true;
         context.Commit();
 
-        Debug.Log($"{unit.Data.unitName} は {carrier.Data.unitName} から {cargo.Data.unitName} を引き受けた");
+        Debug.Log($"{unit.Data.unitName} は {takeOverCarrier.Data.unitName} から {cargo.Data.unitName} を引き受けた");
         OpenCommandMenu();
     }
 
-    /// <summary>降ろすを実行：貨物を指定マスへ再配置し、行動を終える。</summary>
+    /// <summary>乗り込むを実行：自分が輸送隊に格納され、行動を終える（輸送隊の行動は消費しない）。</summary>
+    private void ExecuteBoard(Unit transporter)
+    {
+        Unit unit = context.unit;
+        transporter.StoreUnit(unit);
+
+        Debug.Log($"{unit.Data.unitName} は {transporter.Data.unitName} に乗り込んだ" +
+                  $"（積載 {transporter.Carried.Count}/{transporter.CarryCapacity}）");
+        FinishAction(); // 乗り込んだら自分の行動は終了（仕様）
+    }
+
+    /// <summary>降ろすを実行：選んだ貨物を指定マスへ再配置し、行動を終える。</summary>
     private void ExecuteDrop(Vector2Int cell)
     {
         Unit unit = context.unit;
-        Unit cargo = unit.Carried[0];
+        Unit cargo = selectedCargo;
         unit.ReleaseUnitAt(cargo, grid, cell);
         cargo.SetActed(true); // 降ろされたユニットはそのターン行動済み（合意(b)）
 
@@ -410,10 +530,10 @@ public class BattleController : MonoBehaviour
         FinishAction(); // 降ろしたら行動終了（作者合意）
     }
 
-    /// <summary>代わりに降ろすを実行：運び手の貨物を指定マスへ再配置し、自分の行動を終える。</summary>
+    /// <summary>代わりに降ろすを実行：運び手の選んだ貨物を指定マスへ再配置し、自分の行動を終える。</summary>
     private void ExecuteProxyDrop(Vector2Int cell)
     {
-        Unit cargo = proxyCarrier.Carried[0];
+        Unit cargo = selectedCargo;
         proxyCarrier.ReleaseUnitAt(cargo, grid, cell);
         cargo.SetActed(true); // 降ろされたユニットはそのターン行動済み（合意(b)）
 
@@ -444,6 +564,7 @@ public class BattleController : MonoBehaviour
     private void ClearSelection()
     {
         menu.Hide();
+        cargoMenu.Hide();
         grid.ResetAllHighlights();
         context = null;
         reachableCells = null;
@@ -451,6 +572,8 @@ public class BattleController : MonoBehaviour
         unitCandidates = null;
         tileCandidates = null;
         proxyCarrier = null;
+        takeOverCarrier = null;
+        selectedCargo = null;
         state = State.Idle;
     }
 
