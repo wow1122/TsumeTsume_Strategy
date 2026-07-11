@@ -23,8 +23,8 @@ public class ActionMenu : MonoBehaviour
     }
 
     [Header("見た目")]
-    [Tooltip("ボタン1個の幅（ピクセル）")]
-    public float buttonWidth = 110f;
+    [Tooltip("ボタン1個の幅（ピクセル）。「代わりに降ろす」(7文字)が収まる幅にしてある")]
+    public float buttonWidth = 150f;
     [Tooltip("ボタン1個の高さ（ピクセル）")]
     public float buttonHeight = 34f;
     [Tooltip("メニューの枠とボタンの間の余白（ピクセル）")]

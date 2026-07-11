@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
+  m_Name: Unit_Player_Cavalry
+  m_EditorClassIdentifier: Assembly-CSharp::UnitData
+  unitName: "味方騎兵"
+  faction: 0
+  unitClass: 1
+  maxHP: 22
+  strength: 6
+  magic: 0
+  skill: 5
+  speed: 5
+  defense: 3
+  resistance: 0
+  move: 6
+  weapon: {fileID: 11400000, guid: 9bd17bf5451e17949960a7fc64eb7eca, type: 2}

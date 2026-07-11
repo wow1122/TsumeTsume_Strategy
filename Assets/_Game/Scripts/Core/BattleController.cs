@@ -10,6 +10,14 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  3) 「攻撃」→ 対象の敵が赤表示 → クリックで戦闘【TargetSelect】／「待機」→ 行動終了
 /// キャンセル（右クリック / ESC）で1段階ずつ戻る：
 ///  対象選択 → メニュー（移動位置は保持）／メニュー → 移動を取り消して移動選択へ／移動選択 → 選択解除
+///
+/// Phase 11（救出）で追加された流れ：
+///  「救出」  → 対象の味方を選択【UnitTargetSelect】→ 格納 → 残り移動力で再移動 → 待機
+///  「降ろす」→ 隣の空きマスを選択【TileSelect】→ 再配置して行動終了
+///  「引き受け」→ 隣の救出中の味方を選択 → 貨物をもらう → 降ろす/待機のみ
+///  「代わりに降ろす」→ 救出中の味方を選択 → その隣の空きマスを選択 → 行動終了（歩兵専用）
+///  救出・引き受けを実行すると「取り消し不能」になり、以後は選択解除できない
+///  （選択解除できると移動力を使い直せてしまうため）。
 /// </summary>
 public class BattleController : MonoBehaviour
 {
@@ -20,12 +28,22 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect }
+    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect }
     private State state = State.Idle;
+
+    // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）が「どのコマンドのためか」
+    private enum UnitSelectPurpose { Rescue, TakeOver, ProxyDropCarrier }
+    private enum TileSelectPurpose { Drop, ProxyDrop }
+    private UnitSelectPurpose unitSelectPurpose;
+    private TileSelectPurpose tileSelectPurpose;
 
     private ActionContext context;              // いま行動中のユニットの文脈（移動取り消し用）
     private HashSet<Vector2Int> reachableCells; // 移動できるマス
+    private Dictionary<Vector2Int, int> moveCosts = new Dictionary<Vector2Int, int>(); // 各マスまでの移動コスト（再移動の予算計算用）
     private List<Unit> attackTargets;           // いまの位置から攻撃できる敵
+    private List<Unit> unitCandidates;          // 救出・引き受け・代わりに降ろすの相手候補
+    private List<Vector2Int> tileCandidates;    // 降ろす先のマス候補
+    private Unit proxyCarrier;                  // 「代わりに降ろす」で選んだ運び手
     private ActionMenu menu;                    // 行動メニュー（IMGUI）
 
     void Awake()
@@ -69,8 +87,8 @@ public class BattleController : MonoBehaviour
 
             if (grid.TryWorldToCell(worldPos, out Vector2Int cell))
                 OnCellClicked(cell);
-            else if (state == State.MoveSelect)
-                CancelAll(); // 盤外クリックで選択解除（対象選択中は無視）
+            else if (state == State.MoveSelect && !context.committed)
+                CancelAll(); // 盤外クリックで選択解除（取り消し不能後・対象選択中は無視）
         }
     }
 
@@ -99,18 +117,20 @@ public class BattleController : MonoBehaviour
                 }
                 else if (reachableCells.Contains(cell))
                 {
+                    context.moveCostUsed += moveCosts[cell]; // 再移動の予算計算のため消費を記録
                     context.unit.MoveTo(grid, cell);
                     context.hasMoved = true; // 移動後 → 後衛武器は基本射程（2マスちょうど）のみ
                     OpenCommandMenu();
                 }
-                else if (IsSelectablePlayer(clickedUnit))
+                else if (!context.committed && IsSelectablePlayer(clickedUnit))
                 {
                     EnterMoveSelect(clickedUnit); // 別の味方へ選択切替
                 }
-                else
+                else if (!context.committed)
                 {
                     CancelAll();
                 }
+                // 取り消し不能（救出済みなど）のときは範囲外クリックを無視
                 break;
 
             case State.TargetSelect:
@@ -120,6 +140,29 @@ public class BattleController : MonoBehaviour
                     FinishAction();
                 }
                 // 対象以外のクリックは無視（待機はメニューの「待機」から。誤クリックでの行動消費を防ぐ）
+                break;
+
+            case State.UnitTargetSelect:
+                if (clickedUnit != null && unitCandidates.Contains(clickedUnit))
+                {
+                    switch (unitSelectPurpose)
+                    {
+                        case UnitSelectPurpose.Rescue: ExecuteRescue(clickedUnit); break;
+                        case UnitSelectPurpose.TakeOver: ExecuteTakeOver(clickedUnit); break;
+                        case UnitSelectPurpose.ProxyDropCarrier:
+                            proxyCarrier = clickedUnit;
+                            EnterProxyDropTileSelect();
+                            break;
+                    }
+                }
+                break;
+
+            case State.TileSelect:
+                if (tileCandidates.Contains(cell))
+                {
+                    if (tileSelectPurpose == TileSelectPurpose.Drop) ExecuteDrop(cell);
+                    else ExecuteProxyDrop(cell);
+                }
                 break;
         }
     }
@@ -132,20 +175,30 @@ public class BattleController : MonoBehaviour
         switch (state)
         {
             case State.TargetSelect:
+            case State.UnitTargetSelect:
                 // 対象選択 → メニューへ戻る（移動した位置はそのまま保持）
                 OpenCommandMenu();
                 break;
 
+            case State.TileSelect:
+                // 「代わりに降ろす」のマス選択からは、運び手の選択へ1段階戻る
+                if (tileSelectPurpose == TileSelectPurpose.ProxyDrop) EnterProxyCarrierSelect();
+                else OpenCommandMenu();
+                break;
+
             case State.CommandMenu:
-                // メニュー → 移動を取り消して、元の位置から移動選択をやり直す
-                Unit unit = context.unit;
+                // メニュー → 移動を取り消して、移動選択をやり直す
+                // （救出・引き受けの後なら「取り消し不能点」の位置までしか戻らない）
                 menu.Hide();
                 context.RevertMove(grid);
-                EnterMoveSelect(unit);
+                ShowMoveRange();
                 break;
 
             case State.MoveSelect:
-                CancelAll(); // 選択解除（まだ何もしていないので取り消すものは無い）
+                if (context.committed)
+                    OpenCommandMenu(); // 救出済みなどで選択解除はできない → メニューへ
+                else
+                    CancelAll(); // 選択解除（まだ何もしていないので取り消すものは無い）
                 break;
         }
     }
@@ -157,7 +210,18 @@ public class BattleController : MonoBehaviour
     {
         menu.Hide();
         context = new ActionContext(unit);
-        reachableCells = MovementCalculator.GetReachableCells(grid, unit);
+        ShowMoveRange();
+        Debug.Log($"選択: {unit.Data.unitName}（移動できるマス {reachableCells.Count} 個）");
+    }
+
+    /// <summary>
+    /// いまの文脈の残り移動力で移動範囲を計算・表示して MoveSelect に入る。
+    /// 通常の選択時は移動力の全量、救出後の再移動では残量が予算になる。
+    /// </summary>
+    private void ShowMoveRange()
+    {
+        Unit unit = context.unit;
+        reachableCells = MovementCalculator.GetReachableCells(grid, unit, context.RemainingMove, moveCosts);
 
         grid.ResetAllHighlights();
         grid.AddHighlight(unit.GridPosition, HighlightKind.Selection);
@@ -165,7 +229,6 @@ public class BattleController : MonoBehaviour
             grid.AddHighlight(c, HighlightKind.MoveRange);
 
         state = State.MoveSelect;
-        Debug.Log($"選択: {unit.Data.unitName}（移動できるマス {reachableCells.Count} 個）");
     }
 
     /// <summary>行動メニューを開く（移動直後・静止選択時・対象選択からの戻りで呼ばれる）。</summary>
@@ -183,15 +246,57 @@ public class BattleController : MonoBehaviour
 
     /// <summary>
     /// いまの文脈（context）で実行できるコマンドの一覧を作る。
-    /// Phase 11 以降のコマンド（救出・飛翔など）はここに項目を足していく。
+    /// Phase 14 のコマンド（飛翔）はここに項目を足していく。
     /// </summary>
     private List<ActionMenu.Entry> BuildCommands()
     {
         var commands = new List<ActionMenu.Entry>();
+        Unit unit = context.unit;
 
-        attackTargets = FindAttackTargets(context.unit, context.hasMoved);
+        // 救出を使った後は「再移動 → 待機」だけ（仕様：使用していない移動力分の再移動のみ）
+        if (context.usedRescue)
+        {
+            commands.Add(new ActionMenu.Entry("待機", FinishAction));
+            return commands;
+        }
+
+        // 引き受けを使った後は「降ろす / 待機」だけ（合意(f)）
+        if (context.usedTakeOver)
+        {
+            tileCandidates = RescueRules.GetDropCells(unit, grid);
+            if (unit.IsRescuing && tileCandidates.Count > 0)
+                commands.Add(new ActionMenu.Entry("降ろす", EnterDropTileSelect));
+            commands.Add(new ActionMenu.Entry("待機", FinishAction));
+            return commands;
+        }
+
+        attackTargets = FindAttackTargets(unit, context.hasMoved);
         if (attackTargets.Count > 0)
             commands.Add(new ActionMenu.Entry("攻撃", EnterTargetSelect));
+
+        // 救出：騎乗ユニットが、隣接する同陣営の歩兵を格納する（救出中の攻撃は可＝合意(d)）
+        List<Unit> rescueTargets = RescueRules.FindRescueTargets(unit, grid);
+        if (rescueTargets.Count > 0)
+            commands.Add(new ActionMenu.Entry("救出", () => EnterUnitTargetSelect(UnitSelectPurpose.Rescue, rescueTargets)));
+
+        // 降ろす：救出中で、隣に空きマスがあるとき（救出と同一行動では不可＝合意(e)。
+        // usedRescue のときは上で分岐済みなので、ここに来るのは前のターンに救出した場合）
+        if (unit.IsRescuing)
+        {
+            tileCandidates = RescueRules.GetDropCells(unit, grid);
+            if (tileCandidates.Count > 0)
+                commands.Add(new ActionMenu.Entry("降ろす", EnterDropTileSelect));
+        }
+
+        // 引き受け：隣接する救出中の味方から貨物をもらう
+        List<Unit> carriers = RescueRules.FindTakeOverCarriers(unit, grid);
+        if (carriers.Count > 0)
+            commands.Add(new ActionMenu.Entry("引き受け", () => EnterUnitTargetSelect(UnitSelectPurpose.TakeOver, carriers)));
+
+        // 代わりに降ろす：歩兵が、隣接する救出中の味方の貨物を降ろしてあげる
+        List<Unit> proxyCarriers = RescueRules.FindProxyDropCarriers(unit, grid);
+        if (proxyCarriers.Count > 0)
+            commands.Add(new ActionMenu.Entry("代わりに降ろす", EnterProxyCarrierSelect));
 
         commands.Add(new ActionMenu.Entry("待機", FinishAction));
         return commands;
@@ -208,6 +313,115 @@ public class BattleController : MonoBehaviour
         state = State.TargetSelect;
         Debug.Log($"攻撃対象を選択（{attackTargets.Count} 体）。右クリック/ESCでメニューへ戻る。");
     }
+
+    /// <summary>救出・引き受け・代わりに降ろすの相手ユニットを赤表示して、クリックを待つ。</summary>
+    private void EnterUnitTargetSelect(UnitSelectPurpose purpose, List<Unit> candidates)
+    {
+        menu.Hide();
+        unitSelectPurpose = purpose;
+        unitCandidates = candidates;
+
+        foreach (Unit u in candidates)
+            grid.AddHighlight(u.GridPosition, HighlightKind.TargetChoice);
+
+        state = State.UnitTargetSelect;
+        Debug.Log($"相手を選択（{candidates.Count} 体）。右クリック/ESCでメニューへ戻る。");
+    }
+
+    /// <summary>「代わりに降ろす」の最初の段階：どの運び手の貨物を降ろすかを選ぶ。</summary>
+    private void EnterProxyCarrierSelect()
+    {
+        // マス選択から戻ってきた場合もあるので、候補を取り直してハイライトも付け直す
+        grid.ResetAllHighlights();
+        grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
+        EnterUnitTargetSelect(UnitSelectPurpose.ProxyDropCarrier,
+                              RescueRules.FindProxyDropCarriers(context.unit, grid));
+    }
+
+    /// <summary>「降ろす」が選ばれた：自分の隣の空きマスを赤表示して、クリックを待つ。</summary>
+    private void EnterDropTileSelect()
+    {
+        menu.Hide();
+        tileSelectPurpose = TileSelectPurpose.Drop;
+        tileCandidates = RescueRules.GetDropCells(context.unit, grid);
+
+        foreach (Vector2Int c in tileCandidates)
+            grid.AddHighlight(c, HighlightKind.TargetChoice);
+
+        state = State.TileSelect;
+        Debug.Log($"降ろすマスを選択（{tileCandidates.Count} マス）。右クリック/ESCでメニューへ戻る。");
+    }
+
+    /// <summary>「代わりに降ろす」の2段階目：運び手の隣の空きマスを選ぶ。</summary>
+    private void EnterProxyDropTileSelect()
+    {
+        tileSelectPurpose = TileSelectPurpose.ProxyDrop;
+        tileCandidates = RescueRules.GetDropCellsAround(proxyCarrier.GridPosition, grid);
+
+        grid.ResetAllHighlights();
+        grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
+        foreach (Vector2Int c in tileCandidates)
+            grid.AddHighlight(c, HighlightKind.TargetChoice);
+
+        state = State.TileSelect;
+        Debug.Log($"降ろすマスを選択（{tileCandidates.Count} マス）。右クリック/ESCで運び手の選択へ戻る。");
+    }
+
+    // ===== 救出系コマンドの実行 =====
+
+    /// <summary>救出を実行：相手を格納し、残り移動力での再移動へ移る（以後、取り消し不可）。</summary>
+    private void ExecuteRescue(Unit target)
+    {
+        Unit unit = context.unit;
+        unit.StoreUnit(target);
+        context.usedRescue = true;
+        context.Commit(); // ここが新しい「戻れる限界」になる
+
+        Debug.Log($"{unit.Data.unitName} は {target.Data.unitName} を救出した（再移動できる移動力：{context.RemainingMove}）");
+
+        ShowMoveRange();
+        if (reachableCells.Count == 0)
+            OpenCommandMenu(); // 動けるマスが無ければそのまま待機メニューへ
+    }
+
+    /// <summary>引き受けを実行：運び手から貨物をもらい、メニューへ（降ろす/待機のみ）。</summary>
+    private void ExecuteTakeOver(Unit carrier)
+    {
+        Unit unit = context.unit;
+        Unit cargo = carrier.Carried[0];
+        carrier.RemoveCargo(cargo);
+        unit.StoreUnit(cargo);
+        context.usedTakeOver = true;
+        context.Commit();
+
+        Debug.Log($"{unit.Data.unitName} は {carrier.Data.unitName} から {cargo.Data.unitName} を引き受けた");
+        OpenCommandMenu();
+    }
+
+    /// <summary>降ろすを実行：貨物を指定マスへ再配置し、行動を終える。</summary>
+    private void ExecuteDrop(Vector2Int cell)
+    {
+        Unit unit = context.unit;
+        Unit cargo = unit.Carried[0];
+        unit.ReleaseUnitAt(cargo, grid, cell);
+        cargo.SetActed(true); // 降ろされたユニットはそのターン行動済み（合意(b)）
+
+        Debug.Log($"{unit.Data.unitName} は {cargo.Data.unitName} を {cell} に降ろした");
+        FinishAction(); // 降ろしたら行動終了（作者合意）
+    }
+
+    /// <summary>代わりに降ろすを実行：運び手の貨物を指定マスへ再配置し、自分の行動を終える。</summary>
+    private void ExecuteProxyDrop(Vector2Int cell)
+    {
+        Unit cargo = proxyCarrier.Carried[0];
+        proxyCarrier.ReleaseUnitAt(cargo, grid, cell);
+        cargo.SetActed(true); // 降ろされたユニットはそのターン行動済み（合意(b)）
+
+        Debug.Log($"{context.unit.Data.unitName} は {proxyCarrier.Data.unitName} の {cargo.Data.unitName} を {cell} に降ろした");
+        FinishAction(); // 降ろしたら行動終了（作者合意）
+    }
+
+    // ===== 行動の終了・取り消し =====
 
     /// <summary>行動を確定して終える。ここまで来たら移動の取り消しはもうできない。</summary>
     private void FinishAction()
@@ -234,6 +448,9 @@ public class BattleController : MonoBehaviour
         context = null;
         reachableCells = null;
         attackTargets = null;
+        unitCandidates = null;
+        tileCandidates = null;
+        proxyCarrier = null;
         state = State.Idle;
     }
 

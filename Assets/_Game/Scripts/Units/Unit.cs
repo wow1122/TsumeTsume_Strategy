@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -37,6 +38,24 @@ public class Unit : MonoBehaviour
 
     /// <summary>まだ生存しているか。</summary>
     public bool IsAlive => CurrentHP > 0;
+
+    // ── 救出（Phase 11〜）──
+    // 「運ぶ側」は Carried に相手を格納し、「運ばれる側」は IsCarried=true で
+    // 非アクティブ化される（盤上から消え、マスの占有も明け渡す。名簿には残るので
+    // 生存数には数えられ、全滅判定が誤動作しない）。
+
+    /// <summary>いま格納している（救出中の）ユニットの一覧。</summary>
+    public List<Unit> Carried { get; } = new List<Unit>();
+
+    /// <summary>救出中か（誰かを格納しているか）。</summary>
+    public bool IsRescuing => Carried.Count > 0;
+
+    /// <summary>救出されて格納中か（盤上にいない）。</summary>
+    public bool IsCarried { get; private set; }
+
+    /// <summary>格納できる数。輸送隊=4（Phase 12）、他の騎乗=1、歩兵=0（救出できない）。</summary>
+    public int CarryCapacity =>
+        Class == UnitClass.Transporter ? 4 : (Class.IsMounted() ? 1 : 0);
 
     private SpriteRenderer spriteRenderer;
     private Color baseColor;   // 行動済みで暗くする前の、元の色
@@ -122,6 +141,41 @@ public class Unit : MonoBehaviour
         }
     }
 
+    // ===== 救出の実務（格納・解放）=====
+
+    /// <summary>
+    /// target を格納する（救出・引き受けの実体）。
+    /// target は非アクティブ化され、盤上から消える（占有の明け渡しは OnDisable が行う）。
+    /// すでに非アクティブ（引き受けで別のユニットから移ってきた場合）でもそのまま使える。
+    /// </summary>
+    public void StoreUnit(Unit target)
+    {
+        Carried.Add(target);
+        target.IsCarried = true;
+        if (target.gameObject.activeSelf) target.gameObject.SetActive(false);
+    }
+
+    /// <summary>
+    /// cargo を格納リストから外すだけ（盤上には置かない）。
+    /// 引き受けで相手へ渡すときは、この後で相手の StoreUnit を呼ぶ。
+    /// </summary>
+    public void RemoveCargo(Unit cargo)
+    {
+        Carried.Remove(cargo);
+        cargo.IsCarried = false;
+    }
+
+    /// <summary>
+    /// cargo を指定マスへ降ろして盤上に戻す（降ろす・代わりに降ろすの実体）。
+    /// 先に座標と占有を設定してからアクティブ化する（OnEnable の占有取得と整合する順序）。
+    /// </summary>
+    public void ReleaseUnitAt(Unit cargo, GridManager grid, Vector2Int cell)
+    {
+        RemoveCargo(cargo);
+        cargo.MoveTo(grid, cell);
+        cargo.gameObject.SetActive(true);
+    }
+
     /// <summary>ダメージを受ける。HPが0になったら戦闘不能。</summary>
     public void TakeDamage(int amount)
     {
@@ -138,6 +192,17 @@ public class Unit : MonoBehaviour
             TileData tile = grid.GetTile(GridPosition);
             if (tile != null && tile.Occupant == this) tile.Occupant = null;
         }
+
+        // 貨物はその場（死亡したマス）に降ろされて生存する（作者合意(a)）。
+        // 自分の占有を外した後なので、死亡マスは空いている。
+        // ※Phase 11 は最大1体。複数貨物（輸送隊）の死亡時処理は Phase 12 で拡張する。
+        if (IsRescuing && grid != null)
+        {
+            Unit cargo = Carried[0];
+            ReleaseUnitAt(cargo, grid, GridPosition);
+            Debug.Log($"{Data.unitName} が倒れ、{cargo.Data.unitName} は {GridPosition} に降ろされた");
+        }
+
         UnitRegistry.Unregister(this);
         Debug.Log($"{Data.unitName} は戦闘不能になった");
         Destroy(gameObject);
@@ -196,7 +261,9 @@ public class Unit : MonoBehaviour
         style.normal.textColor = Color.white;
 
         // GUI座標は左上原点・Y下向きなので、スクリーンYを反転する
-        var rect = new Rect(sp.x - 25, Screen.height - sp.y - 12, 50, 22);
-        GUI.Label(rect, CurrentHP.ToString(), style);
+        // 救出中は HP の横に「救」を添える（例: 「20 救」）
+        string label = IsRescuing ? $"{CurrentHP} 救" : CurrentHP.ToString();
+        var rect = new Rect(sp.x - 30, Screen.height - sp.y - 12, 60, 22);
+        GUI.Label(rect, label, style);
     }
 }

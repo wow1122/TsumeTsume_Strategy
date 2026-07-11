@@ -22,6 +22,18 @@ public static class MovementCalculator
     /// </summary>
     public static HashSet<Vector2Int> GetReachableCells(GridManager grid, Unit unit)
     {
+        return GetReachableCells(grid, unit, unit.Move, null);
+    }
+
+    /// <summary>
+    /// 移動予算（moveBudget）を指定する版。救出後の再移動は
+    /// 「移動力 − すでに使った移動コスト」を予算にして呼ぶ（Phase 11）。
+    /// costOut を渡すと、到達できる各マスまでの移動コストを書き込んで返す
+    /// （呼び出し側が「どこまで移動したらコストいくつ使ったか」を記録できる）。
+    /// </summary>
+    public static HashSet<Vector2Int> GetReachableCells(
+        GridManager grid, Unit unit, int moveBudget, Dictionary<Vector2Int, int> costOut)
+    {
         var reachable = new HashSet<Vector2Int>();
         var costSoFar = new Dictionary<Vector2Int, int>();
         var frontier = new Queue<Vector2Int>();
@@ -51,7 +63,7 @@ public static class MovementCalculator
                 }
 
                 int newCost = costSoFar[current] + tile.MoveCost;
-                if (newCost > unit.Move) continue; // 移動力オーバー
+                if (newCost > moveBudget) continue; // 移動力（予算）オーバー
 
                 // 未到達、またはより安い経路が見つかったら更新
                 if (!costSoFar.ContainsKey(next) || newCost < costSoFar[next])
@@ -61,6 +73,13 @@ public static class MovementCalculator
                     if (!occupiedByAlly) reachable.Add(next); // 味方マスには止まれない
                 }
             }
+        }
+
+        if (costOut != null)
+        {
+            costOut.Clear();
+            foreach (Vector2Int cell in reachable)
+                costOut[cell] = costSoFar[cell];
         }
 
         return reachable;
