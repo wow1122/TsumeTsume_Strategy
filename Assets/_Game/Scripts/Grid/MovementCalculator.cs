@@ -17,11 +17,11 @@ public static class MovementCalculator
 
     /// <summary>
     /// unit がこのマスに入るときの移動コスト。
-    /// 今は地形のコストそのまま（全兵種共通）。
-    /// Phase 14 で「飛翔中は常に 1」をここに差し込む予定の拡張点。
+    /// 地上は地形のコストそのまま（全兵種共通）。飛翔中は常に 1（地形の影響なし。Phase 14）。
     /// </summary>
     public static int GetMoveCost(Unit unit, TileData tile)
     {
+        if (unit.IsFlying) return 1;
         return tile.MoveCost;
     }
 
@@ -30,6 +30,10 @@ public static class MovementCalculator
     /// ・盤外、通行不可(IsWalkable=false)、敵ユニットがいるマスには入れない
     /// ・味方がいるマスは「通過」できるが、移動先（停止位置）には選べない
     /// ・累計移動コストが unit の移動力以下のマスだけ到達可能
+    /// 飛翔中の特例（Phase 14）：
+    /// ・「飛行で入れるか」で判定（屋内壁だけ不可。城壁は入れる）。コストは常に1
+    /// ・敵のマスもすり抜けられる。逆に、地上のユニットも「飛翔中の敵」のマスはすり抜けられる（相互）
+    /// ・止まれるのは誰もいないマスだけ（着地衝突を仕組みで排除）
     /// </summary>
     public static HashSet<Vector2Int> GetReachableCells(GridManager grid, Unit unit)
     {
@@ -76,14 +80,22 @@ public static class MovementCalculator
 
                 TileData tile = grid.GetTile(next);
                 if (tile == null) continue;            // 盤外
-                if (!tile.IsWalkable) continue;        // 壁など
 
-                // 敵ユニットのマスは侵入も通過も不可。味方のマスは「通過だけ」できる。
-                bool occupiedByAlly = false;
-                if (tile.Occupant != null)
+                // 入れる地形か：地上は通行可否（壁・城壁が不可）、飛翔中は飛行可否（屋内壁だけ不可）
+                bool canEnter = unit.IsFlying ? tile.CanFlyOver : tile.IsWalkable;
+                if (!canEnter) continue;
+
+                // ユニットがいるマスの扱い：
+                //   敵のマスは通せんぼ（従来どおり）。ただし自分か相手が飛翔中なら、
+                //   高さが違うのでお互いにすり抜けられる（仕様の相互ルール。Phase 14）
+                //   味方のマスは通過できる（従来どおり）
+                bool occupied = tile.Occupant != null;
+                if (occupied
+                    && tile.Occupant.Faction != unit.Faction
+                    && !unit.IsFlying
+                    && !tile.Occupant.IsFlying)
                 {
-                    if (tile.Occupant.Faction != unit.Faction) continue; // 敵は通せんぼ
-                    occupiedByAlly = true;
+                    continue; // 地上ユニット同士のときだけ、敵マスは通せんぼ
                 }
 
                 int newCost = costSoFar[current] + GetMoveCost(unit, tile);
@@ -94,7 +106,7 @@ public static class MovementCalculator
                 {
                     costSoFar[next] = newCost;
                     open.Add(next);
-                    if (!occupiedByAlly) reachable.Add(next); // 味方マスには止まれない
+                    if (!occupied) reachable.Add(next); // 誰かがいるマスには止まれない
                 }
             }
         }

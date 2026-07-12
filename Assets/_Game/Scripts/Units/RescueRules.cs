@@ -20,6 +20,11 @@ using UnityEngine;
 ///  ・入れ子救出は禁止：貨物を持っているユニットは、救出・乗り込みの対象にならない
 ///  ・「乗り込む」＝隣接する輸送隊へ自分から格納される（自分は行動終了。輸送隊の行動は消費しない）
 ///  ・引き受けで騎乗ユニット（輸送隊以外）が受け取れるのは歩兵の貨物のみ。輸送隊は何でも受け取れる
+///
+/// Phase 14（飛翔）の追加合意（2026-07-12）：
+///  ・飛翔中のユニットは救出系コマンドの一切に関与できない（実行する側にも、される側にもならない）。
+///    空中では乗り降りできない、という整理。貨物を抱えたまま飛翔すること自体は可能で、
+///    その場合は着地するまで降ろせない（降ろすの表示制限は BattleController 側）
 /// </summary>
 public static class RescueRules
 {
@@ -35,6 +40,7 @@ public static class RescueRules
     public static List<Unit> FindRescueTargets(Unit user, GridManager grid)
     {
         var result = new List<Unit>();
+        if (user.IsFlying) return result; // 飛翔中は救出できない（Phase 14）
         if (!CanCarryMore(user)) return result;
 
         foreach (Unit neighbor in GetAdjacentUnits(user.GridPosition, grid))
@@ -74,15 +80,19 @@ public static class RescueRules
 
     // ===== 引き受け =====
 
-    /// <summary>user がいまの位置から「引き受け」できる、隣接する救出中ユニットの一覧。</summary>
+    /// <summary>
+    /// user がいまの位置から「引き受け」できる、隣接する救出中ユニットの一覧。
+    /// 飛翔中は実行も対象も不可（空中では受け渡しできない。Phase 14）。
+    /// </summary>
     public static List<Unit> FindTakeOverCarriers(Unit user, GridManager grid)
     {
         var result = new List<Unit>();
+        if (user.IsFlying) return result;
         if (!CanCarryMore(user)) return result;
 
         foreach (Unit neighbor in GetAdjacentUnits(user.GridPosition, grid))
         {
-            if (neighbor.Faction == user.Faction && neighbor.IsRescuing
+            if (neighbor.Faction == user.Faction && neighbor.IsRescuing && !neighbor.IsFlying
                 && GetTakeOverCargoes(user, neighbor).Count > 0)
                 result.Add(neighbor);
         }
@@ -140,6 +150,7 @@ public static class RescueRules
         foreach (Unit neighbor in GetAdjacentUnits(user.GridPosition, grid))
         {
             if (neighbor.Faction != user.Faction || !neighbor.IsRescuing) continue;
+            if (neighbor.IsFlying) continue; // 飛翔中の運び手からは降ろせない（Phase 14）
             if (GetProxyDropCargoes(user, neighbor).Count == 0) continue;
             if (GetDropCellsAround(neighbor.GridPosition, grid).Count == 0) continue;
 
@@ -176,12 +187,14 @@ public static class RescueRules
     /// <summary>
     /// このユニットは「格納される側」になれるか（救出・乗り込みの共通条件。Phase 12）。
     /// 輸送隊は誰にも救出されない。貨物を持っているユニットも不可（入れ子救出の禁止）。
+    /// 飛翔中のユニットも不可（空中の相手は救出できず、飛んだまま乗り込めもしない。Phase 14）。
     /// </summary>
     public static bool CanBeStored(Unit unit)
     {
         return unit != null
             && unit.Class != UnitClass.Transporter
-            && !unit.IsRescuing;
+            && !unit.IsRescuing
+            && !unit.IsFlying;
     }
 
     /// <summary>

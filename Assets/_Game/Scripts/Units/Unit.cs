@@ -57,6 +57,45 @@ public class Unit : MonoBehaviour
     public int CarryCapacity =>
         Class == UnitClass.Transporter ? 4 : (Class.IsMounted() ? 1 : 0);
 
+    // ── 飛翔（Phase 14）──
+    // 飛行兵専用の状態。飛翔中は移動阻害と地形（コスト・防御・通行不可）を無視し、
+    // 戦闘は「飛翔中の相手」との間か「後衛武器による対空」しか成立しない（CombatRules.CanEngage）。
+    // 持続は発動ターンを含めて2ターン。自軍フェイズ開始ごとに TickFlight で数え、0で自動着地する。
+
+    /// <summary>飛翔状態か。</summary>
+    public bool IsFlying { get; private set; }
+
+    /// <summary>飛翔状態の残りターン数（自軍フェイズ開始ごとに1減る）。</summary>
+    public int FlightTurnsLeft { get; private set; }
+
+    /// <summary>飛翔状態を開始する（発動ターンを1ターン目と数える）。</summary>
+    public void StartFlight(int turns = 2)
+    {
+        IsFlying = true;
+        FlightTurnsLeft = turns;
+    }
+
+    /// <summary>飛翔の取り消し（発動した行動の中で、まだ移動していないときだけ呼ばれる）。</summary>
+    public void CancelFlight()
+    {
+        IsFlying = false;
+        FlightTurnsLeft = 0;
+    }
+
+    /// <summary>自軍フェイズ開始時に呼ぶ。残りターンを減らし、0になったら自動着地する。</summary>
+    public void TickFlight()
+    {
+        if (!IsFlying) return;
+
+        FlightTurnsLeft--;
+        if (FlightTurnsLeft <= 0)
+        {
+            IsFlying = false;
+            FlightTurnsLeft = 0;
+            Debug.Log($"{Data.unitName} は着地した");
+        }
+    }
+
     private SpriteRenderer spriteRenderer;
     private Color baseColor;   // 行動済みで暗くする前の、元の色
     private GridManager grid;  // 戦闘不能時にマスの占有を外すため保持
@@ -270,9 +309,12 @@ public class Unit : MonoBehaviour
 
         // GUI座標は左上原点・Y下向きなので、スクリーンYを反転する
         // 救出中は HP の横に「救」を添える（例: 「20 救」。複数格納中は「救x2」のように数も出す）
+        // 飛翔中は「飛x残りターン数」を添える（例: 「20 飛x2」）
         string label = CurrentHP.ToString();
         if (IsRescuing)
             label += Carried.Count > 1 ? $" 救x{Carried.Count}" : " 救";
+        if (IsFlying)
+            label += $" 飛x{FlightTurnsLeft}";
         var rect = new Rect(sp.x - 30, Screen.height - sp.y - 12, 60, 22);
         GUI.Label(rect, label, style);
     }

@@ -26,6 +26,9 @@ public class ActionContext
     public bool usedRescue;     // 救出を使ったか（以後この行動は再移動→待機のみ）
     public bool usedTakeOver;   // 引き受けを使ったか（以後は降ろす/待機のみ＝合意(f)）
 
+    // ── 飛翔（Phase 14）──
+    public bool usedFlight;     // この行動で飛翔を使ったか（移動する前なら右クリックで取り消せる）
+
     /// <summary>
     /// 取り消し不能になったか。救出・引き受けを実行すると true になり、
     /// 以後は選択解除も元の位置への取り消しもできない（必ず待機等で行動を終える）。

@@ -10,6 +10,8 @@ using UnityEngine;
 ///  ・三すくみ   … 前衛武器の攻撃のみ。補正量は 技・速さ の差から計算（最低2）
 ///  ・挟撃の資格 … 前衛武器の装備者だけが挟撃に参加できる
 ///  ・挟撃の無効化（ガード）… 防御側の隣に「前衛武器の歩兵」の味方がいれば挟撃されない
+///  ・飛翔（Phase 14）… 飛翔中の相手と戦えるのは「飛翔中のユニット」か「後衛武器」だけ。
+///    飛翔中のユニットは地上の相手を攻撃できない（CanEngage）。挟撃・ガードも同じ制限に従う
 /// </summary>
 public static class CombatRules
 {
@@ -52,15 +54,31 @@ public static class CombatRules
 
     /// <summary>
     /// attacker が fromCell に立って（移動有無 hasMoved で）target を攻撃できるか。
-    /// ※Phase 14 で「飛翔状態の敵は後衛武器でしか攻撃できない」等の条件をここに足す。
+    /// 射程に加えて、飛翔の戦闘制限（CanEngage）も見る。
     /// </summary>
     public static bool CanAttack(Unit attacker, Vector2Int fromCell, Unit target, bool hasMoved)
     {
         if (target == null || !target.IsAlive) return false;
+        if (!CanEngage(attacker, target)) return false; // 飛翔の制限（Phase 14）
         if (!TryGetAttackRange(attacker, hasMoved, out int min, out int max)) return false;
 
         int distance = Manhattan(fromCell, target.GridPosition);
         return distance >= min && distance <= max;
+    }
+
+    /// <summary>
+    /// 飛翔を考慮して「そもそも戦闘が成立する組み合わせか」（Phase 14）。
+    ///   防御側が飛翔中 → 攻撃側も飛翔中か、後衛武器（弓・魔法の対空）のみ可
+    ///   攻撃側だけ飛翔中 → 地上の相手とは戦闘できない
+    ///   どちらも地上（または着地後） → 制限なし
+    /// </summary>
+    public static bool CanEngage(Unit attacker, Unit defender)
+    {
+        if (defender.IsFlying)
+            return attacker.IsFlying
+                || (attacker.Weapon != null && attacker.Weapon.category == WeaponCategory.Ranged);
+
+        return !attacker.IsFlying; // 攻撃側だけ飛翔中なら不成立
     }
 
     // ===== 三すくみ =====
@@ -132,6 +150,7 @@ public static class CombatRules
 
         if (ally == null || ally == attacker || ally.Faction != attacker.Faction) return null;
         if (!IsPincerCapable(ally)) return null;
+        if (!CanEngage(ally, defender)) return null; // 飛翔中の敵を挟めるのは飛翔中の味方だけ（Phase 14）
 
         return ally;
     }
@@ -141,9 +160,12 @@ public static class CombatRules
     /// ガード役の条件：defender の上下左右に隣接する、同じ陣営の「前衛武器を装備した歩兵」。
     /// ※ガード役自身が受ける挟撃は守れない（自分の隣に別のガード役が必要）。
     /// ※行動済みでも有効。敵味方どちらの陣営でも同じルール。
+    /// ※防御側が飛翔中なら不成立（空中戦に地上の歩兵は届かない。Phase 14・作者合意）。
     /// </summary>
     public static Unit FindPincerGuard(Unit defender, GridManager grid)
     {
+        if (defender.IsFlying) return null; // 飛翔中はガードされない（Phase 14）
+
         foreach (Vector2Int dir in Directions)
         {
             TileData tile = grid.GetTile(defender.GridPosition + dir);

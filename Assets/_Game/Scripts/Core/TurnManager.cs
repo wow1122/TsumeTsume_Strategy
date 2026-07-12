@@ -42,7 +42,10 @@ public class TurnManager : MonoBehaviour
     {
         CurrentPhase = TurnPhase.Player;
         foreach (Unit u in UnitRegistry.GetUnits(Faction.Player))
+        {
+            u.TickFlight();    // 飛翔の残りターンを1減らす（0になったら自動着地。Phase 14）
             u.SetActed(false); // 全味方を「未行動」に戻す
+        }
         Debug.Log($"── ターン {TurnNumber}：自軍フェイズ 開始 ──");
     }
 
@@ -53,6 +56,8 @@ public class TurnManager : MonoBehaviour
         if (CurrentPhase != TurnPhase.Player) return;
 
         CurrentPhase = TurnPhase.Enemy;
+        foreach (Unit u in UnitRegistry.GetUnits(Faction.Enemy))
+            u.TickFlight(); // 敵側の飛翔もフェイズ開始で数える（現状は「開始時から飛翔」の敵のみ該当）
         Debug.Log($"ターン {TurnNumber}：敵フェイズ 開始");
         StartCoroutine(EnemyPhaseRoutine());
     }

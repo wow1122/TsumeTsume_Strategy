@@ -35,12 +35,21 @@ MonoBehaviour:
     cell: {x: 1, y: 1}
   - unitData: {fileID: 11400000, guid: 476eca3c931d4cdf85cb0807647ab43c, type: 2}
     cell: {x: 0, y: 1}
+  - unitData: {fileID: 11400000, guid: ea6715ce35334662a134756f8f7fb7d0, type: 2}
+    cell: {x: 5, y: 1}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: ea6715ce35334662a134756f8f7fb7d0, type: 2}
+    cell: {x: 6, y: 2}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 43975648fa4e412f9e830d26585ae6ab, type: 2}
+    cell: {x: 5, y: 8}
+    initialFlightTurns: 99
   terrainTable: {fileID: 11400000, guid: ab7adf8c0ffdbd8e6818d76fdffbee85, type: 2}
   terrainRows:
   - '..........'
   - '.MM.......'
   - '..F.......'
-  - '....###...'
+  - '....##=...'
   - '..........'
   - '.FFFF..MM.'
   - '..........'

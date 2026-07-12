@@ -17,6 +17,9 @@ public class StageData : ScriptableObject
     {
         public UnitData unitData;   // 配置するユニットの能力値
         public Vector2Int cell;     // 配置するマス（x, y）
+
+        [Tooltip("開始時から飛翔状態にする残りターン数（0=地上から開始。飛行兵のみ有効。Phase 14）")]
+        public int initialFlightTurns = 0;
     }
 
     [Tooltip("このステージに配置するユニットの一覧")]

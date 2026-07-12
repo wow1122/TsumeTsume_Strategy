@@ -23,6 +23,12 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  「乗り込む」→ 隣接する輸送隊を選択 → 自分が格納されて行動終了（輸送隊の行動は消費しない）
 ///  貨物が複数のとき、「降ろす」「引き受け」「代わりに降ろす」は貨物リスト【CargoSelect】から
 ///  対象を選ぶ（1体だけなら自動選択でリストは出ない）。
+///
+/// Phase 14（飛翔）で追加された流れ：
+///  「飛翔」→ 飛行兵が「移動する前」だけ選べる。行動は消費せず、飛翔状態になって
+///  そのまま移動選択へ戻る（飛翔→移動→攻撃/待機まで1行動でできる）。
+///  移動する前なら右クリック/ESC で飛翔を取り消せる（取り消しの連鎖に1段として入る）。
+///  選択を解除して他のユニットに移った場合、飛翔はそのまま確定する（取り消せるのはこの操作中だけ）。
 /// </summary>
 public class BattleController : MonoBehaviour
 {
@@ -233,7 +239,16 @@ public class BattleController : MonoBehaviour
                 break;
 
             case State.MoveSelect:
-                if (context.committed)
+                if (context.usedFlight)
+                {
+                    // 飛翔の取り消し（MoveSelect にいる時点で移動は未確定なので安全に戻せる）。
+                    // 地上の移動範囲を出し直す。もう1回キャンセルすると選択解除
+                    context.unit.CancelFlight();
+                    context.usedFlight = false;
+                    Debug.Log($"{context.unit.Data.unitName} は飛翔を取りやめた");
+                    ShowMoveRange();
+                }
+                else if (context.committed)
                     OpenCommandMenu(); // 救出済みなどで選択解除はできない → メニューへ
                 else
                     CancelAll(); // 選択解除（まだ何もしていないので取り消すものは無い）
@@ -311,6 +326,11 @@ public class BattleController : MonoBehaviour
         if (attackTargets.Count > 0)
             commands.Add(new ActionMenu.Entry("攻撃", EnterTargetSelect));
 
+        // 飛翔：飛行兵が「移動する前」だけ使える。行動は消費しない（Phase 14・作者合意）。
+        // 実行すると飛翔状態のまま移動選択へ戻る（攻撃→行動終了の流れがあるので、戦闘後の飛翔は起こらない）
+        if (unit.Class == UnitClass.Flier && !unit.IsFlying && !context.hasMoved)
+            commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
+
         // 救出：騎乗ユニットが、隣接する同陣営の歩兵を格納する（救出中の攻撃は可＝合意(d)。
         // 輸送隊は騎乗ユニットも救出できる＝Phase 12）
         List<Unit> rescueTargets = RescueRules.FindRescueTargets(unit, grid);
@@ -323,8 +343,9 @@ public class BattleController : MonoBehaviour
             commands.Add(new ActionMenu.Entry("乗り込む", () => EnterUnitTargetSelect(UnitSelectPurpose.Board, transporters)));
 
         // 降ろす：救出中で、隣に空きマスがあるとき（救出と同一行動では不可＝合意(e)。
-        // usedRescue のときは上で分岐済みなので、ここに来るのは前のターンに救出した場合）
-        if (unit.IsRescuing && RescueRules.GetDropCells(unit, grid).Count > 0)
+        // usedRescue のときは上で分岐済みなので、ここに来るのは前のターンに救出した場合）。
+        // 飛翔中は降ろせない（空中では乗り降りできない。着地後に降ろせる。Phase 14）
+        if (unit.IsRescuing && !unit.IsFlying && RescueRules.GetDropCells(unit, grid).Count > 0)
             commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
 
         // 引き受け：隣接する救出中の味方から貨物をもらう
@@ -516,6 +537,23 @@ public class BattleController : MonoBehaviour
         Debug.Log($"{unit.Data.unitName} は {transporter.Data.unitName} に乗り込んだ" +
                   $"（積載 {transporter.Carried.Count}/{transporter.CarryCapacity}）");
         FinishAction(); // 乗り込んだら自分の行動は終了（仕様）
+    }
+
+    // ===== 飛翔（Phase 14）=====
+
+    /// <summary>
+    /// 飛翔を実行：飛翔状態になり、行動は消費せずそのまま移動選択へ戻る。
+    /// 移動する前なら右クリック/ESC で取り消せる（OnCancelPressed の MoveSelect 分岐）。
+    /// </summary>
+    private void ExecuteFlight()
+    {
+        Unit unit = context.unit;
+        unit.StartFlight();
+        context.usedFlight = true;
+
+        Debug.Log($"{unit.Data.unitName} は飛翔した（発動ターンを含めて {unit.FlightTurnsLeft} ターン持続。" +
+                  "移動前なら右クリック/ESCで取り消し可）");
+        ShowMoveRange(); // 飛翔状態の移動範囲（全マスコスト1・すり抜け）で移動選択へ
     }
 
     /// <summary>降ろすを実行：選んだ貨物を指定マスへ再配置し、行動を終える。</summary>

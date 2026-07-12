@@ -42,8 +42,14 @@ public class BattleSetup : MonoBehaviour
                 continue;
             }
 
+            // 開始時から飛翔状態にする指定か（飛行兵のみ有効。Phase 14）
+            bool flyingStart = entry.initialFlightTurns > 0
+                && entry.unitData.unitClass == UnitClass.Flier;
+
             TileData tile = grid.GetTile(entry.cell);
-            if (tile != null && !tile.IsWalkable)
+            // 通行不可マスには置けない。ただし開始時から飛翔する飛行兵は、
+            // 飛行で入れるマス（城壁など）なら置ける
+            if (tile != null && !tile.IsWalkable && !(flyingStart && tile.CanFlyOver))
             {
                 Debug.LogWarning($"マス {entry.cell} は通行不可の地形です。スキップします。");
                 continue;
@@ -57,6 +63,14 @@ public class BattleSetup : MonoBehaviour
             var go = new GameObject("Unit");
             var unit = go.AddComponent<Unit>();
             unit.Initialize(entry.unitData, grid, entry.cell);
+
+            if (entry.initialFlightTurns > 0)
+            {
+                if (flyingStart)
+                    unit.StartFlight(entry.initialFlightTurns);
+                else
+                    Debug.LogWarning($"{entry.unitData.unitName} は飛行兵ではないため、開始時飛翔の指定を無視しました。");
+            }
         }
     }
 }

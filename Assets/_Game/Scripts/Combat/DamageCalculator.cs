@@ -53,7 +53,8 @@ public static class DamageCalculator
             might = weapon != null ? weapon.might : 0,
             triangle = CombatRules.GetTriangleModifier(attacker, defender),
             guardPower = isMagic ? defender.Resistance : defender.Defense,
-            terrainDefense = defTile != null ? defTile.DefenseBonus : 0,
+            // 飛翔中はタイルの効果を受けない（地形防御なし。Phase 14）
+            terrainDefense = (defTile != null && !defender.IsFlying) ? defTile.DefenseBonus : 0,
         };
     }
 

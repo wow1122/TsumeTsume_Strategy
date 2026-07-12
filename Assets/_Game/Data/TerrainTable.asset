@@ -17,6 +17,7 @@ MonoBehaviour:
     displayName: 平地
     symbol: '.'
     isWalkable: 1
+    canFlyOver: 1
     moveCost: 1
     defenseBonus: 0
     color: {r: 0.85, g: 0.85, b: 0.85, a: 1}
@@ -24,6 +25,7 @@ MonoBehaviour:
     displayName: 森
     symbol: 'F'
     isWalkable: 1
+    canFlyOver: 1
     moveCost: 2
     defenseBonus: 1
     color: {r: 0.45, g: 0.72, b: 0.42, a: 1}
@@ -31,6 +33,7 @@ MonoBehaviour:
     displayName: 山
     symbol: 'M'
     isWalkable: 1
+    canFlyOver: 1
     moveCost: 3
     defenseBonus: 2
     color: {r: 0.62, g: 0.52, b: 0.38, a: 1}
@@ -38,6 +41,7 @@ MonoBehaviour:
     displayName: 砦
     symbol: 'T'
     isWalkable: 1
+    canFlyOver: 1
     moveCost: 1
     defenseBonus: 3
     color: {r: 0.55, g: 0.6, b: 0.78, a: 1}
@@ -45,6 +49,15 @@ MonoBehaviour:
     displayName: 壁
     symbol: '#'
     isWalkable: 0
+    canFlyOver: 0
     moveCost: 1
     defenseBonus: 0
     color: {r: 0.28, g: 0.28, b: 0.3, a: 1}
+  - type: 5
+    displayName: 城壁
+    symbol: '='
+    isWalkable: 0
+    canFlyOver: 1
+    moveCost: 1
+    defenseBonus: 2
+    color: {r: 0.55, g: 0.55, b: 0.62, a: 1}

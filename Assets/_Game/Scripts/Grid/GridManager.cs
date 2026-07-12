@@ -292,7 +292,8 @@ public class GridManager : MonoBehaviour
         string name = tile.Terrain != null ? tile.Terrain.displayName : "平地";
         string text = tile.IsWalkable
             ? $"{name}　移動コスト {tile.MoveCost}　地形防御 +{tile.DefenseBonus}"
-            : $"{name}　通行不可";
+            : (tile.CanFlyOver ? $"{name}　通行不可（飛行は可）　地形防御 +{tile.DefenseBonus}"
+                               : $"{name}　通行不可");
 
         var style = new GUIStyle(GUI.skin.box)
         {

@@ -16,8 +16,11 @@ public class TileData
     /// </summary>
     public TerrainDef Terrain;
 
-    /// <summary>通行可能かどうか（壁だけ false）。</summary>
+    /// <summary>通行可能かどうか（壁・城壁は false）。</summary>
     public bool IsWalkable => Terrain == null || Terrain.isWalkable;
+
+    /// <summary>飛翔状態のユニットが入れるか（屋内壁だけ false。Phase 14）。</summary>
+    public bool CanFlyOver => Terrain == null || Terrain.canFlyOver;
 
     /// <summary>このマスに入るのに必要な移動コスト（平地1・森2など）。</summary>
     public int MoveCost => Terrain != null ? Terrain.moveCost : 1;
