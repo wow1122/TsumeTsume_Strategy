@@ -30,9 +30,11 @@ public static class MovementCalculator
     /// ・盤外、通行不可(IsWalkable=false)、敵ユニットがいるマスには入れない
     /// ・味方がいるマスは「通過」できるが、移動先（停止位置）には選べない
     /// ・累計移動コストが unit の移動力以下のマスだけ到達可能
-    /// 飛翔中の特例（Phase 14）：
+    /// 飛翔中の特例（Phase 14・作者仕様 2026-07-12 改訂）：
     /// ・「飛行で入れるか」で判定（屋内壁だけ不可。城壁は入れる）。コストは常に1
-    /// ・敵のマスもすり抜けられる。逆に、地上のユニットも「飛翔中の敵」のマスはすり抜けられる（相互）
+    /// ・敵のマスをすり抜けられる。ただし「飛翔状態の敵」と「対空武器（弓・魔法）装備の敵」の
+    ///   マスはすり抜けられない（空を見張っている相手は素通りできない）
+    /// ・逆に、地上のユニットは「飛翔中の敵」のマスをすり抜けられる（頭上を飛んでいるだけなので）
     /// ・止まれるのは誰もいないマスだけ（着地衝突を仕組みで排除）
     /// </summary>
     public static HashSet<Vector2Int> GetReachableCells(GridManager grid, Unit unit)
@@ -85,17 +87,19 @@ public static class MovementCalculator
                 bool canEnter = unit.IsFlying ? tile.CanFlyOver : tile.IsWalkable;
                 if (!canEnter) continue;
 
-                // ユニットがいるマスの扱い：
-                //   敵のマスは通せんぼ（従来どおり）。ただし自分か相手が飛翔中なら、
-                //   高さが違うのでお互いにすり抜けられる（仕様の相互ルール。Phase 14）
-                //   味方のマスは通過できる（従来どおり）
+                // ユニットがいるマスの扱い（味方のマスは常に通過できる。敵のマスだけ通せんぼがあり得る）：
+                //   地上ユニットの移動 … 地上の敵は通せんぼ。飛翔中の敵の下はすり抜けられる
+                //   飛翔中の移動      … 「飛翔状態の敵」と「対空武器（弓・魔法）装備の敵」は
+                //                        すり抜け不可（作者仕様 2026-07-12）。それ以外の敵の上は通過できる
                 bool occupied = tile.Occupant != null;
-                if (occupied
-                    && tile.Occupant.Faction != unit.Faction
-                    && !unit.IsFlying
-                    && !tile.Occupant.IsFlying)
+                if (occupied && tile.Occupant.Faction != unit.Faction)
                 {
-                    continue; // 地上ユニット同士のときだけ、敵マスは通せんぼ
+                    Unit blocker = tile.Occupant;
+                    bool blocked = unit.IsFlying
+                        ? (blocker.IsFlying
+                           || (blocker.Weapon != null && blocker.Weapon.category == WeaponCategory.Ranged))
+                        : !blocker.IsFlying;
+                    if (blocked) continue;
                 }
 
                 int newCost = costSoFar[current] + GetMoveCost(unit, tile);

@@ -23,11 +23,35 @@ public class ActionContext
     public int moveCostUsed;
 
     // ── 救出系コマンドの「1回の行動につき1回」制限（仕様8）──
-    public bool usedRescue;     // 救出を使ったか（以後この行動は再移動→待機のみ）
+    public bool usedRescue;     // 救出を使ったか（以後この行動は再移動→待機のみ。飛行兵は飛翔も可）
     public bool usedTakeOver;   // 引き受けを使ったか（以後は降ろす/待機のみ＝合意(f)）
 
     // ── 飛翔（Phase 14）──
-    public bool usedFlight;     // この行動で飛翔を使ったか（移動する前なら右クリックで取り消せる）
+    // 飛翔を使うと「その時点の位置・消費コスト・移動済みか」を柔らかい中間点として覚える。
+    // メニューからの取り消しはまず中間点まで戻り（飛翔後の再移動だけを取り消す）、
+    // さらに取り消すと飛翔自体を解除する（1段階ずつ戻る。Commit と違って巻き戻せる）。
+
+    /// <summary>この行動で飛翔を使ったか（発動ターンは「着陸」不可、の判定にも使う）。</summary>
+    public bool usedFlight { get; private set; }
+
+    private Vector2Int flightCell;   // 飛翔した位置（取り消しの中間点）
+    private int flightCost;          // 飛翔した時点までに使っていた移動コスト
+    private bool flightHadMoved;     // 飛翔する前に移動していたか
+
+    /// <summary>飛翔の使用を記録し、いまの位置を取り消しの中間点にする（ExecuteFlight から呼ぶ）。</summary>
+    public void MarkFlight()
+    {
+        usedFlight = true;
+        flightCell = unit.GridPosition;
+        flightCost = moveCostUsed;
+        flightHadMoved = hasMoved;
+    }
+
+    /// <summary>飛翔の取り消し（中間点の破棄）。位置の巻き戻しは先に RevertMove で済ませておくこと。</summary>
+    public void UnmarkFlight()
+    {
+        usedFlight = false;
+    }
 
     /// <summary>
     /// 取り消し不能になったか。救出・引き受けを実行すると true になり、
@@ -63,11 +87,21 @@ public class ActionContext
 
     /// <summary>
     /// 移動を取り消して戻す（Commit 済みならその時点の位置まで）。
+    /// 飛翔を使った後なら、まず飛翔した位置（中間点）まで＝飛翔後の再移動だけを取り消す。
     /// マスの占有の解除・復元は Unit.MoveTo が行うので、戻した後は
     /// 他のユニットが元の移動先マスへ普通に移動できる。
     /// </summary>
     public void RevertMove(GridManager grid)
     {
+        if (usedFlight)
+        {
+            // 飛翔後の再移動だけを取り消して、飛翔した位置まで戻す
+            if (unit.GridPosition != flightCell) unit.MoveTo(grid, flightCell);
+            moveCostUsed = flightCost;
+            hasMoved = flightHadMoved; // 飛翔前に移動していたなら「移動済み」のまま
+            return;
+        }
+
         if (!hasMoved) return;
         unit.MoveTo(grid, originCell);
         hasMoved = false;

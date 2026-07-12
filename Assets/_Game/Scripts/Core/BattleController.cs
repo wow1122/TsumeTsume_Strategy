@@ -24,11 +24,15 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  貨物が複数のとき、「降ろす」「引き受け」「代わりに降ろす」は貨物リスト【CargoSelect】から
 ///  対象を選ぶ（1体だけなら自動選択でリストは出ない）。
 ///
-/// Phase 14（飛翔）で追加された流れ：
-///  「飛翔」→ 飛行兵が「移動する前」だけ選べる。行動は消費せず、飛翔状態になって
-///  そのまま移動選択へ戻る（飛翔→移動→攻撃/待機まで1行動でできる）。
-///  移動する前なら右クリック/ESC で飛翔を取り消せる（取り消しの連鎖に1段として入る）。
-///  選択を解除して他のユニットに移った場合、飛翔はそのまま確定する（取り消せるのはこの操作中だけ）。
+/// Phase 14（飛翔・作者仕様 2026-07-12 改訂）で追加された流れ：
+///  「飛翔」→ 飛行兵が非飛翔中ならいつでも選べる（移動前・移動後・救出後も）。行動は消費せず、
+///  飛翔状態のまま「残り移動力」で移動選択へ戻る（飛翔→移動→攻撃/待機まで1行動でできる）。
+///  取り消しは1段階ずつ：メニュー →（飛翔後の再移動を取り消し＝飛翔した位置へ）→ 飛翔解除 →
+///  （飛翔前の移動を取り消し）→ 選択解除。行動を確定する前に別のマス・別の味方をクリックした
+///  ときも飛翔は取り消される（選択解除できる状況なら解除も同時に。救出後など取り消し不能の
+///  ときは飛翔の取り消しだけが起こり、選択は残る）。確定するには待機・攻撃などで行動を終える。
+///  「着陸」→ 飛翔中の飛行兵が使える（飛翔を発動したターンは不可）。飛翔を解除して即行動終了。
+///  空中で「引き受け」た貨物は降ろせない（降ろすは地上でのみ表示）。
 /// </summary>
 public class BattleController : MonoBehaviour
 {
@@ -142,13 +146,20 @@ public class BattleController : MonoBehaviour
                 }
                 else if (!context.committed && IsSelectablePlayer(clickedUnit))
                 {
+                    CancelAll(); // 未確定の移動・飛翔を巻き戻してから
                     EnterMoveSelect(clickedUnit); // 別の味方へ選択切替
                 }
                 else if (!context.committed)
                 {
-                    CancelAll();
+                    CancelAll(); // 範囲外クリック＝選択解除（未確定の飛翔もここで取り消される）
                 }
-                // 取り消し不能（救出済みなど）のときは範囲外クリックを無視
+                else if (context.usedFlight)
+                {
+                    // 取り消し不能（救出済みなど）でも、確定前の飛翔だけは範囲外クリックで
+                    // 取り消せる（作者仕様 2026-07-12）。選択解除はされず、飛翔前の状態に戻る
+                    CancelFlightAndReturn();
+                }
+                // 取り消し不能で飛翔もしていないときは範囲外クリックを無視
                 break;
 
             case State.TargetSelect:
@@ -240,14 +251,7 @@ public class BattleController : MonoBehaviour
 
             case State.MoveSelect:
                 if (context.usedFlight)
-                {
-                    // 飛翔の取り消し（MoveSelect にいる時点で移動は未確定なので安全に戻せる）。
-                    // 地上の移動範囲を出し直す。もう1回キャンセルすると選択解除
-                    context.unit.CancelFlight();
-                    context.usedFlight = false;
-                    Debug.Log($"{context.unit.Data.unitName} は飛翔を取りやめた");
-                    ShowMoveRange();
-                }
+                    CancelFlightAndReturn(); // 飛翔の解除（1段階戻る）
                 else if (context.committed)
                     OpenCommandMenu(); // 救出済みなどで選択解除はできない → メニューへ
                 else
@@ -306,17 +310,21 @@ public class BattleController : MonoBehaviour
         var commands = new List<ActionMenu.Entry>();
         Unit unit = context.unit;
 
-        // 救出を使った後は「再移動 → 待機」だけ（仕様：使用していない移動力分の再移動のみ）
+        // 救出を使った後は「再移動 → 待機」だけ（仕様：使用していない移動力分の再移動のみ）。
+        // ただし飛行兵は救出の後にも飛翔できる（作者仕様変更 2026-07-12）
         if (context.usedRescue)
         {
+            if (unit.Class == UnitClass.Flier && !unit.IsFlying)
+                commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
         }
 
-        // 引き受けを使った後は「降ろす / 待機」だけ（合意(f)）
+        // 引き受けを使った後は「降ろす / 待機」だけ（合意(f)）。
+        // 空中（飛翔中）で引き受けた場合は降ろせないので「待機」のみ（作者仕様 2026-07-12）
         if (context.usedTakeOver)
         {
-            if (unit.IsRescuing && RescueRules.GetDropCells(unit, grid).Count > 0)
+            if (unit.IsRescuing && !unit.IsFlying && RescueRules.GetDropCells(unit, grid).Count > 0)
                 commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
@@ -326,10 +334,16 @@ public class BattleController : MonoBehaviour
         if (attackTargets.Count > 0)
             commands.Add(new ActionMenu.Entry("攻撃", EnterTargetSelect));
 
-        // 飛翔：飛行兵が「移動する前」だけ使える。行動は消費しない（Phase 14・作者合意）。
-        // 実行すると飛翔状態のまま移動選択へ戻る（攻撃→行動終了の流れがあるので、戦闘後の飛翔は起こらない）
-        if (unit.Class == UnitClass.Flier && !unit.IsFlying && !context.hasMoved)
+        // 飛翔：飛行兵が非飛翔中ならいつでも使える（移動前でも移動後でも。作者仕様変更 2026-07-12）。
+        // 行動は消費せず、残り移動力ぶんの飛行移動ができる
+        //（攻撃→行動終了の流れがあるので、戦闘後の飛翔は起こらない）
+        if (unit.Class == UnitClass.Flier && !unit.IsFlying)
             commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
+
+        // 着陸：飛翔中の飛行兵が使える。飛翔を発動したその行動（発動ターン）では使えない。
+        // 使うと飛翔が解除され、即行動済みになる（作者仕様 2026-07-12）
+        if (unit.IsFlying && !context.usedFlight)
+            commands.Add(new ActionMenu.Entry("着陸", ExecuteLanding));
 
         // 救出：騎乗ユニットが、隣接する同陣営の歩兵を格納する（救出中の攻撃は可＝合意(d)。
         // 輸送隊は騎乗ユニットも救出できる＝Phase 12）
@@ -542,18 +556,47 @@ public class BattleController : MonoBehaviour
     // ===== 飛翔（Phase 14）=====
 
     /// <summary>
-    /// 飛翔を実行：飛翔状態になり、行動は消費せずそのまま移動選択へ戻る。
-    /// 移動する前なら右クリック/ESC で取り消せる（OnCancelPressed の MoveSelect 分岐）。
+    /// 飛翔を実行：飛翔状態になり、行動は消費せず「残り移動力」で移動選択へ戻る。
+    /// 移動前でも移動後でも使える（移動後なら残りの移動力ぶんだけ飛行移動できる）。
+    /// 行動を確定する前なら右クリック/ESC で1段階ずつ取り消せる（OnCancelPressed）。
     /// </summary>
     private void ExecuteFlight()
     {
         Unit unit = context.unit;
         unit.StartFlight();
-        context.usedFlight = true;
+        context.MarkFlight(); // いまの位置を「取り消しの中間点」として記録
 
         Debug.Log($"{unit.Data.unitName} は飛翔した（発動ターンを含めて {unit.FlightTurnsLeft} ターン持続。" +
-                  "移動前なら右クリック/ESCで取り消し可）");
-        ShowMoveRange(); // 飛翔状態の移動範囲（全マスコスト1・すり抜け）で移動選択へ
+                  $"残り移動力 {context.RemainingMove}。行動確定前なら右クリック/ESCで取り消し可）");
+
+        ShowMoveRange(); // 飛翔状態の移動範囲（コスト1・すり抜け）を残り移動力で表示
+        if (reachableCells.Count == 0)
+            OpenCommandMenu(); // 動けるマスが無ければそのままメニューへ（攻撃・待機など）
+    }
+
+    /// <summary>着陸を実行：飛翔状態を解除し、即行動済みになる（作者仕様 2026-07-12）。</summary>
+    private void ExecuteLanding()
+    {
+        Unit unit = context.unit;
+        unit.CancelFlight();
+        Debug.Log($"{unit.Data.unitName} は着陸した（行動終了）");
+        FinishAction();
+    }
+
+    /// <summary>
+    /// 確定前の飛翔を取り消して、飛翔する前の状態へ1段階戻る。
+    /// 飛翔の前に移動していたならその位置のメニューへ、移動する前に飛翔していたなら
+    /// 地上の移動範囲の表示へ戻る。右クリック/ESC と範囲外クリックの両方から呼ばれる
+    /// （救出後の取り消し不能状態でも、飛翔だけはこの方法で取り消せる）。
+    /// </summary>
+    private void CancelFlightAndReturn()
+    {
+        context.unit.CancelFlight();
+        context.UnmarkFlight();
+        Debug.Log($"{context.unit.Data.unitName} は飛翔を取りやめた");
+
+        if (context.hasMoved) OpenCommandMenu();
+        else ShowMoveRange();
     }
 
     /// <summary>降ろすを実行：選んだ貨物を指定マスへ再配置し、行動を終える。</summary>
@@ -591,10 +634,22 @@ public class BattleController : MonoBehaviour
         turnManager.NotifyUnitActed();
     }
 
-    /// <summary>行動を中断して選択を解除する（移動していれば元の位置へ戻す）。</summary>
+    /// <summary>
+    /// 行動を中断して選択を解除する（移動していれば元の位置へ戻す）。
+    /// 確定前の飛翔もここで取り消される（作者仕様 2026-07-12：クリックでの選択解除＝飛翔もキャンセル）。
+    /// </summary>
     private void CancelAll()
     {
-        if (context != null) context.RevertMove(grid);
+        if (context != null)
+        {
+            if (context.usedFlight)
+            {
+                context.unit.CancelFlight();
+                context.UnmarkFlight(); // 先に中間点を破棄 → RevertMove が行動開始位置まで戻す
+                Debug.Log($"{context.unit.Data.unitName} は飛翔を取りやめた");
+            }
+            context.RevertMove(grid);
+        }
         ClearSelection();
     }
 

@@ -21,10 +21,11 @@ using UnityEngine;
 ///  ・「乗り込む」＝隣接する輸送隊へ自分から格納される（自分は行動終了。輸送隊の行動は消費しない）
 ///  ・引き受けで騎乗ユニット（輸送隊以外）が受け取れるのは歩兵の貨物のみ。輸送隊は何でも受け取れる
 ///
-/// Phase 14（飛翔）の追加合意（2026-07-12）：
-///  ・飛翔中のユニットは救出系コマンドの一切に関与できない（実行する側にも、される側にもならない）。
-///    空中では乗り降りできない、という整理。貨物を抱えたまま飛翔すること自体は可能で、
-///    その場合は着地するまで降ろせない（降ろすの表示制限は BattleController 側）
+/// Phase 14（飛翔）の追加合意（2026-07-12、同日改訂あり）：
+///  ・飛翔中のユニットは救出系コマンドに原則関与できない（実行する側にも、される側にもならない）。
+///    空中と地上の間では乗り降りできない、という整理。
+///  ・例外は「引き受け」：飛翔状態が同じ相手同士（地上同士・空中同士）なら受け渡しできる（改訂）
+///  ・貨物を抱えたまま飛翔すること自体は可能で、飛翔中は降ろせない（降ろすの表示制限は BattleController 側）
 /// </summary>
 public static class RescueRules
 {
@@ -82,17 +83,18 @@ public static class RescueRules
 
     /// <summary>
     /// user がいまの位置から「引き受け」できる、隣接する救出中ユニットの一覧。
-    /// 飛翔中は実行も対象も不可（空中では受け渡しできない。Phase 14）。
+    /// 飛翔状態が同じ相手同士でのみ可能：地上同士に加えて、空中同士でも受け渡しできる
+    /// （作者仕様変更 2026-07-12）。空中と地上の間では不可。
     /// </summary>
     public static List<Unit> FindTakeOverCarriers(Unit user, GridManager grid)
     {
         var result = new List<Unit>();
-        if (user.IsFlying) return result;
         if (!CanCarryMore(user)) return result;
 
         foreach (Unit neighbor in GetAdjacentUnits(user.GridPosition, grid))
         {
-            if (neighbor.Faction == user.Faction && neighbor.IsRescuing && !neighbor.IsFlying
+            if (neighbor.Faction == user.Faction && neighbor.IsRescuing
+                && neighbor.IsFlying == user.IsFlying
                 && GetTakeOverCargoes(user, neighbor).Count > 0)
                 result.Add(neighbor);
         }

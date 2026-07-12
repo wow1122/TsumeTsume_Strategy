@@ -58,9 +58,11 @@ public class Unit : MonoBehaviour
         Class == UnitClass.Transporter ? 4 : (Class.IsMounted() ? 1 : 0);
 
     // ── 飛翔（Phase 14）──
-    // 飛行兵専用の状態。飛翔中は移動阻害と地形（コスト・防御・通行不可）を無視し、
+    // 飛行兵専用の状態。飛翔中は地形（コスト・防御・通行不可）を無視して移動でき、
     // 戦闘は「飛翔中の相手」との間か「後衛武器による対空」しか成立しない（CombatRules.CanEngage）。
-    // 持続は発動ターンを含めて2ターン。自軍フェイズ開始ごとに TickFlight で数え、0で自動着地する。
+    // すり抜けの例外（飛翔中の敵・対空武器の敵は通れない）は MovementCalculator 参照。
+    // 持続は発動ターンを含めて3ターン。自軍フェイズ開始ごとに TickFlight で数え、0で自動着地する。
+    // 「着陸」コマンドで早めに降りることもできる（発動したターンは不可・着陸すると行動終了）。
 
     /// <summary>飛翔状態か。</summary>
     public bool IsFlying { get; private set; }
@@ -69,13 +71,16 @@ public class Unit : MonoBehaviour
     public int FlightTurnsLeft { get; private set; }
 
     /// <summary>飛翔状態を開始する（発動ターンを1ターン目と数える）。</summary>
-    public void StartFlight(int turns = 2)
+    public void StartFlight(int turns = 3)
     {
         IsFlying = true;
         FlightTurnsLeft = turns;
     }
 
-    /// <summary>飛翔の取り消し（発動した行動の中で、まだ移動していないときだけ呼ばれる）。</summary>
+    /// <summary>
+    /// 飛翔状態を解除する。取り消し（発動した行動の中でのやり直し）と、
+    /// 「着陸」コマンド（Phase 14・行動終了を伴う）の両方から呼ばれる。
+    /// </summary>
     public void CancelFlight()
     {
         IsFlying = false;
