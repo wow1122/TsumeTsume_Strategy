@@ -9,8 +9,8 @@
 Phase 9（前衛・後衛武器と新三すくみ、CombatRules による判定一元化）、
 Phase 10（コマンドメニューUI・移動取り消し）、
 Phase 11（救出システム）、Phase 12（輸送隊・輸送隊死亡で敗北）、
-Phase 13（地形システム）まで Play 確認済み・コミット済み。
-次は Phase 14（空中移動・飛翔）。
+Phase 13（地形システム）、Phase 14（空中移動・飛翔、城壁地形、着陸コマンド）まで
+Play 確認済み・コミット済み。次は Phase 15（統合仕上げ）。
 
 全体計画（Phase 8〜15 ロードマップ）は
 `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md` 参照（WSL側）。
@@ -40,7 +40,8 @@ Phase 13（地形システム）まで Play 確認済み・コミット済み。
   騎兵向けルールは UnitClass.IsCavalry()（騎兵+輸送隊）、騎乗全体は IsMounted() を使う
 - Unit は Initialize で UnitData をコピーした「ランタイム能力値」を使う（Strength〜Move/Class/Weapon プロパティ経由。
   Data 直読みは Unit 内の窓口のみ。ユニット列挙は UnitRegistry（名簿）経由で、FindObjectsByType は使わない）
-- 移動: 味方のマスは通過可・停止不可、敵のマスは侵入・通過不可。非アクティブ化＝盤上から外れる（占有も明け渡す）
+- 移動: 味方のマスは通過可・停止不可、敵のマスは侵入・通過不可。非アクティブ化＝盤上から外れる（占有も明け渡す）。
+  飛翔中の例外は「飛翔の合意仕様」の節を参照
 - 操作フロー（Phase 10〜）: 移動 → 行動メニュー（攻撃/待機）→ 対象選択 のFE型。
   キャンセルは右クリック/ESC で1段階ずつ戻る（対象選択→メニュー→移動取り消し→選択解除）。
   移動の取り消しは ActionContext.RevertMove（占有も復元）。待機はメニューから明示的に選ぶ
@@ -97,6 +98,31 @@ Phase 13（地形システム）まで Play 確認済み・コミット済み。
   マス進入コストは MovementCalculator.GetMoveCost(unit, tile) に分離
   （Phase 14 で「飛翔中は常に1」を差し込む拡張点）
 
+### 飛翔の合意仕様（Phase 14・2026-07-12 作者合意。ロードマップの初版案から作者改訂あり、本節が正）
+
+- 「飛翔」は飛行兵専用コマンドで、**行動を消費しない**。非飛翔中ならいつでも使える（移動前・移動後・救出後も）。
+  使用後は残り移動力ぶんの飛行移動が可能。飛翔後に使えるコマンドは救出・降ろす以外（攻撃は飛翔中の敵のみ）
+- 持続は**発動ターンを含めて3ターン**（表示「飛x3→飛x2→飛x1」。自軍フェイズ開始ごとに減り、0で自動着地）。
+  着地したターンは地上ユニットとして普通に行動できる。着地したターンの再飛翔も可（クールタイムなし）
+- 「着陸」コマンド: 飛翔中の飛行兵が使える（飛翔を発動したターンは不可）。飛翔を解除して**即行動済み**。移動→着陸も可
+- 飛翔中の移動: 全マス移動コスト1（地形無視）。屋内壁 `#` は飛行でも通過不可。
+  城壁 `=`（Phase 14 新地形。地上は通行不可・地形防御+2）は飛行なら通過も停止も可。
+  飛翔が切れたとき城壁の上にいたら、そのまま城壁の上に着地する（翌ターン歩いて降りられる。詰みなし）
+- すり抜け: 飛翔中は敵のマスを通過できるが、**「飛翔状態の敵」と「対空武器（弓・魔法）装備の敵」のマスは通過不可**。
+  地上ユニットは飛翔中の敵の下を通過できる。停止は誰もいないマスのみ（着地衝突は仕組み上起こらない）
+- 戦闘: 飛翔中の相手を攻撃できるのは「飛翔中のユニット」か「後衛武器（対空）」のみ。飛翔中は地上の敵を攻撃できない。
+  飛翔中は地形防御を受けない。判定は CombatRules.CanEngage に一元化（UI・敵AI・挟撃が共有）
+- 挟撃: 飛翔中の敵を挟めるのは飛翔中の前衛味方のみ。地上の前衛歩兵ガードは飛翔中の防御側を守れない
+- 救出との関係: 飛翔中は救出系に原則関与できない（実行も対象も不可。乗り込むも不可）。
+  例外は「引き受け」で、**飛翔状態が同じ相手同士**（地上同士・空中同士）なら可。
+  空中で引き受けた貨物は降ろせない（降ろすは地上でのみ表示）。貨物を抱えたまま飛翔は可（着地後に降ろせる）
+- 取り消しは1段階ずつ: メニュー→飛翔後の再移動取り消し（飛翔した位置へ）→飛翔解除→移動取り消し→選択解除。
+  行動確定前なら範囲外クリック・別ユニットクリックでも飛翔は取り消される
+  （救出後など取り消し不能のときは飛翔の取り消しだけが起こり、選択は残る）。
+  飛翔が確定するのは待機・攻撃・着陸などで行動を終えたとき
+- 敵AIは飛翔コマンドを使わない（従来合意）。StageData の配置ごとに「開始時飛翔ターン数」を指定でき、
+  検証用の敵飛行兵は99ターンで最初から飛んでいる（Stage_Test。数値はアセット編集で変更可）
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -109,35 +135,41 @@ Phase 13（地形システム）まで Play 確認済み・コミット済み。
 
 ## コード構成（Assets/_Game/Scripts/）
 
-- Core/ … BattleController(操作の司令塔・7状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect),
-  ActionContext(1行動の文脈・移動取り消し・再移動予算・取り消し不能点Commit), TurnManager(フェイズ・勝敗・簡易UI), BattleSetup(StageDataを読んで初期配置)
+- Core/ … BattleController(操作の司令塔・7状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect。
+  飛翔・着陸コマンドと飛翔の段階取り消しCancelFlightAndReturnもここ),
+  ActionContext(1行動の文脈・移動取り消し・再移動予算・取り消し不能点Commit・飛翔の中間点MarkFlight),
+  TurnManager(フェイズ・勝敗・簡易UI・フェイズ開始時の飛翔Tick), BattleSetup(StageDataを読んで初期配置・開始時飛翔の適用)
 - Grid/ … GridManager(盤面・座標変換・多層ハイライト・地形適用ApplyTerrain・地形情報の画面下表示),
-  TileData(1マスの論理データ。IsWalkable/MoveCost/DefenseBonus は TerrainDef 参照のプロパティ),
-  TerrainType(地形enum+TerrainDef定義), MovementCalculator(ダイクストラ移動範囲・味方すり抜け・GetMoveCost拡張点)
+  TileData(1マスの論理データ。IsWalkable/CanFlyOver/MoveCost/DefenseBonus は TerrainDef 参照のプロパティ),
+  TerrainType(地形enum+TerrainDef定義。城壁Rampart・飛行可否canFlyOverを含む),
+  MovementCalculator(ダイクストラ移動範囲・味方すり抜け・飛翔中はコスト1で対空敵のみすり抜け不可)
 - UI/ … ActionMenu(IMGUI行動メニュー。Entryリスト駆動・BattleControllerが自動生成),
   CargoListMenu(貨物リスト選択。名前+HP表示・BattleControllerが自動生成)
-- Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried), UnitClass(兵種enum+IsMounted),
-  RescueRules(救出系コマンドの可否判定一元化・乗り込む判定・死亡時配置先探索FindReleaseCells),
+- Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried・飛翔IsFlying/FlightTurnsLeft),
+  UnitClass(兵種enum+IsMounted),
+  RescueRules(救出系コマンドの可否判定一元化・乗り込む判定・飛翔の制限と空中引き受け・死亡時配置先探索FindReleaseCells),
   UnitRegistry(全ユニットの名簿・輸送隊死亡フラグPlayerTransporterLost), Faction(陣営enum)
-- Combat/ … CombatSystem(攻撃解決・挟撃・ガード・反撃フック・PredictTotalDamage), CombatRules(射程・三すくみ・挟撃可否の一元判定),
-  DamageCalculator(物理/魔法分岐・DamageBreakdown内訳), WeaponType, WeaponCategory(前衛/後衛)
-- Data/ … UnitData(7能力値+兵種), WeaponData, StageData(初期配置+地形マップterrainRows),
+- Combat/ … CombatSystem(攻撃解決・挟撃・ガード・反撃フック・PredictTotalDamage),
+  CombatRules(射程・三すくみ・挟撃可否・飛翔の戦闘制限CanEngageの一元判定),
+  DamageCalculator(物理/魔法分岐・DamageBreakdown内訳・飛翔中は地形防御なし), WeaponType, WeaponCategory(前衛/後衛)
+- Data/ … UnitData(7能力値+兵種), WeaponData, StageData(初期配置+開始時飛翔initialFlightTurns+地形マップterrainRows),
   TerrainTable(地形定義一覧・記号引き) (ScriptableObject定義)
 - AI/ … EnemyAI(点数評価型)
 - Editor/ … UnitDataEditor, WeaponDataEditor(Inspectorの日本語表示。エディタ専用・ビルド非含有)
 
 アセット実体: Assets/_Game/Data/
 （Unit_Player, Unit_Enemy, Unit_Player_Archer, Unit_Player_Mage, Unit_Player_Cavalry,
-  Unit_Player_Transport, Unit_Enemy_Lancer, Unit_Enemy_Archer,
+  Unit_Player_Transport, Unit_Player_Flier, Unit_Enemy_Lancer, Unit_Enemy_Archer, Unit_Enemy_Flier,
   W_Sword, W_Axe, W_Lance, W_Bow, W_Tome, Stage_Test, TerrainTable）
 シーン: Assets/_Game/Scenes/BattleScene.unity
 
 ## 次にやること
 
 ロードマップ（上記プランファイル）に従って進行:
-- Phase 14: 空中移動（飛翔） ← 次はここ（飛翔コマンド・2ターン持続・地形/阻害無視・対空は後衛のみ）。
-  着手前にロードマップの確認事項(a)〜(f)を作者と合意すること
-- Phase 15: 統合仕上げ（正式ステージ・AI地形対応・戦闘予測表示・バランス調整）
+- Phase 15: 統合仕上げ（正式ステージ・AI地形対応・戦闘予測表示・バランス調整） ← 次はここ。
+  着手時にロードマップの確認事項（勝利条件のバリエーション・次期ロードマップの優先度）を作者と合意すること
+- 注意: ロードマップの Phase 14 の記述は初版案のまま。飛翔の確定仕様は本ファイルの
+  「飛翔の合意仕様」の節が正（2ターン→3ターン等、作者改訂済み）
 
 ## 環境・運用の注意
 
