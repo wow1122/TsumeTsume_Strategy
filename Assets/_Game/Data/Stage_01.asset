@@ -1,0 +1,98 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45f9520dc1ea40fd9d7d3841adf2a689, type: 3}
+  m_Name: Stage_01
+  m_EditorClassIdentifier: Assembly-CSharp::StageData
+  placements:
+  - unitData: {fileID: 11400000, guid: 746437a2906efd846b321b19e8f92480, type: 2}
+    cell: {x: 4, y: 1}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 746437a2906efd846b321b19e8f92480, type: 2}
+    cell: {x: 5, y: 1}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: c1d05458505e4ed6bf377555cd866843, type: 2}
+    cell: {x: 6, y: 1}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 0ab9e65ec8ef4d5bacbc7d208ca03791, type: 2}
+    cell: {x: 7, y: 1}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 391970494cef46cb8f56b50cb656988b, type: 2}
+    cell: {x: 5, y: 0}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 4f3df088901a403483eb0d25fffb32dc, type: 2}
+    cell: {x: 3, y: 1}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 06ab57ed8968473b98aaa3d37209f4a9, type: 2}
+    cell: {x: 8, y: 1}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 476eca3c931d4cdf85cb0807647ab43c, type: 2}
+    cell: {x: 6, y: 0}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: ea6715ce35334662a134756f8f7fb7d0, type: 2}
+    cell: {x: 2, y: 1}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: ea6715ce35334662a134756f8f7fb7d0, type: 2}
+    cell: {x: 11, y: 1}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
+    cell: {x: 8, y: 6}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
+    cell: {x: 9, y: 6}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
+    cell: {x: 5, y: 5}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 9e41d5db67904853a08890ea666d4e7b, type: 2}
+    cell: {x: 7, y: 5}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 9e41d5db67904853a08890ea666d4e7b, type: 2}
+    cell: {x: 6, y: 4}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: e1acbf8f29054987be8982bf4cb078b0, type: 2}
+    cell: {x: 5, y: 9}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: e1acbf8f29054987be8982bf4cb078b0, type: 2}
+    cell: {x: 6, y: 9}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: bf5aaf7cfc4c460c95aa2fd7fa36e0e6, type: 2}
+    cell: {x: 6, y: 10}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: b36af662151b4214a2d0156cfdddcbea, type: 2}
+    cell: {x: 11, y: 7}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: b36af662151b4214a2d0156cfdddcbea, type: 2}
+    cell: {x: 12, y: 7}
+    initialFlightTurns: 0
+  - unitData: {fileID: 11400000, guid: 6fd6a4f4dc2e4a689fca726a08685521, type: 2}
+    cell: {x: 3, y: 9}
+    initialFlightTurns: 99
+  - unitData: {fileID: 11400000, guid: 6fd6a4f4dc2e4a689fca726a08685521, type: 2}
+    cell: {x: 10, y: 9}
+    initialFlightTurns: 0
+  terrainTable: {fileID: 11400000, guid: ab7adf8c0ffdbd8e6818d76fdffbee85, type: 2}
+  terrainRows:
+  - ....T..T......
+  - ..............
+  - ..............
+  - ====#..#======
+  - ..............
+  - MMM.....FF....
+  - MMM....FF.....
+  - ......T.......
+  - ...F......F...
+  - ..............
+  - ..............
+  - ..............
+  gridWidth: 14
+  gridHeight: 12
+  turnLimit: 20

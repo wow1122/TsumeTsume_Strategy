@@ -239,14 +239,16 @@ public class Unit : MonoBehaviour
 
         // 貨物は全員生存し、死亡マス → 隣接 → さらに外側の最寄り空きマスの順に降ろされる
         // （Phase 11 合意(a) + Phase 12 合意(b)）。自分の占有を外した後なので、死亡マスは空いている。
+        // 置き場は貨物ごとの兵種で判定する（騎乗の貨物は山に置けない等。Phase 15）
         if (IsRescuing && grid != null)
         {
-            List<Vector2Int> cells = RescueRules.FindReleaseCells(GridPosition, Carried.Count, grid);
-            foreach (Vector2Int cell in cells)
+            foreach (Unit cargo in new List<Unit>(Carried))
             {
-                Unit cargo = Carried[0];
-                ReleaseUnitAt(cargo, grid, cell);
-                Debug.Log($"{Data.unitName} が倒れ、{cargo.Data.unitName} は {cell} に降ろされた");
+                Vector2Int? cell = RescueRules.FindReleaseCell(GridPosition, cargo, grid);
+                if (cell == null) continue; // 置き場が無い（下の警告でまとめて知らせる）
+
+                ReleaseUnitAt(cargo, grid, cell.Value);
+                Debug.Log($"{Data.unitName} が倒れ、{cargo.Data.unitName} は {cell.Value} に降ろされた");
             }
 
             // 盤面が埋まり尽くして置き場が無い場合の保険（通常は起こらない）

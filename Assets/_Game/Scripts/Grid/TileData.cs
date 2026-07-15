@@ -25,6 +25,29 @@ public class TileData
     /// <summary>このマスに入るのに必要な移動コスト（平地1・森2など）。</summary>
     public int MoveCost => Terrain != null ? Terrain.moveCost : 1;
 
+    /// <summary>
+    /// この兵種が（地上移動で）通行できるか（Phase 15）。
+    /// 騎乗ユニット（騎兵・輸送隊・地上の飛行兵）は騎乗通行可否（mountedWalkable）も見る。
+    /// 飛翔中の判定はここではなく CanFlyOver を使うこと。
+    /// </summary>
+    public bool IsWalkableFor(UnitClass unitClass)
+    {
+        if (!IsWalkable) return false;
+        if (unitClass.IsMounted() && Terrain != null && !Terrain.mountedWalkable) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// この兵種が（地上移動で）このマスに入る移動コスト（Phase 15）。
+    /// 騎乗ユニット用のコスト指定（mountedCost）があればそちらを使う。
+    /// </summary>
+    public int MoveCostFor(UnitClass unitClass)
+    {
+        if (unitClass.IsMounted() && Terrain != null && Terrain.mountedCost > 0)
+            return Terrain.mountedCost;
+        return MoveCost;
+    }
+
     /// <summary>このマスにいる防御側が得る防御ボーナス（地形効果）。</summary>
     public int DefenseBonus => Terrain != null ? Terrain.defenseBonus : 0;
 

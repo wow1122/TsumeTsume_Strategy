@@ -17,12 +17,13 @@ public static class MovementCalculator
 
     /// <summary>
     /// unit がこのマスに入るときの移動コスト。
-    /// 地上は地形のコストそのまま（全兵種共通）。飛翔中は常に 1（地形の影響なし。Phase 14）。
+    /// 地上は地形のコスト（騎乗ユニットは騎乗用コストの指定があればそちら。Phase 15）。
+    /// 飛翔中は常に 1（地形の影響なし。Phase 14）。
     /// </summary>
     public static int GetMoveCost(Unit unit, TileData tile)
     {
         if (unit.IsFlying) return 1;
-        return tile.MoveCost;
+        return tile.MoveCostFor(unit.Class);
     }
 
     /// <summary>
@@ -63,7 +64,7 @@ public static class MovementCalculator
         while (open.Count > 0)
         {
             // 候補の中から累計コストが最小のマスを取り出す（ダイクストラ法の核心）。
-            // 10x10 程度の盤面なので、リストの全走査で十分速い。
+            // 15マス四方程度の盤面なので、リストの全走査で十分速い。
             int best = 0;
             for (int i = 1; i < open.Count; i++)
             {
@@ -83,8 +84,9 @@ public static class MovementCalculator
                 TileData tile = grid.GetTile(next);
                 if (tile == null) continue;            // 盤外
 
-                // 入れる地形か：地上は通行可否（壁・城壁が不可）、飛翔中は飛行可否（屋内壁だけ不可）
-                bool canEnter = unit.IsFlying ? tile.CanFlyOver : tile.IsWalkable;
+                // 入れる地形か：地上は兵種ごとの通行可否（壁・城壁は全員不可、山を歩兵専用にする等。
+                // Phase 15）、飛翔中は飛行可否（屋内壁だけ不可）
+                bool canEnter = unit.IsFlying ? tile.CanFlyOver : tile.IsWalkableFor(unit.Class);
                 if (!canEnter) continue;
 
                 // ユニットがいるマスの扱い（味方のマスは常に通過できる。敵のマスだけ通せんぼがあり得る）：

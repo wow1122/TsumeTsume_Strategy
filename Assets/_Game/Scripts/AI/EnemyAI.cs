@@ -12,7 +12,8 @@ using UnityEngine;
 ///   合計ダメージ = CombatSystem.PredictTotalDamage（本体＋挟撃−無効化まで込みの共有予測）
 ///   点数        = 合計ダメージ ＋（その合計で相手を倒せるなら 撃破ボーナス）
 ///   ・反撃は無いので「攻撃する＝ノーリスク」。だから迷わず最大火力・撃破・挟撃を狙う。
-///   ・点数が同じなら、移動が少ない（あまり前に出ない）マスを選ぶ。
+///   ・点数が同じなら (1)地形防御の高いマス (2)移動が少ないマス の順で選ぶ（Phase 15）。
+///     攻撃できないターンの前進でも、同じ近さなら地形防御の高いマスで待つ。
 ///
 /// 射程・攻撃可否は CombatRules に任せる（プレイヤー操作と同じ判定）。
 /// これにより後衛武器の敵（弓兵など）は自然に
@@ -41,7 +42,8 @@ public static class EnemyAI
         Vector2Int bestCell = enemy.GridPosition;
         Unit bestTarget = null;
         int bestScore = int.MinValue;
-        int bestMoveDist = int.MaxValue; // 同点なら移動が少ない方を選ぶための比較用
+        int bestDefense = int.MinValue;  // 同点なら地形防御の高いマスを選ぶ（Phase 15）
+        int bestMoveDist = int.MaxValue; // それも同じなら移動が少ない方を選ぶ
 
         foreach (Vector2Int cell in candidates)
         {
@@ -53,12 +55,17 @@ public static class EnemyAI
                 if (!CombatRules.CanAttack(enemy, cell, target, hasMoved)) continue; // 射程外・武装無し
 
                 int score = ScoreAttack(enemy, cell, target, grid);
+                int defense = TileDefense(enemy, cell, grid);
                 int moveDist = CombatRules.Manhattan(enemy.GridPosition, cell);
 
-                // 点数が高い方を採用。同点なら移動が少ない方を採用。
-                if (score > bestScore || (score == bestScore && moveDist < bestMoveDist))
+                // 点数が高い方を採用。同点なら (1)地形防御が高い (2)移動が少ない の順（Phase 15）。
+                bool better = score > bestScore
+                    || (score == bestScore && defense > bestDefense)
+                    || (score == bestScore && defense == bestDefense && moveDist < bestMoveDist);
+                if (better)
                 {
                     bestScore = score;
+                    bestDefense = defense;
                     bestMoveDist = moveDist;
                     bestCell = cell;
                     bestTarget = target;
@@ -77,13 +84,18 @@ public static class EnemyAI
         // ===== 2) 攻撃できない：一番近い味方へ近づく =====
         Vector2Int approachCell = enemy.GridPosition;
         int bestDist = NearestPlayerDistance(enemy.GridPosition, players);
+        int bestWaitDefense = TileDefense(enemy, enemy.GridPosition, grid);
 
         foreach (Vector2Int cell in candidates)
         {
             int d = NearestPlayerDistance(cell, players);
-            if (d < bestDist)
+            int defense = TileDefense(enemy, cell, grid);
+
+            // より近づけるマスを選ぶ。同じ近さなら地形防御の高いマスで待つ（Phase 15）
+            if (d < bestDist || (d == bestDist && defense > bestWaitDefense))
             {
                 bestDist = d;
+                bestWaitDefense = defense;
                 approachCell = cell;
             }
         }
@@ -109,6 +121,14 @@ public static class EnemyAI
     }
 
     // ===== 補助 =====
+
+    /// <summary>そのマスに立ったとき受ける地形防御（飛翔中は地形の恩恵が無いので常に0）。</summary>
+    private static int TileDefense(Unit unit, Vector2Int cell, GridManager grid)
+    {
+        if (unit.IsFlying) return 0;
+        TileData tile = grid.GetTile(cell);
+        return tile != null ? tile.DefenseBonus : 0;
+    }
 
     private static int NearestPlayerDistance(Vector2Int cell, List<Unit> players)
     {

@@ -19,6 +19,8 @@ MonoBehaviour:
     isWalkable: 1
     canFlyOver: 1
     moveCost: 1
+    mountedWalkable: 1
+    mountedCost: 0
     defenseBonus: 0
     color: {r: 0.85, g: 0.85, b: 0.85, a: 1}
   - type: 1
@@ -27,6 +29,8 @@ MonoBehaviour:
     isWalkable: 1
     canFlyOver: 1
     moveCost: 2
+    mountedWalkable: 1
+    mountedCost: 3
     defenseBonus: 1
     color: {r: 0.45, g: 0.72, b: 0.42, a: 1}
   - type: 2
@@ -35,6 +39,8 @@ MonoBehaviour:
     isWalkable: 1
     canFlyOver: 1
     moveCost: 3
+    mountedWalkable: 0
+    mountedCost: 0
     defenseBonus: 2
     color: {r: 0.62, g: 0.52, b: 0.38, a: 1}
   - type: 3
@@ -43,6 +49,8 @@ MonoBehaviour:
     isWalkable: 1
     canFlyOver: 1
     moveCost: 1
+    mountedWalkable: 1
+    mountedCost: 0
     defenseBonus: 3
     color: {r: 0.55, g: 0.6, b: 0.78, a: 1}
   - type: 4
@@ -51,6 +59,8 @@ MonoBehaviour:
     isWalkable: 0
     canFlyOver: 0
     moveCost: 1
+    mountedWalkable: 1
+    mountedCost: 0
     defenseBonus: 0
     color: {r: 0.28, g: 0.28, b: 0.3, a: 1}
   - type: 5
@@ -59,5 +69,7 @@ MonoBehaviour:
     isWalkable: 0
     canFlyOver: 1
     moveCost: 1
+    mountedWalkable: 1
+    mountedCost: 0
     defenseBonus: 2
     color: {r: 0.55, g: 0.55, b: 0.62, a: 1}

@@ -32,4 +32,15 @@ public class StageData : ScriptableObject
     [Tooltip("地形の文字マップ。1行が盤面の横1列で、リストの先頭が「盤面の一番上の行」。\n" +
              "記号は TerrainTable で定義（例: .=平地 F=森 M=山 T=砦 #=壁）")]
     public List<string> terrainRows = new List<string>();
+
+    [Header("盤面の大きさ（Phase 15）")]
+    [Tooltip("盤面の横のマス数（0以下なら GridManager の Inspector 値をそのまま使う）")]
+    public int gridWidth = 10;
+
+    [Tooltip("盤面の縦のマス数（0以下なら GridManager の Inspector 値をそのまま使う）")]
+    public int gridHeight = 10;
+
+    [Header("勝敗条件（Phase 15）")]
+    [Tooltip("ターン制限。このターン数を使い切っても敵が残っていたら敗北（0なら無制限）")]
+    public int turnLimit = 0;
 }

@@ -33,6 +33,10 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  ときは飛翔の取り消しだけが起こり、選択は残る）。確定するには待機・攻撃などで行動を終える。
 ///  「着陸」→ 飛翔中の飛行兵が使える（飛翔を発動したターンは不可）。飛翔を解除して即行動終了。
 ///  空中で「引き受け」た貨物は降ろせない（降ろすは地上でのみ表示）。
+///
+/// Phase 15 の追加：
+///  攻撃の対象選択中、対象にマウスを重ねると戦闘予測（BattleForecast）が画面右下に出る。
+///  「降ろす」系の対象・マスは貨物の兵種で判定する（騎乗の貨物は山に降ろせない等）。
 /// </summary>
 public class BattleController : MonoBehaviour
 {
@@ -65,6 +69,7 @@ public class BattleController : MonoBehaviour
     private Unit selectedCargo;                 // 貨物リストで選んだ（または自動選択された）貨物
     private ActionMenu menu;                    // 行動メニュー（IMGUI）
     private CargoListMenu cargoMenu;            // 貨物リストメニュー（IMGUI・Phase 12）
+    private BattleForecast forecast;            // 戦闘予測パネル（IMGUI・Phase 15）
 
     void Awake()
     {
@@ -73,6 +78,8 @@ public class BattleController : MonoBehaviour
         if (menu == null) menu = gameObject.AddComponent<ActionMenu>();
         cargoMenu = GetComponent<CargoListMenu>();
         if (cargoMenu == null) cargoMenu = gameObject.AddComponent<CargoListMenu>();
+        forecast = GetComponent<BattleForecast>();
+        if (forecast == null) forecast = gameObject.AddComponent<BattleForecast>();
     }
 
     void Update()
@@ -225,7 +232,9 @@ public class BattleController : MonoBehaviour
                 }
                 else
                 {
-                    if (context.unit.Carried.Count > 1) EnterDropCargoSelect();
+                    // 降ろせる貨物が複数ならリストへ戻る（1体なら自動選択なのでメニューへ。Phase 15 から
+                    // 「降ろせる貨物」で数える＝地形の都合で降ろせない貨物はリストに出ないため）
+                    if (RescueRules.GetDroppableCargoes(context.unit, grid).Count > 1) EnterDropCargoSelect();
                     else OpenCommandMenu();
                 }
                 break;
@@ -292,6 +301,7 @@ public class BattleController : MonoBehaviour
     private void OpenCommandMenu()
     {
         Unit unit = context.unit;
+        forecast.Hide(); // 対象選択から戻ったときは戦闘予測を消す（Phase 15）
 
         // 移動範囲・対象候補の表示を消し、選択マークだけ現在位置に付け直す
         grid.ResetAllHighlights();
@@ -324,7 +334,7 @@ public class BattleController : MonoBehaviour
         // 空中（飛翔中）で引き受けた場合は降ろせないので「待機」のみ（作者仕様 2026-07-12）
         if (context.usedTakeOver)
         {
-            if (unit.IsRescuing && !unit.IsFlying && RescueRules.GetDropCells(unit, grid).Count > 0)
+            if (unit.IsRescuing && !unit.IsFlying && RescueRules.GetDroppableCargoes(unit, grid).Count > 0)
                 commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
@@ -356,10 +366,11 @@ public class BattleController : MonoBehaviour
         if (transporters.Count > 0)
             commands.Add(new ActionMenu.Entry("乗り込む", () => EnterUnitTargetSelect(UnitSelectPurpose.Board, transporters)));
 
-        // 降ろす：救出中で、隣に空きマスがあるとき（救出と同一行動では不可＝合意(e)。
+        // 降ろす：救出中で、貨物を降ろせる隣接マスがあるとき（救出と同一行動では不可＝合意(e)。
         // usedRescue のときは上で分岐済みなので、ここに来るのは前のターンに救出した場合）。
-        // 飛翔中は降ろせない（空中では乗り降りできない。着地後に降ろせる。Phase 14）
-        if (unit.IsRescuing && !unit.IsFlying && RescueRules.GetDropCells(unit, grid).Count > 0)
+        // 飛翔中は降ろせない（空中では乗り降りできない。着地後に降ろせる。Phase 14）。
+        // 降ろせるかは貨物の兵種ごとに判定する（Phase 15）
+        if (unit.IsRescuing && !unit.IsFlying && RescueRules.GetDroppableCargoes(unit, grid).Count > 0)
             commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
 
         // 引き受け：隣接する救出中の味方から貨物をもらう
@@ -383,6 +394,9 @@ public class BattleController : MonoBehaviour
 
         foreach (Unit enemy in attackTargets)
             grid.AddHighlight(enemy.GridPosition, HighlightKind.TargetChoice);
+
+        // 対象にマウスを重ねると戦闘予測が出る（Phase 15）
+        forecast.Show(context.unit, attackTargets, grid);
 
         state = State.TargetSelect;
         Debug.Log($"攻撃対象を選択（{attackTargets.Count} 体）。右クリック/ESCでメニューへ戻る。");
@@ -425,17 +439,21 @@ public class BattleController : MonoBehaviour
     // ===== 貨物選択（Phase 12）=====
     // 貨物が1体だけなら自動選択してリストは出さない。複数のときだけ CargoListMenu を開く。
 
-    /// <summary>「降ろす」の貨物選択：自分の貨物からどれを降ろすかを選ぶ。</summary>
+    /// <summary>
+    /// 「降ろす」の貨物選択：自分の貨物からどれを降ろすかを選ぶ。
+    /// 降ろせるマスが無い貨物はリストに出さない（騎乗の貨物は山側に降ろせない等。Phase 15）。
+    /// </summary>
     private void EnterDropCargoSelect()
     {
         Unit unit = context.unit;
-        if (unit.Carried.Count == 1)
+        List<Unit> droppable = RescueRules.GetDroppableCargoes(unit, grid);
+        if (droppable.Count == 1)
         {
-            selectedCargo = unit.Carried[0];
+            selectedCargo = droppable[0];
             EnterDropTileSelect();
             return;
         }
-        ShowCargoList(CargoSelectPurpose.Drop, unit, new List<Unit>(unit.Carried),
+        ShowCargoList(CargoSelectPurpose.Drop, unit, droppable,
                       cargo => { cargoMenu.Hide(); selectedCargo = cargo; EnterDropTileSelect(); });
     }
 
@@ -483,12 +501,12 @@ public class BattleController : MonoBehaviour
         Debug.Log($"貨物を選択（{cargoes.Count} 体）。右クリック/ESCで戻る。");
     }
 
-    /// <summary>「降ろす」が選ばれた：自分の隣の空きマスを赤表示して、クリックを待つ。</summary>
+    /// <summary>「降ろす」が選ばれた：選んだ貨物を置ける隣の空きマスを赤表示して、クリックを待つ。</summary>
     private void EnterDropTileSelect()
     {
         menu.Hide();
         tileSelectPurpose = TileSelectPurpose.Drop;
-        tileCandidates = RescueRules.GetDropCells(context.unit, grid);
+        tileCandidates = RescueRules.GetDropCells(context.unit, selectedCargo, grid);
 
         foreach (Vector2Int c in tileCandidates)
             grid.AddHighlight(c, HighlightKind.TargetChoice);
@@ -497,11 +515,11 @@ public class BattleController : MonoBehaviour
         Debug.Log($"降ろすマスを選択（{tileCandidates.Count} マス）。右クリック/ESCでメニューへ戻る。");
     }
 
-    /// <summary>「代わりに降ろす」の2段階目：運び手の隣の空きマスを選ぶ。</summary>
+    /// <summary>「代わりに降ろす」の2段階目：運び手の隣で、選んだ貨物を置けるマスを選ぶ。</summary>
     private void EnterProxyDropTileSelect()
     {
         tileSelectPurpose = TileSelectPurpose.ProxyDrop;
-        tileCandidates = RescueRules.GetDropCellsAround(proxyCarrier.GridPosition, grid);
+        tileCandidates = RescueRules.GetDropCellsAround(proxyCarrier.GridPosition, selectedCargo, grid);
 
         grid.ResetAllHighlights();
         grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
@@ -658,6 +676,7 @@ public class BattleController : MonoBehaviour
     {
         menu.Hide();
         cargoMenu.Hide();
+        forecast.Hide();
         grid.ResetAllHighlights();
         context = null;
         reachableCells = null;

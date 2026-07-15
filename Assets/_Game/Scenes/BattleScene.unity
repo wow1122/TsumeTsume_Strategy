@@ -154,8 +154,13 @@ MonoBehaviour:
   width: 10
   height: 10
   cellSize: 1
-  colorLight: {r: 0.85, g: 0.85, b: 0.85, a: 1}
-  colorDark: {r: 0.7, g: 0.7, b: 0.7, a: 1}
+  cameraMargin: 1
+  checkerDarken: 0.85
+  highlightBlend: 0.7
+  selectionColor: {r: 1, g: 0.9, b: 0.4, a: 1}
+  targetChoiceColor: {r: 1, g: 0.45, b: 0.45, a: 1}
+  attackRangeColor: {r: 1, g: 0.7, b: 0.5, a: 1}
+  moveRangeColor: {r: 0.5, g: 0.8, b: 1, a: 1}
 --- !u!4 &1854418882
 Transform:
   m_ObjectHideFlags: 0
@@ -184,7 +189,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BattleSetup
   grid: {fileID: 1854418881}
-  stage: {fileID: 11400000, guid: 8e48a25368e6499b86d56948cf022d0f, type: 2}
+  stage: {fileID: 11400000, guid: 1821b2d609eb4937abaa884f78d22da7, type: 2}
 --- !u!114 &1854418884
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -199,9 +204,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BattleController
   grid: {fileID: 1854418881}
   turnManager: {fileID: 1854418885}
-  selectColor: {r: 1, g: 0.9, b: 0.4, a: 1}
-  moveRangeColor: {r: 0.5, g: 0.8, b: 1, a: 1}
-  attackColor: {r: 1, g: 0.45, b: 0.45, a: 1}
 --- !u!114 &1854418885
 MonoBehaviour:
   m_ObjectHideFlags: 0

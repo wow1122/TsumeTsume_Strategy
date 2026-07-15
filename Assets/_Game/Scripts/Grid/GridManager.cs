@@ -19,6 +19,8 @@ public enum HighlightKind
 /// <summary>
 /// マス目マップを管理する「盤面」スクリプト。
 ///  ・指定した幅×高さのマスを「仮素材（色付きの四角）」で生成する
+///    （大きさは StageData に指定があればそちらを優先。Phase 15 からステージごとに可変）
+///  ・カメラを盤面全体が収まる位置・表示範囲に自動調整する（Phase 15）
 ///  ・ワールド座標 ⇔ グリッド座標 の変換を行う
 ///  ・マスの色（ハイライト）を変える道具を提供する
 /// クリックや選択の操作は BattleController が担当します（役割分担）。
@@ -26,10 +28,14 @@ public enum HighlightKind
 /// </summary>
 public class GridManager : MonoBehaviour
 {
-    [Header("グリッドの大きさ")]
-    public int width = 10;          // 横のマス数
-    public int height = 10;         // 縦のマス数
+    [Header("グリッドの大きさ（StageData に指定があればそちらを優先）")]
+    public int width = 10;          // 横のマス数（ステージ側の指定が無いときの既定値）
+    public int height = 10;         // 縦のマス数（ステージ側の指定が無いときの既定値）
     public float cellSize = 1f;     // 1マスの大きさ（ワールド単位）
+
+    [Header("カメラ")]
+    [Tooltip("カメラを盤面に合わせるときの、盤面の外側に足す余白（マス数）")]
+    public float cameraMargin = 1f;
 
     [Header("見た目（仮素材）")]
     [Tooltip("市松模様の暗い方のマスに掛ける明るさ（地形色 × この値。1で市松なし）")]
@@ -63,8 +69,43 @@ public class GridManager : MonoBehaviour
     // ユニットを配置するときには、すでに盤面が完成している（順序の保証）。
     void Awake()
     {
+        ApplyStageSize();
         squareSprite = CreateSquareSprite();
         BuildGrid();
+        FitCamera();
+    }
+
+    /// <summary>
+    /// ステージ（StageData）に盤面サイズの指定があれば width / height を上書きする（Phase 15）。
+    /// BattleSetup が参照しているステージを見る。指定が 0 以下なら Inspector の値のまま。
+    /// </summary>
+    private void ApplyStageSize()
+    {
+        BattleSetup setup = FindAnyObjectByType<BattleSetup>();
+        if (setup == null || setup.stage == null) return;
+
+        if (setup.stage.gridWidth > 0) width = setup.stage.gridWidth;
+        if (setup.stage.gridHeight > 0) height = setup.stage.gridHeight;
+    }
+
+    /// <summary>
+    /// メインカメラを、盤面全体がちょうど収まる位置・表示範囲に合わせる（Phase 15）。
+    /// 盤面サイズがステージごとに変わっても、シーンのカメラを手で直す必要がない。
+    /// </summary>
+    private void FitCamera()
+    {
+        Camera cam = Camera.main;
+        if (cam == null || !cam.orthographic) return;
+
+        // カメラを盤面の中心へ（Z はシーンの値のまま＝盤面より手前）
+        Vector3 pos = cam.transform.position;
+        cam.transform.position = new Vector3(transform.position.x, transform.position.y, pos.z);
+
+        // orthographicSize は「画面の縦半分に映るワールドの長さ」。
+        // 盤面の縦がそのまま収まる大きさと、横が収まる大きさ（画面の縦横比で換算）の大きい方にする
+        float halfHeight = height * cellSize * 0.5f + cameraMargin * cellSize;
+        float halfWidth = (width * cellSize * 0.5f + cameraMargin * cellSize) / cam.aspect;
+        cam.orthographicSize = Mathf.Max(halfHeight, halfWidth);
     }
 
     // ===== グリッド生成 =====
@@ -288,12 +329,7 @@ public class GridManager : MonoBehaviour
         Vector3 world = cam.ScreenToWorldPoint(mousePos);
         if (!TryWorldToCell(world, out Vector2Int cell)) return;
 
-        TileData tile = GetTile(cell);
-        string name = tile.Terrain != null ? tile.Terrain.displayName : "平地";
-        string text = tile.IsWalkable
-            ? $"{name}　移動コスト {tile.MoveCost}　地形防御 +{tile.DefenseBonus}"
-            : (tile.CanFlyOver ? $"{name}　通行不可（飛行は可）　地形防御 +{tile.DefenseBonus}"
-                               : $"{name}　通行不可");
+        string text = BuildTerrainInfo(GetTile(cell));
 
         var style = new GUIStyle(GUI.skin.box)
         {
@@ -301,7 +337,31 @@ public class GridManager : MonoBehaviour
             fontSize = 14,
             padding = new RectOffset(8, 8, 2, 2),
         };
-        GUI.Box(new Rect(12, Screen.height - 36, 280, 26), text, style);
+        GUI.Box(new Rect(12, Screen.height - 36, 360, 26), text, style);
+    }
+
+    /// <summary>カーソル下マスの地形情報1行分の文字列を作る（騎乗との差があれば括弧で併記。Phase 15）。</summary>
+    private static string BuildTerrainInfo(TileData tile)
+    {
+        string name = tile.Terrain != null ? tile.Terrain.displayName : "平地";
+
+        if (!tile.IsWalkable)
+        {
+            return tile.CanFlyOver
+                ? $"{name}　通行不可（飛行は可）　地形防御 +{tile.DefenseBonus}"
+                : $"{name}　通行不可";
+        }
+
+        // 騎乗ユニットだけ通れない・コストが違う地形は、その差も表示する
+        string cost;
+        if (!tile.IsWalkableFor(UnitClass.Cavalry))
+            cost = $"移動コスト {tile.MoveCost}（騎乗は通行不可）";
+        else if (tile.MoveCostFor(UnitClass.Cavalry) != tile.MoveCost)
+            cost = $"移動コスト {tile.MoveCost}（騎乗 {tile.MoveCostFor(UnitClass.Cavalry)}）";
+        else
+            cost = $"移動コスト {tile.MoveCost}";
+
+        return $"{name}　{cost}　地形防御 +{tile.DefenseBonus}";
     }
 
     // ===== 仮素材スプライトの生成 =====

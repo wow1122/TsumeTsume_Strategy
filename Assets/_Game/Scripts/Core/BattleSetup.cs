@@ -47,11 +47,11 @@ public class BattleSetup : MonoBehaviour
                 && entry.unitData.unitClass == UnitClass.Flier;
 
             TileData tile = grid.GetTile(entry.cell);
-            // 通行不可マスには置けない。ただし開始時から飛翔する飛行兵は、
-            // 飛行で入れるマス（城壁など）なら置ける
-            if (tile != null && !tile.IsWalkable && !(flyingStart && tile.CanFlyOver))
+            // その兵種が立てない地形には置けない（山は歩兵のみ等の兵種制限も見る。Phase 15）。
+            // ただし開始時から飛翔する飛行兵は、飛行で入れるマス（城壁など）なら置ける
+            if (tile != null && !tile.IsWalkableFor(entry.unitData.unitClass) && !(flyingStart && tile.CanFlyOver))
             {
-                Debug.LogWarning($"マス {entry.cell} は通行不可の地形です。スキップします。");
+                Debug.LogWarning($"マス {entry.cell} は {entry.unitData.unitName} が立てない地形です。スキップします。");
                 continue;
             }
             if (tile != null && tile.Occupant != null)

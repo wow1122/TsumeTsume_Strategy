@@ -56,3 +56,6 @@ MonoBehaviour:
   - '.....T....'
   - '..........'
   - '..........'
+  gridWidth: 10
+  gridHeight: 10
+  turnLimit: 0

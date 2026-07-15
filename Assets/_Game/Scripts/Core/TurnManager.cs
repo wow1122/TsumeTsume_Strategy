@@ -6,9 +6,11 @@ public enum TurnPhase { Player, Enemy }
 
 /// <summary>
 /// ターンとフェイズを管理する。
-///  ・自軍フェイズ開始時に、味方全員の「行動済み」をリセット
-///  ・味方が全員行動したら自動で敵フェイズへ
-///  ・敵フェイズは今は「行動なし」で、少し待って自軍フェイズに戻る（AIは Phase 6）
+///  ・自軍フェイズ開始時に、味方全員の「行動済み」をリセット（飛翔の残りターンもここで減る）
+///  ・味方が全員行動したら自動で敵フェイズへ。敵フェイズは EnemyAI が1体ずつ行動する
+///  ・勝敗判定：敵全滅で勝利／味方全滅・味方輸送隊の死亡で敗北。
+///    ターン制限（Phase 15）：StageData で指定されたターン数を使い切っても
+///    決着していなければ敗北（0なら無制限）
 ///  ・画面左上にターン数・フェイズ・「ターン終了」ボタンを表示（簡易UI）
 /// </summary>
 public class TurnManager : MonoBehaviour
@@ -29,10 +31,16 @@ public class TurnManager : MonoBehaviour
     public float enemyActionDelay = 0.4f;
 
     private GridManager grid;
+    private int turnLimit; // ステージのターン制限（0なら無制限。StageData から読む。Phase 15）
 
     void Start()
     {
         grid = FindAnyObjectByType<GridManager>();
+
+        // ステージのターン制限を読む（Phase 15）
+        BattleSetup setup = FindAnyObjectByType<BattleSetup>();
+        if (setup != null && setup.stage != null) turnLimit = setup.stage.turnLimit;
+
         StartPlayerPhase();
     }
 
@@ -83,6 +91,14 @@ public class TurnManager : MonoBehaviour
 
     private void EndEnemyPhase()
     {
+        // ターン制限（Phase 15）：最終ターンの敵フェイズが終わっても決着していなければ敗北
+        if (turnLimit > 0 && TurnNumber >= turnLimit && !IsGameOver)
+        {
+            Result = GameResult.Lose;
+            Debug.Log($"× 敗北… {turnLimit} ターン以内に勝利できなかった ×");
+            return;
+        }
+
         TurnNumber++;
         StartPlayerPhase();
     }
@@ -148,8 +164,11 @@ public class TurnManager : MonoBehaviour
     {
         string phaseLabel = (CurrentPhase == TurnPhase.Player) ? "自軍フェイズ" : "敵フェイズ";
 
+        // ターン制限があるステージでは「ターン 3／15」のように残りが分かる表示にする（Phase 15）
+        string turnLabel = (turnLimit > 0) ? $"ターン {TurnNumber}／{turnLimit}" : $"ターン {TurnNumber}";
+
         var style = new GUIStyle(GUI.skin.label) { fontSize = 18 };
-        GUI.Label(new Rect(12, 10, 360, 28), $"ターン {TurnNumber} ／ {phaseLabel}", style);
+        GUI.Label(new Rect(12, 10, 360, 28), $"{turnLabel} ／ {phaseLabel}", style);
 
         // 決着後：画面中央に結果を大きく表示（ボタンは出さない）
         if (IsGameOver)

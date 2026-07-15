@@ -117,21 +117,35 @@ public static class RescueRules
     }
 
     // ===== 降ろす =====
+    // Phase 15 から、降ろせる先は「貨物の兵種が立てる地形」で判定する
+    // （騎乗の貨物は山に降ろせない等。歩兵の貨物はこれまでどおり歩けるマスなら可）。
 
-    /// <summary>carrier の隣で貨物を降ろせるマス（空きで歩ける）の一覧。</summary>
-    public static List<Vector2Int> GetDropCells(Unit carrier, GridManager grid)
+    /// <summary>carrier の貨物のうち、いま隣に降ろせるマスがある（＝降ろす対象にできる）ものの一覧。</summary>
+    public static List<Unit> GetDroppableCargoes(Unit carrier, GridManager grid)
     {
-        return GetDropCellsAround(carrier.GridPosition, grid);
+        var result = new List<Unit>();
+        foreach (Unit cargo in carrier.Carried)
+        {
+            if (GetDropCells(carrier, cargo, grid).Count > 0)
+                result.Add(cargo);
+        }
+        return result;
     }
 
-    /// <summary>指定マスの隣接4方向のうち、ユニットを配置できるマスの一覧。</summary>
-    public static List<Vector2Int> GetDropCellsAround(Vector2Int center, GridManager grid)
+    /// <summary>carrier の隣で cargo を降ろせるマス（空きで、その兵種が立てる地形）の一覧。</summary>
+    public static List<Vector2Int> GetDropCells(Unit carrier, Unit cargo, GridManager grid)
+    {
+        return GetDropCellsAround(carrier.GridPosition, cargo, grid);
+    }
+
+    /// <summary>指定マスの隣接4方向のうち、cargo を配置できるマスの一覧。</summary>
+    public static List<Vector2Int> GetDropCellsAround(Vector2Int center, Unit cargo, GridManager grid)
     {
         var result = new List<Vector2Int>();
         foreach (Vector2Int dir in Directions)
         {
             TileData tile = grid.GetTile(center + dir);
-            if (tile != null && tile.IsWalkable && tile.Occupant == null)
+            if (tile != null && tile.IsWalkableFor(cargo.Class) && tile.Occupant == null)
                 result.Add(center + dir);
         }
         return result;
@@ -153,8 +167,11 @@ public static class RescueRules
         {
             if (neighbor.Faction != user.Faction || !neighbor.IsRescuing) continue;
             if (neighbor.IsFlying) continue; // 飛翔中の運び手からは降ろせない（Phase 14）
-            if (GetProxyDropCargoes(user, neighbor).Count == 0) continue;
-            if (GetDropCellsAround(neighbor.GridPosition, grid).Count == 0) continue;
+
+            List<Unit> cargoes = GetProxyDropCargoes(user, neighbor);
+            if (cargoes.Count == 0) continue;
+            // 対象になる貨物は歩兵だけなので、降ろせるマスの有無は先頭の1体で代表して調べられる
+            if (GetDropCellsAround(neighbor.GridPosition, cargoes[0], grid).Count == 0) continue;
 
             result.Add(neighbor);
         }
@@ -200,25 +217,26 @@ public static class RescueRules
     }
 
     /// <summary>
-    /// center（死亡マス）から近い順に、ユニットを配置できる空きマスを count 個まで集める（Phase 12・合意(b)）。
-    /// 幅優先探索で盤面を近い順にたどる（探索の通過は占有マスも可。配置先は空きマスのみ）。
-    /// 運び手が倒れた直後は center 自身も空いているので、先頭は必ず死亡マスになる。
+    /// center（死亡マス）から近い順に、cargo を配置できる空きマスを1つ探す（Phase 12・合意(b)）。
+    /// 見つからなければ null（盤面が埋まり尽くした場合の保険）。
+    /// 幅優先探索で盤面を近い順にたどる（探索の通過は占有マスも可。配置先は空きで、
+    /// その兵種が立てる地形のみ＝Phase 15 から貨物の兵種を見る）。
+    /// 運び手が倒れた直後は center 自身も空いているので、最初の貨物は必ず死亡マスに降りる。
     /// </summary>
-    public static List<Vector2Int> FindReleaseCells(Vector2Int center, int count, GridManager grid)
+    public static Vector2Int? FindReleaseCell(Vector2Int center, Unit cargo, GridManager grid)
     {
-        var result = new List<Vector2Int>();
         var visited = new HashSet<Vector2Int> { center };
         var queue = new Queue<Vector2Int>();
         queue.Enqueue(center);
 
-        while (queue.Count > 0 && result.Count < count)
+        while (queue.Count > 0)
         {
             Vector2Int cell = queue.Dequeue();
             TileData tile = grid.GetTile(cell);
             if (tile == null) continue; // 盤外
 
-            if (tile.IsWalkable && tile.Occupant == null)
-                result.Add(cell);
+            if (tile.IsWalkableFor(cargo.Class) && tile.Occupant == null)
+                return cell;
 
             foreach (Vector2Int dir in Directions)
             {
@@ -226,7 +244,7 @@ public static class RescueRules
                 if (visited.Add(next)) queue.Enqueue(next);
             }
         }
-        return result;
+        return null;
     }
 
     /// <summary>指定マスの上下左右にいる生存ユニットを列挙する。</summary>
