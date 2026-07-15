@@ -3,14 +3,16 @@
 ファイアーエムブレムif暗夜をモデルにした 2D タクティクスSRPG。Unity 6 (6000.3.10f1) + URP。
 作者はプログラミングほぼ初心者。日本語で、専門用語をかみ砕いて丁寧に説明すること。絵文字は使わない。
 
-## 進捗状況（2026-07-12 時点）
+## 進捗状況（2026-07-16 時点）
 
 バーティカルスライス完成（Phase 0〜7）、Phase 8（データ基盤刷新）、
 Phase 9（前衛・後衛武器と新三すくみ、CombatRules による判定一元化）、
 Phase 10（コマンドメニューUI・移動取り消し）、
 Phase 11（救出システム）、Phase 12（輸送隊・輸送隊死亡で敗北）、
-Phase 13（地形システム）、Phase 14（空中移動・飛翔、城壁地形、着陸コマンド）まで
-Play 確認済み・コミット済み。次は Phase 15（統合仕上げ）。
+Phase 13（地形システム）、Phase 14（空中移動・飛翔、城壁地形、着陸コマンド）、
+Phase 15（統合仕上げ: ターン制限・可変盤面・騎乗地形制限・戦闘予測・Stage_01）まで
+Play 確認済み・コミット済み。Phase 8〜15 ロードマップは完走。
+次は次期ロードマップの策定（最優先は敵AIの強化。作者合意済み）と Stage_01 のバランス調整。
 
 全体計画（Phase 8〜15 ロードマップ）は
 `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md` 参照（WSL側）。
@@ -85,8 +87,8 @@ Play 確認済み・コミット済み。次は Phase 15（統合仕上げ）。
 
 - 地形は5種: 平地`.`（コスト1/防御+0）、森`F`（2/+1）、山`M`（3/+2）、砦`T`（1/+3）、壁`#`（通行不可）。
   数値・色は TerrainTable.asset の編集だけで調整できる（記号は terrainRows で使う1文字）
-- 地形コストは当面全兵種共通（騎兵の森ペナルティ等の兵種別コストは Phase 15 の調整枠で検討）
-- 兵種限定の通行制限（山は歩兵のみ等）は当面なし。通行不可は壁のみ
+- 地形コストは当面全兵種共通 →（Phase 15 で兵種別コスト・通行制限を導入。「Phase 15 の合意仕様」の節が正）
+- 兵種限定の通行制限（山は歩兵のみ等）は当面なし →（同上。Phase 15 で導入済み）
 - 地形防御は物理・魔法の両方に加算（Phase 8 合意の継続。DamageBreakdown の「地形」項）
 - ステージの地形は StageData の文字マップ terrainRows（リスト先頭=盤面の最上段の行）。
   行数・文字数の不一致や未知の記号は警告して平地扱い
@@ -123,6 +125,31 @@ Play 確認済み・コミット済み。次は Phase 15（統合仕上げ）。
 - 敵AIは飛翔コマンドを使わない（従来合意）。StageData の配置ごとに「開始時飛翔ターン数」を指定でき、
   検証用の敵飛行兵は99ターンで最初から飛んでいる（Stage_Test。数値はアセット編集で変更可）
 
+### Phase 15 の合意仕様（統合仕上げ・2026-07-16 作者合意）
+
+- 勝敗条件はテスト用ではなく本番システム。今回は**ターン制限のみ追加**
+  （StageData.turnLimit。0=無制限。最終ターンの敵フェイズ終了時に勝敗未決なら敗北。
+  判定は増加前に行うので表示が制限を超えない。制限中は「ターン n／上限」表示）。
+  拠点到達などの勝利条件バリエーションは次期ロードマップへ先送り（作者合意）
+- 兵種別地形（通行制限まで導入）: 騎乗ユニット（騎兵・輸送隊・地上の飛行兵=IsMounted）は
+  森コスト3（歩兵2）、山は**通行不可**（歩兵のみ）。TerrainDef の mountedWalkable / mountedCost
+  （0=共通コストと同じ）で地形ごとに調整できる。飛翔中は従来どおり全マスコスト1
+- 降ろす・代わりに降ろす・死亡時解放の配置先も**貨物の兵種**で判定
+  （騎乗の貨物は山へ降ろせない。TileData.IsWalkableFor / MoveCostFor が判定窓口）
+- 盤面サイズはステージごとに可変（StageData.gridWidth / gridHeight。0以下なら GridManager の
+  Inspector 値）。カメラは GridManager.FitCamera が自動フィット（余白は cameraMargin）
+- 戦闘予測（BattleForecast・IMGUI右下）: 対象選択中に攻撃対象へマウスを重ねると
+  ダメージ内訳・挟撃の追加ダメージ（またはガードで無効）・相手の残りHP見込み・撃破を表示。
+  実戦と同じ DamageCalculator / CombatRules を使うので数値は必ず一致する
+- 敵AI: 攻撃先・接近先の点数が同点なら地形防御の高いマスを優先（飛翔中は地形防御0扱い）。
+  既知の限界: 接近はマンハッタン距離基準のため、城壁の向こうの敵が門へ回り込まないことがある
+  （次期の敵AI強化で対応予定）
+- 新ユニット5種: 味方斧兵・味方斧騎兵・敵魔道士・敵槍飛行兵・敵斧騎兵（能力値は初期案。作者が調整）
+- 正式ステージ Stage_01: 14×12・ターン制限20・味方10体対敵12体。南が自軍、中央に山脈と森、
+  北に城壁（門は敵弓兵が対空で防衛）。BattleScene の BattleSetup は Stage_01 を参照中
+  （Stage_Test に戻すのも Inspector の差し替えだけ）
+- 次期ロードマップの最優先は**敵AIの強化**（作者の指名）
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -138,37 +165,47 @@ Play 確認済み・コミット済み。次は Phase 15（統合仕上げ）。
 - Core/ … BattleController(操作の司令塔・7状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect。
   飛翔・着陸コマンドと飛翔の段階取り消しCancelFlightAndReturnもここ),
   ActionContext(1行動の文脈・移動取り消し・再移動予算・取り消し不能点Commit・飛翔の中間点MarkFlight),
-  TurnManager(フェイズ・勝敗・簡易UI・フェイズ開始時の飛翔Tick), BattleSetup(StageDataを読んで初期配置・開始時飛翔の適用)
-- Grid/ … GridManager(盤面・座標変換・多層ハイライト・地形適用ApplyTerrain・地形情報の画面下表示),
-  TileData(1マスの論理データ。IsWalkable/CanFlyOver/MoveCost/DefenseBonus は TerrainDef 参照のプロパティ),
-  TerrainType(地形enum+TerrainDef定義。城壁Rampart・飛行可否canFlyOverを含む),
-  MovementCalculator(ダイクストラ移動範囲・味方すり抜け・飛翔中はコスト1で対空敵のみすり抜け不可)
+  TurnManager(フェイズ・勝敗・ターン制限判定・簡易UI・フェイズ開始時の飛翔Tick),
+  BattleSetup(StageDataを読んで初期配置・開始時飛翔の適用・配置マスの兵種チェック)
+- Grid/ … GridManager(盤面・可変サイズApplyStageSize・カメラ自動フィットFitCamera・座標変換・
+  多層ハイライト・地形適用ApplyTerrain・地形情報の画面下表示※騎乗差分も表示),
+  TileData(1マスの論理データ。IsWalkable/CanFlyOver/MoveCost/DefenseBonus に加え
+  兵種別の IsWalkableFor/MoveCostFor),
+  TerrainType(地形enum+TerrainDef定義。城壁Rampart・飛行可否canFlyOver・騎乗の mountedWalkable/mountedCost),
+  MovementCalculator(ダイクストラ移動範囲・味方すり抜け・兵種別コスト/通行制限・飛翔中はコスト1で対空敵のみすり抜け不可)
 - UI/ … ActionMenu(IMGUI行動メニュー。Entryリスト駆動・BattleControllerが自動生成),
-  CargoListMenu(貨物リスト選択。名前+HP表示・BattleControllerが自動生成)
+  CargoListMenu(貨物リスト選択。名前+HP表示・BattleControllerが自動生成),
+  BattleForecast(戦闘予測パネル。対象選択中のマウスオーバーで表示・BattleControllerが自動生成)
 - Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried・飛翔IsFlying/FlightTurnsLeft),
   UnitClass(兵種enum+IsMounted),
-  RescueRules(救出系コマンドの可否判定一元化・乗り込む判定・飛翔の制限と空中引き受け・死亡時配置先探索FindReleaseCells),
+  RescueRules(救出系コマンドの可否判定一元化・乗り込む判定・飛翔の制限と空中引き受け・
+  貨物の兵種で判定する GetDroppableCargoes/GetDropCells・死亡時配置先探索FindReleaseCell),
   UnitRegistry(全ユニットの名簿・輸送隊死亡フラグPlayerTransporterLost), Faction(陣営enum)
 - Combat/ … CombatSystem(攻撃解決・挟撃・ガード・反撃フック・PredictTotalDamage),
   CombatRules(射程・三すくみ・挟撃可否・飛翔の戦闘制限CanEngageの一元判定),
   DamageCalculator(物理/魔法分岐・DamageBreakdown内訳・飛翔中は地形防御なし), WeaponType, WeaponCategory(前衛/後衛)
-- Data/ … UnitData(7能力値+兵種), WeaponData, StageData(初期配置+開始時飛翔initialFlightTurns+地形マップterrainRows),
+- Data/ … UnitData(7能力値+兵種), WeaponData, StageData(初期配置+開始時飛翔initialFlightTurns+
+  地形マップterrainRows+盤面サイズgridWidth/gridHeight+ターン制限turnLimit),
   TerrainTable(地形定義一覧・記号引き) (ScriptableObject定義)
-- AI/ … EnemyAI(点数評価型)
+- AI/ … EnemyAI(点数評価型・同点は地形防御の高いマス優先)
 - Editor/ … UnitDataEditor, WeaponDataEditor(Inspectorの日本語表示。エディタ専用・ビルド非含有)
 
 アセット実体: Assets/_Game/Data/
 （Unit_Player, Unit_Enemy, Unit_Player_Archer, Unit_Player_Mage, Unit_Player_Cavalry,
-  Unit_Player_Transport, Unit_Player_Flier, Unit_Enemy_Lancer, Unit_Enemy_Archer, Unit_Enemy_Flier,
-  W_Sword, W_Axe, W_Lance, W_Bow, W_Tome, Stage_Test, TerrainTable）
+  Unit_Player_Transport, Unit_Player_Flier, Unit_Player_AxeFighter, Unit_Player_AxeCavalry,
+  Unit_Enemy_Lancer, Unit_Enemy_Archer, Unit_Enemy_Flier, Unit_Enemy_Mage, Unit_Enemy_LanceFlier,
+  Unit_Enemy_AxeCavalry,
+  W_Sword, W_Axe, W_Lance, W_Bow, W_Tome, Stage_Test, Stage_01, TerrainTable）
 シーン: Assets/_Game/Scenes/BattleScene.unity
 
 ## 次にやること
 
-ロードマップ（上記プランファイル）に従って進行:
-- Phase 15: 統合仕上げ（正式ステージ・AI地形対応・戦闘予測表示・バランス調整） ← 次はここ。
-  着手時にロードマップの確認事項（勝利条件のバリエーション・次期ロードマップの優先度）を作者と合意すること
-- 注意: ロードマップの Phase 14 の記述は初版案のまま。飛翔の確定仕様は本ファイルの
+Phase 8〜15 ロードマップは完走。次は:
+- 次期ロードマップの策定（着手時に作者と項目・順序を合意する）。
+  **最優先は敵AIの強化**（2026-07-16 作者指名）。候補: 経路ベースの接近（門へ回り込む）・
+  集中攻撃・後衛の射程管理など。あわせて先送りした「勝利条件のバリエーション（拠点到達など）」も候補
+- Stage_01 のバランス調整（作者のプレイ感想を聞いて数値・配置をアセット編集で反映）
+- 注意: 旧ロードマップの Phase 14 の記述は初版案のまま。飛翔の確定仕様は本ファイルの
   「飛翔の合意仕様」の節が正（2ターン→3ターン等、作者改訂済み）
 
 ## 環境・運用の注意
@@ -181,3 +218,6 @@ Play 確認済み・コミット済み。次は Phase 15（統合仕上げ）。
 - Assets/_Recovery/ は Unity の自動生成物で .gitignore 済み
 - 新規アセット追加時は Claude が .asset と .meta（GUID自動生成）をペアで作成する。
   .asset の YAML 編集は Unity を閉じた状態で行うのが安全（作者に事前確認する）
+- 作者PCは Windows 11 の「スマートアプリコントロール」有効のため Burst の DLL がブロックされる
+  （error code 4551）。ゲームコードは Burst 不使用なので Jobs > Burst > Enable Compilation を
+  オフにして回避済み（2026-07-16。PCごとの設定で git には入らない）
