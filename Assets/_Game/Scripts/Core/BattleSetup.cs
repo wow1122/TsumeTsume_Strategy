@@ -64,6 +64,13 @@ public class BattleSetup : MonoBehaviour
             var unit = go.AddComponent<Unit>();
             unit.Initialize(entry.unitData, grid, entry.cell);
 
+            // 敵AIの性格を書き込む（Phase 17）。プレイヤーのユニットに待ち伏せ型を
+            // 指定しても意味が無いので、注意だけ出して既定（突撃型）のままにする
+            if (entry.aiProfile != EnemyAIProfile.Assault && entry.unitData.faction != Faction.Enemy)
+                Debug.LogWarning($"{entry.unitData.unitName} は敵ではないため、AI性格の指定を無視しました。");
+            else
+                unit.SetAIProfile(entry.aiProfile);
+
             if (entry.initialFlightTurns > 0)
             {
                 if (flyingStart)

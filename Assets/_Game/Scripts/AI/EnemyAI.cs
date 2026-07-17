@@ -28,6 +28,12 @@ using UnityEngine;
 ///   （MovementCalculator.GetDistanceMap＝本当の道のり）を使い、残りの道のりが
 ///   一番縮むマスへ移動する。これで壁の向こうの敵も門へ回り込むようになる。
 ///   道が無いときの保険は3段構え（経路 → 敵を無視した経路 → 従来の直線距離）。
+///
+/// 性格ゲート（Phase 17）：
+///   待ち伏せ型（EnemyAIProfile.Ambush）の敵は、挑発されるまで接近しない。
+///   攻撃探索は通す＝攻撃できる相手がいれば普通に攻撃し、それ自体が挑発になる。
+///   被弾（HPが減っている）でも挑発される。挑発は永続（Unit.IsProvoked）で、
+///   以後は突撃型と同じ動きになる。連鎖挑発（近くの味方の起動で自分も起動）は今回は無し。
 /// </summary>
 public static class EnemyAI
 {
@@ -48,7 +54,17 @@ public static class EnemyAI
         List<Unit> players = UnitRegistry.GetUnits(Faction.Player);
         if (players.Count == 0) return;
 
+        // 挑発の判定その1（Phase 17）: 被弾していたら起動する。
+        // その2「今すぐ攻撃できる」は、Evaluate が攻撃プランを返したかどうかで下で判定する。
+        if (!enemy.IsProvoked && enemy.CurrentHP < enemy.MaxHP)
+            enemy.MarkProvoked();
+
         ActionPlan plan = Evaluate(enemy, grid, players);
+
+        // 挑発の判定その2（Phase 17）: 攻撃すること自体が挑発（以後ずっと突撃型として振る舞う）
+        if (plan.kind == ActionKind.Attack)
+            enemy.MarkProvoked();
+
         Log(enemy, plan);           // 先に思考を宣言してから
         Execute(enemy, grid, plan); // 実行する（攻撃・挟撃などの戦闘ログはこの後に続く）
     }
@@ -62,10 +78,23 @@ public static class EnemyAI
         candidates.Add(enemy.GridPosition);
 
         // 1) 攻撃できるなら、一番点数の高い攻撃を選ぶ
+        //    （待ち伏せ型でも攻撃はする。「攻撃できる相手がいる」こと自体が挑発になる。Phase 17）
         if (TryFindBestAttack(enemy, grid, players, candidates, out ActionPlan attack))
             return attack;
 
-        // 2) 攻撃できない：目標（攻撃できる立ち位置）へ近づく
+        // 2) 待ち伏せ型で未挑発なら、一切動かない（Phase 17）。
+        //    移動ゼロなだけで、立ち位置による受動的な挟撃ガードはそのまま効く
+        if (enemy.AIProfile == EnemyAIProfile.Ambush && !enemy.IsProvoked)
+        {
+            return new ActionPlan
+            {
+                kind = ActionKind.Stay,
+                standCell = enemy.GridPosition,
+                reason = "待ち伏せ中（挑発されるまで動かない）",
+            };
+        }
+
+        // 3) 攻撃できない：目標（攻撃できる立ち位置）へ近づく
         return PlanApproach(enemy, grid, players, candidates);
     }
 

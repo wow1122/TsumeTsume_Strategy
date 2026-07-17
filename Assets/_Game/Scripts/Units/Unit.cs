@@ -101,6 +101,29 @@ public class Unit : MonoBehaviour
         }
     }
 
+    // ── 敵AIの性格（Phase 17）──
+    // StageData の配置ごとに指定され、BattleSetup が SetAIProfile で書き込む（敵のみ）。
+    // 待ち伏せ型（Ambush）は IsProvoked が立つまで一切動かない。挑発の判定と
+    // MarkProvoked の呼び出しは EnemyAI 側が行う。一度立ったら戻す手段は無い（永続）。
+
+    /// <summary>敵AIの性格。プレイヤーのユニットでは使わない（常に既定の突撃型）。</summary>
+    public EnemyAIProfile AIProfile { get; private set; } = EnemyAIProfile.Assault;
+
+    /// <summary>挑発済みか（待ち伏せ型が起動したか）。</summary>
+    public bool IsProvoked { get; private set; }
+
+    /// <summary>初期配置時に性格を設定する（BattleSetup が呼ぶ）。</summary>
+    public void SetAIProfile(EnemyAIProfile profile)
+    {
+        AIProfile = profile;
+    }
+
+    /// <summary>挑発済みにする（永続。戻す手段は無い）。</summary>
+    public void MarkProvoked()
+    {
+        IsProvoked = true;
+    }
+
     private SpriteRenderer spriteRenderer;
     private Color baseColor;   // 行動済みで暗くする前の、元の色
     private GridManager grid;  // 戦闘不能時にマスの占有を外すため保持
