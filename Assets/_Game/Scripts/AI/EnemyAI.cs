@@ -34,15 +34,38 @@ using UnityEngine;
 ///   攻撃探索は通す＝攻撃できる相手がいれば普通に攻撃し、それ自体が挑発になる。
 ///   被弾（HPが減っている）でも挑発される。挑発は永続（Unit.IsProvoked）で、
 ///   以後は突撃型と同じ動きになる。連鎖挑発（近くの味方の起動で自分も起動）は今回は無し。
+///
+/// 挟撃の組み立て（Phase 18）：
+///   挟撃を「完成させる」側は元から最適に動く（PredictTotalDamage が挟撃込みで評価するので、
+///   先に立っている味方の反対側マスを自然に選ぶ）。このフェーズで足したのはその前段の
+///   「お膳立て」— あとで動く未行動・前衛の味方が反対側マスに立てるなら、そのマスを
+///   わずかに優先する（PincerSetupBonus +2。ほぼ同点のマス選びでだけ効く）。
+///   もう1つは「ガード役潰し」— 一撃で倒せる相手が複数いるとき、誰かのガード役をしている
+///   相手を優先して倒す（GuardBreakKillBonus +50。撃破同士の並べ替え専用）。
 /// </summary>
 public static class EnemyAI
 {
     // ===== 点数の定数 =====
     // 点数は「予測ダメージ（1点=1ダメージ）」が土台。ボーナスの大小関係がそのまま優先順位になる。
-    // Phase 18 以降、ここに定数が増えていく予定（挟撃のお膳立て・集中攻撃など）。
+    // 大きい順: KillBonus 1000 ＞（Phase 21 予定: 集中攻撃 200）＞ GuardBreakKillBonus 50
+    //          ＞ PincerSetupBonus 2。この階層を崩さないように値を選んでいる。
 
     /// <summary>倒せる行動を最優先にするための大きなボーナス（どんなダメージ値より大きく）。</summary>
     private const int KillBonus = 1000;
+
+    /// <summary>
+    /// ガード役潰し（Phase 18）：一撃で倒せる相手が複数いるとき、誰かの挟撃ガード役をしている
+    /// 相手を優先して倒すための加点。ガードはHPが残っている限り有効なので、倒し切れない攻撃に
+    /// 付けても意味が無い＝KillBonus が付くときにだけ加える（撃破候補同士の並べ替え専用）。
+    /// </summary>
+    private const int GuardBreakKillBonus = 50;
+
+    /// <summary>
+    /// 挟撃のお膳立て（Phase 18）：あとで動く前衛の味方が反対側マスに立てる攻撃位置を
+    /// 選ぶための加点。お膳立ては投機的（その味方はもっと良い獲物を選ぶかもしれない）なので、
+    /// 実ダメージ差1点までしか覆さない控えめな値にしてある（撃破や火力は犠牲にしない）。
+    /// </summary>
+    private const int PincerSetupBonus = 2;
 
     /// <summary>思考ログを出すか。TurnManager が敵フェイズ開始時に Inspector の設定を書き込む。</summary>
     public static bool LogEnabled = true;
@@ -107,11 +130,17 @@ public static class EnemyAI
     {
         plan = default;
 
+        // 挟撃のお膳立て用：後続（未行動・前衛）の味方と、その到達マス集合（Phase 18）。
+        // この TakeAction の間は盤面が変わらないので、最初に1回だけ計算して使い回す
+        List<PincerHelper> helpers = BuildPincerHelpers(enemy, grid);
+
         Vector2Int bestCell = enemy.GridPosition;
         Unit bestTarget = null;
         int bestScore = int.MinValue;
         int bestDefense = int.MinValue;  // 同点なら地形防御の高いマスを選ぶ（Phase 15）
         int bestMoveDist = int.MaxValue; // それも同じなら移動が少ない方を選ぶ
+        bool bestPincerSetup = false;    // ログ用（Phase 18）
+        bool bestGuardBreak = false;
 
         foreach (Vector2Int cell in candidates)
         {
@@ -122,7 +151,8 @@ public static class EnemyAI
             {
                 if (!CombatRules.CanAttack(enemy, cell, target, hasMoved)) continue; // 射程外・武装無し
 
-                int score = ScoreAttack(enemy, cell, target, grid);
+                int score = ScoreAttack(enemy, cell, target, grid, helpers,
+                    out bool pincerSetup, out bool guardBreak);
                 int defense = TileDefense(enemy, cell, grid);
                 int moveDist = CombatRules.Manhattan(enemy.GridPosition, cell);
 
@@ -137,6 +167,8 @@ public static class EnemyAI
                     bestMoveDist = moveDist;
                     bestCell = cell;
                     bestTarget = target;
+                    bestPincerSetup = pincerSetup;
+                    bestGuardBreak = guardBreak;
                 }
             }
         }
@@ -150,7 +182,8 @@ public static class EnemyAI
             standCell = bestCell,
             target = bestTarget,
             score = bestScore,
-            reason = BuildAttackReason(enemy, bestCell, bestTarget, grid, damage),
+            reason = BuildAttackReason(enemy, bestCell, bestTarget, grid, damage,
+                bestPincerSetup, bestGuardBreak),
         };
         return true;
     }
@@ -292,14 +325,91 @@ public static class EnemyAI
     /// 「cell に立って target を攻撃する」行動の点数。
     /// 合計ダメージの予測は CombatSystem.PredictTotalDamage に一元化されている
     /// （挟撃の成立・ガードによる無効化も織り込み済み。実際の戦闘結果と必ず一致する）。
+    /// Phase 18 の加点2つ（お膳立て・ガード役潰し）はここで足す。out の2つはログ用のしるし。
     /// </summary>
-    private static int ScoreAttack(Unit enemy, Vector2Int cell, Unit target, GridManager grid)
+    private static int ScoreAttack(
+        Unit enemy, Vector2Int cell, Unit target, GridManager grid,
+        List<PincerHelper> helpers, out bool pincerSetup, out bool guardBreak)
     {
         int damage = CombatSystem.PredictTotalDamage(enemy, cell, target, grid);
+        bool kill = damage >= target.CurrentHP;
 
         int score = damage;
-        if (damage >= target.CurrentHP) score += KillBonus; // この一手で倒せるなら最優先
+        if (kill) score += KillBonus; // この一手で倒せるなら最優先
+
+        // ガード役潰し（Phase 18）：倒せる相手の中では、誰かのガード役をしている相手を優先
+        guardBreak = kill && CombatRules.IsGuardingSomeone(target, grid);
+        if (guardBreak) score += GuardBreakKillBonus;
+
+        // 挟撃のお膳立て（Phase 18）：ほぼ同点のマス選びでだけ効く控えめな加点
+        pincerSetup = HasPincerSetup(cell, target, grid, helpers);
+        if (pincerSetup) score += PincerSetupBonus;
+
         return score;
+    }
+
+    // ===== 挟撃のお膳立て（Phase 18）=====
+
+    /// <summary>お膳立ての判定に使う「後続の味方」（未行動・前衛）と、その到達マス集合のペア。</summary>
+    private struct PincerHelper
+    {
+        public Unit unit;
+        public HashSet<Vector2Int> reach;
+    }
+
+    /// <summary>
+    /// 自分のあとに動く「挟み役の候補」＝ 未行動・前衛武器・自分以外 の味方一覧と、
+    /// それぞれが移動で立てるマスの集合。自分が前衛でなければ挟撃自体が無いので空を返す。
+    /// ※待ち伏せ型で未挑発の味方も候補に含めてよい：反対側マスに立って攻撃すること自体が
+    ///   挑発になるので、射程内なら普通に挟みに来る（攻撃探索は性格ゲートより先。Phase 17）。
+    /// </summary>
+    private static List<PincerHelper> BuildPincerHelpers(Unit enemy, GridManager grid)
+    {
+        var helpers = new List<PincerHelper>();
+        if (!CombatRules.IsPincerCapable(enemy)) return helpers;
+
+        foreach (Unit ally in UnitRegistry.GetUnits(enemy.Faction))
+        {
+            if (ally == enemy || ally.HasActed) continue;
+            if (!CombatRules.IsPincerCapable(ally)) continue;
+
+            helpers.Add(new PincerHelper
+            {
+                unit = ally,
+                reach = MovementCalculator.GetReachableCells(grid, ally),
+            });
+        }
+        return helpers;
+    }
+
+    /// <summary>
+    /// 「cell に立って target を攻撃する」が挟撃のお膳立てになるか（Phase 18）。
+    /// すべて満たすとき true：
+    ///   ・上下左右の隣接攻撃である（反対側マスが定義できる。前衛かどうかは helpers 側で確認済み）
+    ///   ・target がガードされていない（プレイヤーのガード役は敵フェイズ中に増えないので判定が安定）
+    ///   ・反対側マスが盤内で、誰もいない
+    ///   ・後続の味方の誰かがそこへ到達でき、target と交戦できる（飛翔の制限。Phase 14）
+    /// ※反対側マスに既に前衛の味方が立っている場合は「完成した挟撃」なので、
+    ///   ダメージ予測（PredictTotalDamage）の側に織り込まれていて、ここでは扱わない。
+    /// </summary>
+    private static bool HasPincerSetup(
+        Vector2Int cell, Unit target, GridManager grid, List<PincerHelper> helpers)
+    {
+        if (helpers.Count == 0) return false;
+
+        Vector2Int? opposite = CombatRules.GetPincerOppositeCell(cell, target.GridPosition);
+        if (opposite == null) return false;                          // 遠距離攻撃に挟撃は無い
+        if (CombatRules.IsPincerNegated(target, grid)) return false; // ガード中の相手には無駄
+
+        TileData tile = grid.GetTile(opposite.Value);
+        if (tile == null || tile.Occupant != null) return false;     // 盤外・埋まっている
+
+        foreach (PincerHelper helper in helpers)
+        {
+            if (!CombatRules.CanEngage(helper.unit, target)) continue; // 飛翔の制限（Phase 14）
+            if (helper.reach.Contains(opposite.Value)) return true;
+        }
+        return false;
     }
 
     // ===== 思考ログ =====
@@ -310,8 +420,10 @@ public static class EnemyAI
         Debug.Log($"AI思考: {enemy.Data.unitName}({enemy.GridPosition.x},{enemy.GridPosition.y}) {plan.reason}");
     }
 
-    /// <summary>攻撃プランの説明文（ログ用）。挟撃・撃破の見込みも添える。</summary>
-    private static string BuildAttackReason(Unit enemy, Vector2Int cell, Unit target, GridManager grid, int damage)
+    /// <summary>攻撃プランの説明文（ログ用）。挟撃・撃破・Phase 18 の加点の見込みも添える。</summary>
+    private static string BuildAttackReason(
+        Unit enemy, Vector2Int cell, Unit target, GridManager grid, int damage,
+        bool pincerSetup, bool guardBreak)
     {
         string move = cell == enemy.GridPosition ? "その場から" : $"({cell.x},{cell.y})へ移動して";
 
@@ -319,6 +431,8 @@ public static class EnemyAI
         Unit ally = CombatRules.FindPincerAlly(cell, enemy, target, grid);
         if (ally != null && !CombatRules.IsPincerNegated(target, grid)) note += "・挟撃込み";
         if (damage >= target.CurrentHP) note += "・撃破";
+        if (guardBreak) note += "・ガード役潰し";
+        if (pincerSetup) note += "・挟撃のお膳立て";
 
         return $"{move} {target.Data.unitName} を攻撃（予測{damage}{note}）";
     }

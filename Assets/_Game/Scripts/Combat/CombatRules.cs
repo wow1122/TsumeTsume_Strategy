@@ -160,6 +160,39 @@ public static class CombatRules
     }
 
     /// <summary>
+    /// attackerCell から defenderCell のユニットを攻撃するときの「反対側マス」
+    /// （挟み役が立つべきマス）。上下左右の隣接攻撃でなければ null（遠距離攻撃に挟撃は無い）。
+    /// 盤外かどうか・空いているかはここでは見ない（呼び出し側の役割）。
+    /// Phase 18 で FindPincerAlly から切り出した。敵AIの「挟撃のお膳立て」判定と共有する。
+    /// </summary>
+    public static Vector2Int? GetPincerOppositeCell(Vector2Int attackerCell, Vector2Int defenderCell)
+    {
+        Vector2Int diff = defenderCell - attackerCell;
+        if (Mathf.Abs(diff.x) + Mathf.Abs(diff.y) != 1) return null; // 隣接でない＝遠距離攻撃
+
+        return defenderCell + diff; // 攻撃側から見て defender の向こう隣
+    }
+
+    /// <summary>
+    /// guard が guardCell に立ったとき、defender への挟撃を無効化（ガード）できるか。
+    /// 条件：defender が飛翔中でない／同じ陣営／前衛武器を装備した歩兵／
+    ///       guardCell が defender の上下左右に隣接。
+    /// 今いる場所ではなく「仮定の位置」で判定できるのがポイント
+    /// （Phase 19 の守り配置AIが「このマスへ動いたら守れるか」を試すために使う。
+    ///   現在盤面のガード判定 FindPincerGuard も内部でこれを使う）。
+    /// </summary>
+    public static bool WouldGuardAt(Unit guard, Vector2Int guardCell, Unit defender)
+    {
+        if (guard == null || defender == null || guard == defender) return false;
+        if (defender.IsFlying) return false; // 飛翔中はガードされない（Phase 14）
+        if (guard.Faction != defender.Faction) return false;
+        if (guard.Class != UnitClass.Infantry) return false;
+        if (!IsPincerCapable(guard)) return false;
+
+        return Manhattan(guardCell, defender.GridPosition) == 1;
+    }
+
+    /// <summary>
     /// attackerCell から defender を近接攻撃したとき、挟撃してくれる味方を探す。
     /// 成立条件（すべて満たすとき、その味方を返す。不成立なら null）：
     ///   ・攻撃側が前衛武器で、defender の上下左右に隣接している（＝近接攻撃）
@@ -172,11 +205,11 @@ public static class CombatRules
     {
         if (!IsPincerCapable(attacker)) return null;
 
-        Vector2Int diff = defender.GridPosition - attackerCell;
-        if (Mathf.Abs(diff.x) + Mathf.Abs(diff.y) != 1) return null; // 隣接でない＝遠距離攻撃
-
         // 防御側を挟んだ反対側のマス
-        TileData tile = grid.GetTile(defender.GridPosition + diff);
+        Vector2Int? opposite = GetPincerOppositeCell(attackerCell, defender.GridPosition);
+        if (opposite == null) return null;
+
+        TileData tile = grid.GetTile(opposite.Value);
         Unit ally = tile != null ? tile.Occupant : null;
 
         if (ally == null || ally == attacker || ally.Faction != attacker.Faction) return null;
@@ -188,30 +221,43 @@ public static class CombatRules
 
     /// <summary>
     /// defender への挟撃を無効化してくれる「ガード役」を探す（いなければ null）。
-    /// ガード役の条件：defender の上下左右に隣接する、同じ陣営の「前衛武器を装備した歩兵」。
+    /// ガード役の条件：defender の上下左右に隣接する、同じ陣営の「前衛武器を装備した歩兵」
+    /// （細かい判定は WouldGuardAt に一元化。Phase 18 で作り直したが挙動は従来と同じ）。
     /// ※ガード役自身が受ける挟撃は守れない（自分の隣に別のガード役が必要）。
     /// ※行動済みでも有効。敵味方どちらの陣営でも同じルール。
     /// ※防御側が飛翔中なら不成立（空中戦に地上の歩兵は届かない。Phase 14・作者合意）。
     /// </summary>
     public static Unit FindPincerGuard(Unit defender, GridManager grid)
     {
-        if (defender.IsFlying) return null; // 飛翔中はガードされない（Phase 14）
+        foreach (Vector2Int dir in Directions)
+        {
+            Vector2Int cell = defender.GridPosition + dir;
+            TileData tile = grid.GetTile(cell);
+            Unit guard = tile != null ? tile.Occupant : null;
+
+            if (guard != null && WouldGuardAt(guard, cell, defender))
+                return guard;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// unit が今この瞬間、隣の味方の「挟撃ガード役」になっているか
+    /// （Phase 18・敵AIの「ガード役潰し」の判定用。隣接4マスに守れる相手が1体でもいれば true）。
+    /// </summary>
+    public static bool IsGuardingSomeone(Unit unit, GridManager grid)
+    {
+        if (unit == null || !unit.IsAlive) return false;
 
         foreach (Vector2Int dir in Directions)
         {
-            TileData tile = grid.GetTile(defender.GridPosition + dir);
-            Unit guard = tile != null ? tile.Occupant : null;
+            TileData tile = grid.GetTile(unit.GridPosition + dir);
+            Unit neighbor = tile != null ? tile.Occupant : null;
 
-            if (guard != null
-                && guard != defender
-                && guard.Faction == defender.Faction
-                && guard.Class == UnitClass.Infantry
-                && IsPincerCapable(guard))
-            {
-                return guard;
-            }
+            if (neighbor != null && WouldGuardAt(unit, unit.GridPosition, neighbor))
+                return true;
         }
-        return null;
+        return false;
     }
 
     /// <summary>defender への挟撃が無効化されるか（ガード役がいるか）。</summary>
