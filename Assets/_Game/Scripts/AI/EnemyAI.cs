@@ -42,6 +42,13 @@ using UnityEngine;
 ///   わずかに優先する（PincerSetupBonus +2。ほぼ同点のマス選びでだけ効く）。
 ///   もう1つは「ガード役潰し」— 一撃で倒せる相手が複数いるとき、誰かのガード役をしている
 ///   相手を優先して倒す（GuardBreakKillBonus +50。撃破同士の並べ替え専用）。
+///
+/// ガードの活用＝守り配置（Phase 19）：
+///   攻撃できる相手がいない「前衛武器の歩兵」は、次のプレイヤーフェイズに挟撃されそうな
+///   味方（ThreatMap.FindPincerThreatenedAllies）の隣に立って挟撃を無効化する。
+///   攻撃探索が先＝攻撃優先（守り位置を離れて攻撃に行くこともある。作者合意）。
+///   防げるダメージが1以上なら接近よりガード。マスは 防止量→地形防御→移動の少なさ で選ぶ。
+///   未挑発の待ち伏せ型はガード移動もしない（性格ゲートが先。受動的なガードは従来どおり効く）。
 /// </summary>
 public static class EnemyAI
 {
@@ -105,7 +112,7 @@ public static class EnemyAI
         if (TryFindBestAttack(enemy, grid, players, candidates, out ActionPlan attack))
             return attack;
 
-        // 2) 待ち伏せ型で未挑発なら、一切動かない（Phase 17）。
+        // 2) 待ち伏せ型で未挑発なら、一切動かない（Phase 17。ガード移動もしない＝Phase 19 作者合意）。
         //    移動ゼロなだけで、立ち位置による受動的な挟撃ガードはそのまま効く
         if (enemy.AIProfile == EnemyAIProfile.Ambush && !enemy.IsProvoked)
         {
@@ -117,7 +124,12 @@ public static class EnemyAI
             };
         }
 
-        // 3) 攻撃できない：目標（攻撃できる立ち位置）へ近づく
+        // 3) ガード（Phase 19）：攻撃できる相手がいない前衛歩兵は、
+        //    挟撃されそうな味方を守りに行く（防げるダメージが正なら接近より優先。作者合意）
+        if (TryPlanGuard(enemy, grid, candidates, out ActionPlan guardPlan))
+            return guardPlan;
+
+        // 4) 攻撃できない・守る相手もいない：目標（攻撃できる立ち位置）へ近づく
         return PlanApproach(enemy, grid, players, candidates);
     }
 
@@ -184,6 +196,88 @@ public static class EnemyAI
             score = bestScore,
             reason = BuildAttackReason(enemy, bestCell, bestTarget, grid, damage,
                 bestPincerSetup, bestGuardBreak),
+        };
+        return true;
+    }
+
+    // ===== ガードの活用＝守り配置（Phase 19）=====
+
+    /// <summary>
+    /// 挟撃されそうな味方の隣に立って、挟撃を無効化する行動を探す（Phase 19）。
+    /// ここへ来るのは攻撃探索が空振りしたときだけ＝攻撃優先（作者合意）。
+    /// ガード役になれるのは「前衛武器の歩兵」のみ（WouldGuardAt と同じ条件）。
+    /// 防げるダメージが1以上のマスがあれば接近よりガードを選ぶ。マスの選び方は
+    ///   防止量の合計 → 地形防御 → 移動の少なさ
+    /// の順（1マスで複数の味方を同時に守れたら防止量は合算）。
+    /// 候補には現在地も含まれるので「その場で守り続ける」も自然に出る。
+    /// ※ガード役自身が挟撃される可能性までは v1 では読まない（思考ログで分かる。作者合意）
+    /// </summary>
+    private static bool TryPlanGuard(
+        Unit enemy, GridManager grid, List<Vector2Int> candidates, out ActionPlan plan)
+    {
+        plan = default;
+
+        // ガード役の資格チェック（歩兵・前衛武器・地上）。資格が無ければ計算せず素通り
+        if (enemy.IsFlying) return false;
+        if (enemy.Class != UnitClass.Infantry) return false;
+        if (!CombatRules.IsPincerCapable(enemy)) return false;
+
+        // 「挟撃されそうな味方 → 防げる最大ダメージ」を取得（自分は盤面に居ない扱いで判定）
+        Dictionary<Unit, int> threats = ThreatMap.FindPincerThreatenedAllies(grid, enemy);
+        if (threats.Count == 0) return false;
+
+        Vector2Int bestCell = enemy.GridPosition;
+        int bestValue = 0; // 防止量が1以上のマスだけ採用する（0なら守る意味が無い）
+        int bestDefense = int.MinValue;
+        int bestMoveDist = int.MaxValue;
+        List<Unit> bestProtected = null;
+
+        foreach (Vector2Int cell in candidates)
+        {
+            // このマスに立ったとき守れる味方と、防げるダメージの合計
+            int value = 0;
+            List<Unit> protectedAllies = null;
+            foreach (KeyValuePair<Unit, int> threat in threats)
+            {
+                if (!CombatRules.WouldGuardAt(enemy, cell, threat.Key)) continue;
+
+                value += threat.Value;
+                if (protectedAllies == null) protectedAllies = new List<Unit>();
+                protectedAllies.Add(threat.Key);
+            }
+            if (value <= 0) continue;
+
+            int defense = TileDefense(enemy, cell, grid);
+            int moveDist = CombatRules.Manhattan(enemy.GridPosition, cell);
+
+            bool better = value > bestValue
+                || (value == bestValue && defense > bestDefense)
+                || (value == bestValue && defense == bestDefense && moveDist < bestMoveDist);
+            if (better)
+            {
+                bestValue = value;
+                bestDefense = defense;
+                bestMoveDist = moveDist;
+                bestCell = cell;
+                bestProtected = protectedAllies;
+            }
+        }
+
+        if (bestProtected == null) return false;
+
+        var names = new List<string>();
+        foreach (Unit ally in bestProtected) names.Add(ally.Data.unitName);
+        string who = string.Join("、", names);
+
+        bool stay = bestCell == enemy.GridPosition;
+        plan = new ActionPlan
+        {
+            kind = ActionKind.Guard,
+            standCell = bestCell,
+            score = bestValue,
+            reason = stay
+                ? $"その場で {who} への挟撃を防ぎ続ける（ガード・最大{bestValue}ダメージ防止）"
+                : $"({bestCell.x},{bestCell.y})へ移動して {who} への挟撃を無効化（ガード・最大{bestValue}ダメージ防止）",
         };
         return true;
     }
