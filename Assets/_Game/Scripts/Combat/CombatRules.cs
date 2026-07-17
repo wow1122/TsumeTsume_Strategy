@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -64,6 +65,36 @@ public static class CombatRules
 
         int distance = Manhattan(fromCell, target.GridPosition);
         return distance >= min && distance <= max;
+    }
+
+    /// <summary>
+    /// target を攻撃できる「立ち位置」の一覧（盤内のマスのみ。Phase 16・敵AIの接近目標用）。
+    /// 射程と飛翔の制限（CanEngage）だけで判定する。そのマスに立てる地形か・空いているかは
+    /// 移動側（MovementCalculator の距離マップ）の役割なので、ここでは見ない。
+    /// hasMoved は「そこへ移動してから撃つ」想定なら true（後衛武器は最小射程ちょうどになる）。
+    /// </summary>
+    public static List<Vector2Int> GetAttackFromCells(Unit attacker, Unit target, GridManager grid, bool hasMoved)
+    {
+        var cells = new List<Vector2Int>();
+        if (target == null || !target.IsAlive) return cells;
+        if (!CanEngage(attacker, target)) return cells;
+        if (!TryGetAttackRange(attacker, hasMoved, out int min, out int max)) return cells;
+
+        // target を中心に、マンハッタン距離が min〜max のマス（ひし形の輪）を集める
+        Vector2Int center = target.GridPosition;
+        for (int dx = -max; dx <= max; dx++)
+        {
+            for (int dy = -max; dy <= max; dy++)
+            {
+                int d = Mathf.Abs(dx) + Mathf.Abs(dy);
+                if (d < min || d > max) continue;
+
+                var cell = new Vector2Int(center.x + dx, center.y + dy);
+                if (grid.GetTile(cell) == null) continue; // 盤外
+                cells.Add(cell);
+            }
+        }
+        return cells;
     }
 
     /// <summary>

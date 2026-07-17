@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
+  m_Name: Unit_Test_Dummy
+  m_EditorClassIdentifier: Assembly-CSharp::UnitData
+  unitName: "訓練用ダミー"
+  faction: 0
+  unitClass: 0
+  maxHP: 40
+  strength: 1
+  magic: 0
+  skill: 1
+  speed: 1
+  defense: 2
+  resistance: 0
+  move: 4
+  weapon: {fileID: 11400000, guid: 9bd17bf5451e17949960a7fc64eb7eca, type: 2}

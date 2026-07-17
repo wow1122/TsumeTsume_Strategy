@@ -84,25 +84,10 @@ public static class MovementCalculator
                 TileData tile = grid.GetTile(next);
                 if (tile == null) continue;            // 盤外
 
-                // 入れる地形か：地上は兵種ごとの通行可否（壁・城壁は全員不可、山を歩兵専用にする等。
-                // Phase 15）、飛翔中は飛行可否（屋内壁だけ不可）
-                bool canEnter = unit.IsFlying ? tile.CanFlyOver : tile.IsWalkableFor(unit.Class);
-                if (!canEnter) continue;
+                // 入れる地形か・敵に通せんぼされないか（判定の中身は CanTraverse に集約。Phase 16）
+                if (!CanTraverse(unit, tile, ignoreEnemyUnits: false)) continue;
 
-                // ユニットがいるマスの扱い（味方のマスは常に通過できる。敵のマスだけ通せんぼがあり得る）：
-                //   地上ユニットの移動 … 地上の敵は通せんぼ。飛翔中の敵の下はすり抜けられる
-                //   飛翔中の移動      … 「飛翔状態の敵」と「対空武器（弓・魔法）装備の敵」は
-                //                        すり抜け不可（作者仕様 2026-07-12）。それ以外の敵の上は通過できる
-                bool occupied = tile.Occupant != null;
-                if (occupied && tile.Occupant.Faction != unit.Faction)
-                {
-                    Unit blocker = tile.Occupant;
-                    bool blocked = unit.IsFlying
-                        ? (blocker.IsFlying
-                           || (blocker.Weapon != null && blocker.Weapon.category == WeaponCategory.Ranged))
-                        : !blocker.IsFlying;
-                    if (blocked) continue;
-                }
+                bool occupied = tile.Occupant != null; // 「誰かがいるマスには止まれない」判定で使う
 
                 int newCost = costSoFar[current] + GetMoveCost(unit, tile);
                 if (newCost > moveBudget) continue; // 移動力（予算）オーバー
@@ -125,5 +110,111 @@ public static class MovementCalculator
         }
 
         return reachable;
+    }
+
+    /// <summary>
+    /// 「目標マス群までの最短移動コストの地図」を作る（Phase 16・敵AIの接近用）。
+    /// 戻り値は マス → そのマスから一番近い目標マスまでの移動コスト。届かないマスは載らない。
+    /// 移動力の制限は掛けない（何ターンもかけて歩く前提の「道のり」を測る）。
+    ///
+    /// 作り方は「目標側から逆向きに広げる」ダイクストラ法（多始点）：
+    ///   ・全目標マスをコスト0で登録して、そこから外へ広げていく
+    ///   ・逆向きの一歩 current→next は、順方向の一歩 next→current に相当するので、
+    ///     加算するのは「current への進入コスト」。
+    ///     例: 平地x → 森m → 目標g と歩くと、順方向のコストは 森2＋目標マス1 = 3。
+    ///         逆向きでは g から m へ広げるとき g の1を、m から x へ広げるとき m の2を
+    ///         足すので、x の値は 1＋2 = 3 で順方向と一致する
+    ///   ・一度の計算で全マスぶんの答えが出るので、「候補マスのうちどこが一番目標に
+    ///     近いか」を測るのに向いている（1マスずつ経路探索をやり直さなくてよい）
+    ///
+    /// ignoreEnemyUnits を true にすると、敵対ユニットの通せんぼを無視して測る。
+    /// 道がプレイヤーに塞がれて どこへも近づけないとき（門に栓をされた等）の測り直し用。
+    /// </summary>
+    public static Dictionary<Vector2Int, int> GetDistanceMap(
+        GridManager grid, Unit unit, List<Vector2Int> goalCells, bool ignoreEnemyUnits)
+    {
+        var dist = new Dictionary<Vector2Int, int>(); // マス → 最寄り目標までのコスト
+        var open = new List<Vector2Int>();
+        var done = new HashSet<Vector2Int>();
+
+        // 全目標マスをコスト0で登録（unit が入れないマスは目標として無効）
+        foreach (Vector2Int goal in goalCells)
+        {
+            TileData tile = grid.GetTile(goal);
+            if (tile == null) continue;
+            if (!CanTraverse(unit, tile, ignoreEnemyUnits)) continue;
+            if (dist.ContainsKey(goal)) continue; // 同じマスが重複して渡されても1回だけ
+
+            dist[goal] = 0;
+            open.Add(goal);
+        }
+
+        while (open.Count > 0)
+        {
+            // 累計コスト最小のマスを取り出す（GetReachableCells と同じ全走査方式）
+            int best = 0;
+            for (int i = 1; i < open.Count; i++)
+            {
+                if (dist[open[i]] < dist[open[best]]) best = i;
+            }
+            Vector2Int current = open[best];
+            open.RemoveAt(best);
+
+            if (!done.Add(current)) continue;
+
+            // 逆向きの一歩なので、足すのは「current への進入コスト」（上の説明を参照）
+            int stepCost = GetMoveCost(unit, grid.GetTile(current));
+
+            foreach (Vector2Int dir in Directions)
+            {
+                Vector2Int next = current + dir;
+                if (done.Contains(next)) continue;
+
+                TileData tile = grid.GetTile(next);
+                if (tile == null) continue; // 盤外
+                if (!CanTraverse(unit, tile, ignoreEnemyUnits)) continue;
+
+                int newDist = dist[current] + stepCost;
+                if (!dist.ContainsKey(next) || newDist < dist[next])
+                {
+                    dist[next] = newDist;
+                    open.Add(next);
+                }
+            }
+        }
+
+        return dist;
+    }
+
+    /// <summary>
+    /// unit がこのマスを「通れるか」（Phase 16 で GetReachableCells から分離した共通判定）。
+    /// 通れる＝入れる地形で、敵に通せんぼされない。止まれるかは別判定
+    /// （誰かがいるマスには止まれない。呼び出し側が Occupant を見る）。
+    ///
+    /// 地形：地上は兵種ごとの通行可否（壁・城壁は全員不可、山は歩兵専用等。Phase 15）、
+    ///       飛翔中は飛行可否（屋内壁だけ不可。Phase 14）
+    /// 通せんぼ（味方のマスは常に通過できる。敵のマスだけ通せんぼがあり得る）：
+    ///   地上ユニットの移動 … 地上の敵は通せんぼ。飛翔中の敵の下はすり抜けられる
+    ///   飛翔中の移動      … 「飛翔状態の敵」と「対空武器（弓・魔法）装備の敵」は
+    ///                        すり抜け不可（作者仕様 2026-07-12）。それ以外の敵の上は通過できる
+    /// ignoreEnemyUnits=true なら敵の通せんぼを無視する（GetDistanceMap の測り直し用。Phase 16）
+    /// </summary>
+    private static bool CanTraverse(Unit unit, TileData tile, bool ignoreEnemyUnits)
+    {
+        bool canEnter = unit.IsFlying ? tile.CanFlyOver : tile.IsWalkableFor(unit.Class);
+        if (!canEnter) return false;
+
+        if (ignoreEnemyUnits) return true;
+
+        if (tile.Occupant != null && tile.Occupant.Faction != unit.Faction)
+        {
+            Unit blocker = tile.Occupant;
+            bool blocked = unit.IsFlying
+                ? (blocker.IsFlying
+                   || (blocker.Weapon != null && blocker.Weapon.category == WeaponCategory.Ranged))
+                : !blocker.IsFlying;
+            if (blocked) return false;
+        }
+        return true;
     }
 }

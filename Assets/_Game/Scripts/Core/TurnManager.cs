@@ -30,6 +30,9 @@ public class TurnManager : MonoBehaviour
     [Tooltip("敵1体ごとの行動の間隔(秒)。動きが見やすくなる")]
     public float enemyActionDelay = 0.4f;
 
+    [Tooltip("敵AIの思考ログを Console に出す（Phase 16）")]
+    public bool enemyAILog = true;
+
     private GridManager grid;
     private int turnLimit; // ステージのターン制限（0なら無制限。StageData から読む。Phase 15）
 
@@ -73,12 +76,21 @@ public class TurnManager : MonoBehaviour
     /// <summary>敵を1体ずつ、少し間を置いて行動させる。</summary>
     private IEnumerator EnemyPhaseRoutine()
     {
+        EnemyAI.LogEnabled = enemyAILog; // Inspector の設定を反映（Play中の切り替えは次のフェイズから効く）
+
+        // 敵全員を「未行動」に戻してから始める（Phase 16）。
+        // 行動した敵から行動済みにしていくことで、「まだ動いていない味方がいるか」を
+        // 後のフェーズ（挟撃のお膳立て等）で判断材料に使える。見た目にも行動済みの敵から暗くなる。
+        foreach (Unit u in UnitRegistry.GetUnits(Faction.Enemy))
+            u.SetActed(false);
+
         yield return new WaitForSeconds(enemyPhaseDelay);
 
         foreach (Unit enemy in UnitRegistry.GetUnits(Faction.Enemy))
         {
             if (enemy == null || !enemy.IsAlive) continue;
             EnemyAI.TakeAction(enemy, grid);
+            enemy.SetActed(true); // 行動済み（暗く表示）
 
             CheckGameEnd();
             if (IsGameOver) yield break; // 決着がついたら敵フェイズを止める
@@ -91,6 +103,10 @@ public class TurnManager : MonoBehaviour
 
     private void EndEnemyPhase()
     {
+        // 敵の「行動済み」表示を元に戻す（プレイヤーフェイズ中に敵が暗いままにならないように）
+        foreach (Unit u in UnitRegistry.GetUnits(Faction.Enemy))
+            u.SetActed(false);
+
         // ターン制限（Phase 15）：最終ターンの敵フェイズが終わっても決着していなければ敗北
         if (turnLimit > 0 && TurnNumber >= turnLimit && !IsGameOver)
         {
