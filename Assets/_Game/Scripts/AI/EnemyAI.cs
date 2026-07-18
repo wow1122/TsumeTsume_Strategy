@@ -67,16 +67,32 @@ using UnityEngine;
 ///     次フェイズ開始にタダで自動着地→そのフェイズは普通に行動できる）
 ///   ・着陸後に攻撃する立ち位置は必ず「地上の状態」で計算する — 飛翔中は CanEngage が
 ///     地上の敵に false を返すため（本フェーズ唯一の非自明点。probe その1参照）
+///
+/// 集中攻撃（Phase 21）：
+///   敵フェイズの開始に1回、「皆で倒し切れる相手」を1体だけ選んで focusTarget にする
+///   （BeginEnemyPhase。TurnManager が行動ループの前に呼ぶ）。その相手への攻撃には
+///   FocusBonus +200 を加点し、「全員が別々の相手を少しずつ削って誰も倒れない」を防ぐ。
+///   見込み火力（potential）は「このフェイズ動ける敵」の単発ダメージの合算で、
+///   potential ≥ 現在HP の相手のうち一番HPが低い1体を選ぶ（一番安い撃破に収束）。
+///   目標がフェイズ途中で倒れたら選び直す。KillBonus より下の加点なので、
+///   目の前の確実な撃破を捨ててまで集中はしない（詳細は SelectFocusTarget）。
 /// </summary>
 public static class EnemyAI
 {
     // ===== 点数の定数 =====
     // 点数は「予測ダメージ（1点=1ダメージ）」が土台。ボーナスの大小関係がそのまま優先順位になる。
-    // 大きい順: KillBonus 1000 ＞（Phase 21 予定: 集中攻撃 200）＞ GuardBreakKillBonus 50
+    // 大きい順: KillBonus 1000 ＞ FocusBonus 200（集中攻撃）＞ GuardBreakKillBonus 50
     //          ＞ PincerSetupBonus 2。この階層を崩さないように値を選んでいる。
 
     /// <summary>倒せる行動を最優先にするための大きなボーナス（どんなダメージ値より大きく）。</summary>
     private const int KillBonus = 1000;
+
+    /// <summary>
+    /// 集中攻撃（Phase 21）：フェイズ開始に選んだ目標（focusTarget）への攻撃に加える点数。
+    /// 撃破（KillBonus）よりは下＝目の前の確実な撃破を捨ててまで集中はしない。
+    /// ダメージ差やガード役潰し・お膳立てよりは上＝倒せる相手がいないときは皆で同じ相手を削る。
+    /// </summary>
+    private const int FocusBonus = 200;
 
     /// <summary>
     /// ガード役潰し（Phase 18）：一撃で倒せる相手が複数いるとき、誰かの挟撃ガード役をしている
@@ -102,12 +118,43 @@ public static class EnemyAI
     /// <summary>思考ログを出すか。TurnManager が敵フェイズ開始時に Inspector の設定を書き込む。</summary>
     public static bool LogEnabled = true;
 
+    /// <summary>隣接4マス（上下左右）。集中攻撃の「相手の隣に立てるマス数」の数え上げに使う。</summary>
+    private static readonly Vector2Int[] Directions =
+    {
+        Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right,
+    };
+
+    /// <summary>
+    /// 集中攻撃の目標（Phase 21）。敵フェイズ開始の BeginEnemyPhase で1体だけ選び、
+    /// フェイズの間は敵全員で共有する。null は「皆で倒し切れる相手がいない」＝集中攻撃なし。
+    /// </summary>
+    private static Unit focusTarget;
+
+    /// <summary>
+    /// このフェイズに目標を選べていたか（Phase 21）。「目標が倒された」の検知用 —
+    /// 倒れたユニットは Destroy されて focusTarget == null になるため、
+    /// このフラグが無いと「最初から目標なし」と区別できない。
+    /// </summary>
+    private static bool focusAssigned;
+
+    // Enter Play Mode Options（ドメインリロード無効）でも、static な目標が前回プレイの内容を
+    // 引きずらないよう、プレイ開始のたびに空へ戻す（UnitRegistry.ResetStatics と同じパターン）。
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics()
+    {
+        focusTarget = null;
+        focusAssigned = false;
+    }
+
     public static void TakeAction(Unit enemy, GridManager grid)
     {
         if (enemy == null || !enemy.IsAlive) return;
 
         List<Unit> players = UnitRegistry.GetUnits(Faction.Player);
         if (players.Count == 0) return;
+
+        // 集中攻撃（Phase 21）: 目標が倒れていたら、残りの敵で選び直してから考える
+        ReselectFocusTargetIfDown(grid);
 
         // 挑発の判定その1（Phase 17）: 被弾していたら起動する。
         // その2「今すぐ攻撃できる」は、Evaluate が攻撃プランを返したかどうかで下で判定する。
@@ -123,6 +170,108 @@ public static class EnemyAI
 
         Log(enemy, plan);           // 先に思考を宣言してから
         Execute(enemy, grid, plan); // 実行する（攻撃・挟撃などの戦闘ログはこの後に続く）
+    }
+
+    // ===== 集中攻撃＝目標の選定（Phase 21）=====
+
+    /// <summary>
+    /// 敵フェイズ開始の前処理。TurnManager が敵の行動ループの前に1回呼ぶ。
+    /// 「皆で倒し切れる相手」を1体だけ選んで focusTarget にする（いなければ null）。
+    /// </summary>
+    public static void BeginEnemyPhase(GridManager grid)
+    {
+        focusTarget = SelectFocusTarget(grid, out int potential);
+        focusAssigned = focusTarget != null;
+
+        if (!LogEnabled) return;
+        Debug.Log(focusTarget != null
+            ? $"AI方針: 集中攻撃の目標 = {FocusLabel(potential)}"
+            : "AI方針: 集中攻撃の目標なし（皆で倒し切れる相手がいない）");
+    }
+
+    /// <summary>フェイズ途中で目標が倒れたときの選び直し（各敵の TakeAction 冒頭から呼ばれる）。</summary>
+    private static void ReselectFocusTargetIfDown(GridManager grid)
+    {
+        if (!focusAssigned) return;                             // 元から目標なし（選び直す理由も無い）
+        if (focusTarget != null && focusTarget.IsAlive) return; // まだ健在（倒れると Destroy されて == null になる）
+
+        focusTarget = SelectFocusTarget(grid, out int potential);
+        focusAssigned = focusTarget != null;
+
+        if (!LogEnabled) return;
+        Debug.Log(focusTarget != null
+            ? $"AI方針: 目標が倒れたため再選定 → {FocusLabel(potential)}"
+            : "AI方針: 目標が倒れたため再選定 → 目標なし（皆で倒し切れる相手がいない）");
+    }
+
+    /// <summary>方針ログ用の目標の説明「名前(x,y)（HP12・火力見込み24）」。</summary>
+    private static string FocusLabel(int potential)
+    {
+        return $"{focusTarget.Data.unitName}({focusTarget.GridPosition.x},{focusTarget.GridPosition.y})"
+            + $"（HP{focusTarget.CurrentHP}・火力見込み{potential}）";
+    }
+
+    /// <summary>
+    /// 「皆で倒し切れる相手」を選ぶ（Phase 21 の本体）。
+    /// プレイヤーごとに、このフェイズまだ動ける敵（未行動で、突撃型か挑発済み）の
+    /// 単発ダメージを合算して「見込み火力（potential）」を出す：
+    ///   ・後衛武器の敵 … 全員分を足す（離れたマスから撃てるので、場所の取り合いはほぼ無い）
+    ///   ・前衛武器の敵 … ダメージの大きい順に k 件まで。
+    ///     k = 相手の隣接4マスのうち「盤内で、空きか敵が居る」マスの数
+    ///     （近接は隣に立たないと殴れない＝同時に殴れる人数に上限がある。
+    ///       敵が居る隣マスも、その敵自身が殴るか、動いた後に別の敵が立てるので数に入れる）
+    /// potential ≥ 現在HP の相手のうち、一番HPが低い1体を返す（一番安い撃破に収束。
+    /// 同HPなら名簿順で先の1体）。挟撃の追加打や「本当に到達できるか」までは見ない
+    /// 大づかみの見積り — 外れても攻撃が集中して削れるだけなので許容（作者合意）。
+    /// </summary>
+    private static Unit SelectFocusTarget(GridManager grid, out int potential)
+    {
+        potential = 0;
+        Unit best = null;
+
+        List<Unit> enemies = UnitRegistry.GetUnits(Faction.Enemy);
+        foreach (Unit player in UnitRegistry.GetUnits(Faction.Player))
+        {
+            // 近接が同時に立てる場所の上限 k
+            int k = 0;
+            foreach (Vector2Int dir in Directions)
+            {
+                TileData tile = grid.GetTile(player.GridPosition + dir);
+                if (tile == null) continue; // 盤外
+                if (tile.Occupant == null || tile.Occupant.Faction == Faction.Enemy) k++;
+            }
+
+            // 武器の分類ごとにダメージを見積もる
+            int rangedSum = 0;
+            var meleeDamages = new List<int>();
+            foreach (Unit enemy in enemies)
+            {
+                if (enemy.HasActed) continue;   // 行動済みの敵は数えない（フェイズ途中の再選定で効く）
+                if (enemy.AIProfile == EnemyAIProfile.Ambush && !enemy.IsProvoked) continue; // 動かない敵は数えない
+                if (enemy.Weapon == null) continue;                  // 武装無しは攻撃できない
+                if (!CombatRules.CanEngage(enemy, player)) continue; // 飛翔の制限（地上の前衛は飛翔中の相手を殴れない等）
+
+                int damage = DamageCalculator.Calculate(enemy, player, grid); // 単発・挟撃なしの控えめな見積り
+                if (damage <= 0) continue;
+
+                if (enemy.Weapon.category == WeaponCategory.Ranged) rangedSum += damage;
+                else meleeDamages.Add(damage);
+            }
+
+            meleeDamages.Sort((a, b) => b.CompareTo(a)); // 大きい順に並べて
+            int sum = rangedSum;
+            for (int i = 0; i < meleeDamages.Count && i < k; i++)
+                sum += meleeDamages[i];                  // 上位 k 件だけ足す
+
+            if (sum < player.CurrentHP) continue; // 皆でかかっても倒し切れない相手は狙わない
+
+            if (best == null || player.CurrentHP < best.CurrentHP)
+            {
+                best = player;
+                potential = sum;
+            }
+        }
+        return best;
     }
 
     // ===== 考える（盤面はまだ変えない）=====
@@ -187,6 +336,7 @@ public static class EnemyAI
         int bestMoveDist = int.MaxValue; // それも同じなら移動が少ない方を選ぶ
         bool bestPincerSetup = false;    // ログ用（Phase 18）
         bool bestGuardBreak = false;
+        bool bestFocus = false;          // ログ用（Phase 21）
 
         foreach (Vector2Int cell in candidates)
         {
@@ -198,7 +348,7 @@ public static class EnemyAI
                 if (!CombatRules.CanAttack(enemy, cell, target, hasMoved)) continue; // 射程外・武装無し
 
                 int score = ScoreAttack(enemy, cell, target, grid, helpers,
-                    out bool pincerSetup, out bool guardBreak);
+                    out bool pincerSetup, out bool guardBreak, out bool focus);
                 int defense = TileDefense(enemy, cell, grid);
                 int moveDist = CombatRules.Manhattan(enemy.GridPosition, cell);
 
@@ -215,6 +365,7 @@ public static class EnemyAI
                     bestTarget = target;
                     bestPincerSetup = pincerSetup;
                     bestGuardBreak = guardBreak;
+                    bestFocus = focus;
                 }
             }
         }
@@ -229,7 +380,7 @@ public static class EnemyAI
             target = bestTarget,
             score = bestScore,
             reason = BuildAttackReason(enemy, bestCell, bestTarget, grid, damage,
-                bestPincerSetup, bestGuardBreak),
+                bestPincerSetup, bestGuardBreak, bestFocus),
         };
         return true;
     }
@@ -791,17 +942,22 @@ public static class EnemyAI
     /// 「cell に立って target を攻撃する」行動の点数。
     /// 合計ダメージの予測は CombatSystem.PredictTotalDamage に一元化されている
     /// （挟撃の成立・ガードによる無効化も織り込み済み。実際の戦闘結果と必ず一致する）。
-    /// Phase 18 の加点2つ（お膳立て・ガード役潰し）はここで足す。out の2つはログ用のしるし。
+    /// Phase 18 の加点2つ（お膳立て・ガード役潰し）と Phase 21 の集中攻撃もここで足す。
+    /// out の3つはログ用のしるし。
     /// </summary>
     private static int ScoreAttack(
         Unit enemy, Vector2Int cell, Unit target, GridManager grid,
-        List<PincerHelper> helpers, out bool pincerSetup, out bool guardBreak)
+        List<PincerHelper> helpers, out bool pincerSetup, out bool guardBreak, out bool focus)
     {
         int damage = CombatSystem.PredictTotalDamage(enemy, cell, target, grid);
         bool kill = damage >= target.CurrentHP;
 
         int score = damage;
         if (kill) score += KillBonus; // この一手で倒せるなら最優先
+
+        // 集中攻撃（Phase 21）：フェイズ開始に選んだ目標なら加点（撃破よりは下＝撃破を優先したまま収束させる）
+        focus = target == focusTarget;
+        if (focus) score += FocusBonus;
 
         // ガード役潰し（Phase 18）：倒せる相手の中では、誰かのガード役をしている相手を優先
         guardBreak = kill && CombatRules.IsGuardingSomeone(target, grid);
@@ -886,10 +1042,10 @@ public static class EnemyAI
         Debug.Log($"AI思考: {enemy.Data.unitName}({enemy.GridPosition.x},{enemy.GridPosition.y}) {plan.reason}");
     }
 
-    /// <summary>攻撃プランの説明文（ログ用）。挟撃・撃破・Phase 18 の加点の見込みも添える。</summary>
+    /// <summary>攻撃プランの説明文（ログ用）。挟撃・撃破・集中攻撃などの加点の見込みも添える。</summary>
     private static string BuildAttackReason(
         Unit enemy, Vector2Int cell, Unit target, GridManager grid, int damage,
-        bool pincerSetup, bool guardBreak)
+        bool pincerSetup, bool guardBreak, bool focus)
     {
         string move = cell == enemy.GridPosition ? "その場から" : $"({cell.x},{cell.y})へ移動して";
 
@@ -897,6 +1053,7 @@ public static class EnemyAI
         Unit ally = CombatRules.FindPincerAlly(cell, enemy, target, grid);
         if (ally != null && !CombatRules.IsPincerNegated(target, grid)) note += "・挟撃込み";
         if (damage >= target.CurrentHP) note += "・撃破";
+        if (focus) note += "・集中攻撃";
         if (guardBreak) note += "・ガード役潰し";
         if (pincerSetup) note += "・挟撃のお膳立て";
 

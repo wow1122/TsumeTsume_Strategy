@@ -84,6 +84,10 @@ public class TurnManager : MonoBehaviour
         foreach (Unit u in UnitRegistry.GetUnits(Faction.Enemy))
             u.SetActed(false);
 
+        // 集中攻撃（Phase 21）: 「皆で倒し切れる相手」を1体選んでから行動を始める。
+        // 全員を未行動に戻した直後に呼ぶ＝「このフェイズ動ける敵」の火力で見積もるため
+        EnemyAI.BeginEnemyPhase(grid);
+
         yield return new WaitForSeconds(enemyPhaseDelay);
 
         foreach (Unit enemy in UnitRegistry.GetUnits(Faction.Enemy))
