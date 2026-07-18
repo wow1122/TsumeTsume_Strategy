@@ -10,6 +10,12 @@ using UnityEngine.InputSystem;
 /// 計算は実際の戦闘と同じ共有関数（DamageCalculator / CombatRules）を使うので、
 /// 表示された数字と実戦の結果は必ず一致する。
 /// BattleController が自動生成し、対象選択の開始・終了で Show / Hide を呼ぶ。
+///
+/// 被ダメモード（2026-07-18 作者要望）: 「被ダメ確認」コマンドでは向きが逆になり、
+/// ホバーした敵から「選択中の味方が攻撃されたら」の被ダメージ予測を表示する（ShowIncoming）。
+/// 反撃なしの仕様なので、これは攻撃時ではなく立ち位置を決めるための見積り。
+/// 敵がどこから攻撃してくるかは未来の話で確定できないため、単発ダメージのみ
+/// （ダメージ式は攻撃側の位置に依存しないので単発の数値自体は正確）。挟撃の追加は含まない。
 /// </summary>
 public class BattleForecast : MonoBehaviour
 {
@@ -23,8 +29,9 @@ public class BattleForecast : MonoBehaviour
     [Tooltip("文字の大きさ")]
     public int fontSize = 14;
 
-    private Unit attacker;
-    private List<Unit> targets;
+    private Unit attacker;         // 与ダメモード: 攻撃する自分側（被ダメモードでは null）
+    private Unit incomingDefender; // 被ダメモード: 攻撃を受ける自分側（与ダメモードでは null）
+    private List<Unit> targets;    // ホバー候補（与ダメ: 攻撃対象の敵 ／ 被ダメ: 攻撃してくる敵）
     private GridManager grid;
     private Unit current; // いま予測を表示している対象（選択直後は最初の対象）
 
@@ -32,6 +39,7 @@ public class BattleForecast : MonoBehaviour
     public void Show(Unit attacker, List<Unit> targets, GridManager grid)
     {
         this.attacker = attacker;
+        incomingDefender = null;
         this.targets = targets;
         this.grid = grid;
 
@@ -39,10 +47,24 @@ public class BattleForecast : MonoBehaviour
         current = (targets != null && targets.Count > 0) ? targets[0] : null;
     }
 
+    /// <summary>
+    /// 被ダメ確認の開始時に呼ぶ（2026-07-18 作者要望）。defender（選択中の味方）が
+    /// attackers のそれぞれから攻撃されたときの、被ダメージ予測を表示するモードになる。
+    /// </summary>
+    public void ShowIncoming(Unit defender, List<Unit> attackers, GridManager grid)
+    {
+        attacker = null;
+        incomingDefender = defender;
+        targets = attackers;
+        this.grid = grid;
+        current = (attackers != null && attackers.Count > 0) ? attackers[0] : null;
+    }
+
     /// <summary>対象選択の終了時（攻撃実行・キャンセル・選択解除）に呼ぶ。</summary>
     public void Hide()
     {
         attacker = null;
+        incomingDefender = null;
         targets = null;
         grid = null;
         current = null;
@@ -50,7 +72,7 @@ public class BattleForecast : MonoBehaviour
 
     void OnGUI()
     {
-        if (attacker == null || targets == null || grid == null) return;
+        if ((attacker == null && incomingDefender == null) || targets == null || grid == null) return;
 
         // マウスの下に別の対象がいればそちらへ切り替える（離れても最後の対象を表示し続ける）
         if (Mouse.current != null && Camera.main != null)
@@ -65,7 +87,8 @@ public class BattleForecast : MonoBehaviour
         }
 
         if (current == null) return;
-        DrawForecast(current);
+        if (attacker != null) DrawForecast(current);
+        else DrawIncoming(current);
     }
 
     /// <summary>defender への攻撃の予測を組み立てて描く。</summary>
@@ -91,7 +114,7 @@ public class BattleForecast : MonoBehaviour
         {
             $"{attacker.Data.unitName} → {defender.Data.unitName}",
             $"与ダメージ　{main.ToLogString()}",
-            BuildTriangleLine(main.triangle),
+            BuildTriangleLine(main.triangle, "有利", "不利"),
         };
         if (ally != null)
         {
@@ -103,22 +126,58 @@ public class BattleForecast : MonoBehaviour
             ? $"相手HP {defender.CurrentHP} → 0　撃破！"
             : $"相手HP {defender.CurrentHP} → {hpAfter}");
 
-        DrawPanel(lines);
+        DrawPanel(lines, "戦闘予測");
+    }
+
+    /// <summary>current の敵から「攻撃を受けたら」の予測を組み立てて描く（被ダメモード）。</summary>
+    private void DrawIncoming(Unit enemy)
+    {
+        var lines = new List<string>
+        {
+            $"{enemy.Data.unitName} → {incomingDefender.Data.unitName}（受ける攻撃）",
+        };
+
+        // そもそも攻撃が成立しない相手は、その理由だけを出す
+        string blocked = null;
+        if (enemy.Weapon == null)
+            blocked = "この相手は武装無しのため攻撃してこない";
+        else if (!CombatRules.CanEngage(enemy, incomingDefender))
+            blocked = "この相手からは攻撃を受けない（飛翔の制限）";
+
+        if (blocked != null)
+        {
+            lines.Add(blocked);
+            DrawPanel(lines, "被ダメージ予測");
+            return;
+        }
+
+        DamageBreakdown main = DamageCalculator.CalculateBreakdown(enemy, incomingDefender, grid);
+        int hpAfter = Mathf.Max(0, incomingDefender.CurrentHP - main.Total);
+
+        lines.Add($"被ダメージ　{main.ToLogString()}");
+        lines.Add(BuildTriangleLine(main.triangle, "相手が有利", "相手が不利"));
+        lines.Add(hpAfter == 0
+            ? $"自分のHP {incomingDefender.CurrentHP} → 0　倒される！"
+            : $"自分のHP {incomingDefender.CurrentHP} → {hpAfter}");
+        lines.Add("※相手の位置どり・挟撃の追加は含まない");
+
+        DrawPanel(lines, "被ダメージ予測");
     }
 
     /// <summary>
     /// 三すくみ補正の行（2026-07-18 作者要望: 補正0のときも必ず表示する）。
     /// 式の中の「相性+3」表記とは別に、補正値だけを取り出して分かりやすく1行にする。
+    /// 有利・不利の言い回しは与ダメ（自分が有利）と被ダメ（相手が有利）で呼び分ける。
     /// </summary>
-    private static string BuildTriangleLine(int triangle)
+    private static string BuildTriangleLine(int triangle, string advantage, string disadvantage)
     {
-        if (triangle > 0) return $"三すくみ +{triangle}（有利）";
-        if (triangle < 0) return $"三すくみ {triangle}（不利）";
+        if (triangle > 0) return $"三すくみ +{triangle}（{advantage}）";
+        if (triangle < 0) return $"三すくみ {triangle}（{disadvantage}）";
         return "三すくみ ±0（補正なし）";
     }
 
-    /// <summary>組み立てた行を画面右下のパネルに描く。</summary>
-    private void DrawPanel(List<string> lines)
+    /// <summary>組み立てた行を画面右下のパネルに描く（title は見出し）。</summary>
+    private void DrawPanel(List<string> lines, string title)
     {
 
         // 画面右下に描く（左下の地形情報表示と重ならない位置）
@@ -133,7 +192,7 @@ public class BattleForecast : MonoBehaviour
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.UpperCenter,
         };
-        GUI.Box(rect, "戦闘予測", boxStyle);
+        GUI.Box(rect, title, boxStyle);
 
         var lineStyle = new GUIStyle(GUI.skin.label) { fontSize = fontSize };
         for (int i = 0; i < lines.Count; i++)

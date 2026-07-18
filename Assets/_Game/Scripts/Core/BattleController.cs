@@ -47,7 +47,7 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect }
+    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck }
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
@@ -197,6 +197,10 @@ public class BattleController : MonoBehaviour
                 // 対象以外のクリックは無視（待機はメニューの「待機」から。誤クリックでの行動消費を防ぐ）
                 break;
 
+            case State.DamageCheck:
+                // 被ダメ確認は見るだけのモード。クリックでは何もしない（戻るのは右クリック/ESC）
+                break;
+
             case State.UnitTargetSelect:
                 if (clickedUnit != null && unitCandidates.Contains(clickedUnit))
                 {
@@ -239,7 +243,8 @@ public class BattleController : MonoBehaviour
 
             case State.TargetSelect:
             case State.UnitTargetSelect:
-                // 対象選択 → メニューへ戻る（移動した位置はそのまま保持）
+            case State.DamageCheck:
+                // 対象選択・被ダメ確認 → メニューへ戻る（移動した位置はそのまま保持）
                 OpenCommandMenu();
                 break;
 
@@ -402,7 +407,12 @@ public class BattleController : MonoBehaviour
 
         attackTargets = FindAttackTargets(unit, context.hasMoved);
         if (attackTargets.Count > 0)
+        {
             commands.Add(new ActionMenu.Entry("攻撃", EnterTargetSelect));
+            // 被ダメ確認（2026-07-18 作者要望）: 攻撃できる相手から「逆に攻撃されたら」の
+            // 予測を見る。見るだけで行動は消費しない
+            commands.Add(new ActionMenu.Entry("被ダメ確認", EnterDamageCheck));
+        }
 
         // 飛翔：飛行兵が非飛翔中ならいつでも使える（移動前でも移動後でも。作者仕様変更 2026-07-12）。
         // 行動は消費せず、残り移動力ぶんの飛行移動ができる
@@ -460,6 +470,24 @@ public class BattleController : MonoBehaviour
 
         state = State.TargetSelect;
         Debug.Log($"攻撃対象を選択（{attackTargets.Count} 体）。右クリック/ESCでメニューへ戻る。");
+    }
+
+    /// <summary>
+    /// 被ダメ確認（2026-07-18 作者要望）: 攻撃できる相手を赤表示し、ホバーした敵から
+    /// 「逆に攻撃されたら何ダメージ受けるか」の予測パネルを出す。
+    /// 見るだけのコマンドで行動は消費しない。右クリック/ESC でメニューへ戻る。
+    /// </summary>
+    private void EnterDamageCheck()
+    {
+        menu.Hide();
+
+        foreach (Unit enemy in attackTargets)
+            grid.AddHighlight(enemy.GridPosition, HighlightKind.TargetChoice);
+
+        forecast.ShowIncoming(context.unit, attackTargets, grid);
+
+        state = State.DamageCheck;
+        Debug.Log($"被ダメ確認（{attackTargets.Count} 体）。右クリック/ESCでメニューへ戻る。");
     }
 
     /// <summary>救出・引き受け・代わりに降ろすの相手ユニットを赤表示して、クリックを待つ。</summary>
