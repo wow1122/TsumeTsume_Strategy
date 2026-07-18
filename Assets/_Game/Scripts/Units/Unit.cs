@@ -63,6 +63,11 @@ public class Unit : MonoBehaviour
     // すり抜けの例外（飛翔中の敵・対空武器の敵は通れない）は MovementCalculator 参照。
     // 持続は発動ターンを含めて3ターン。自軍フェイズ開始ごとに TickFlight で数え、0で自動着地する。
     // 「着陸」コマンドで早めに降りることもできる（発動したターンは不可・着陸すると行動終了）。
+    //
+    // 【警告】StartFlight / CancelFlight は「純粋な状態変更」のまま保つこと（Phase 20）。
+    // 敵AIが「飛んだら得か」を probe（お試し飛翔・お試し着地→評価→復元）で判定しており、
+    // ここに副作用（ログ・演出・行動消費・占有の変更など）を足すと評価のたびに
+    // それが実行されて probe が壊れる。演出やログは呼び出し側に置くこと。
 
     /// <summary>飛翔状態か。</summary>
     public bool IsFlying { get; private set; }

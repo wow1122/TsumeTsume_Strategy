@@ -49,6 +49,24 @@ using UnityEngine;
 ///   攻撃探索が先＝攻撃優先（守り位置を離れて攻撃に行くこともある。作者合意）。
 ///   防げるダメージが1以上なら接近よりガード。マスは 防止量→地形防御→移動の少なさ で選ぶ。
 ///   未挑発の待ち伏せ型はガード移動もしない（性格ゲートが先。受動的なガードは従来どおり効く）。
+///
+/// 飛翔の活用＝離陸・巡航・着陸（Phase 20）：
+///   敵の飛行兵が自分の判断で飛翔コマンドを使う。プレイヤー側の飛翔の仕様・挙動は無変更。
+///   仮定の評価は probe（お試し）方式 — 評価のあいだだけ実際に StartFlight / CancelFlight で
+///   状態を切り替えて測り、try/finally で必ず元に戻す（作者合意。共有コードは変えない）。
+///   ・離陸（地上で攻撃できる相手がいないとき）… 次のいずれかで飛ぶ：
+///       (1) 離陸すれば今すぐ空対空攻撃できる（飛翔は行動を消費しないので離陸→攻撃が1行動）
+///       (2) 空中でしか攻撃できない相手（飛翔中のプレイヤー）がいる
+///       (3) 地上では目標へ到達できないが空中なら可能
+///       (4) 空路のほうが速い：空路ターン数+1 ≤ 陸路ターン数（+1は着陸行動の分。同数なら空路優先）
+///   ・巡航（空中で攻撃できる相手がいないとき）… 対空射程マス（ThreatMap.GetAirThreatCells）を
+///     「1マス分の遠回りまでなら」避けつつ、目標への空路が一番縮むマスへ飛ぶ
+///   ・着陸 … 残り飛翔2ターン以上で「着陸マスから次のターンに攻撃位置へ届く」なら
+///     今すぐ着陸して行動終了（自動着地を待つより1ターン早く攻撃に移れる）。
+///     残り1ターンなら空中のまま待つのが得（プレイヤーフェイズを近接無敵で過ごし、
+///     次フェイズ開始にタダで自動着地→そのフェイズは普通に行動できる）
+///   ・着陸後に攻撃する立ち位置は必ず「地上の状態」で計算する — 飛翔中は CanEngage が
+///     地上の敵に false を返すため（本フェーズ唯一の非自明点。probe その1参照）
 /// </summary>
 public static class EnemyAI
 {
@@ -74,6 +92,13 @@ public static class EnemyAI
     /// </summary>
     private const int PincerSetupBonus = 2;
 
+    /// <summary>
+    /// 対空回避（Phase 20）：空中巡航の停止マス選びで、対空射程マス（次のプレイヤーフェイズに
+    /// 空中の自分を撃たれうるマス）に付ける減点。距離1マス相当＝「1マス分の遠回りまでなら
+    /// 撃たれないマスを選ぶ」控えめな値（回避のために大きく後退はしない）。
+    /// </summary>
+    private const int AirThreatPenalty = 1;
+
     /// <summary>思考ログを出すか。TurnManager が敵フェイズ開始時に Inspector の設定を書き込む。</summary>
     public static bool LogEnabled = true;
 
@@ -91,8 +116,9 @@ public static class EnemyAI
 
         ActionPlan plan = Evaluate(enemy, grid, players);
 
-        // 挑発の判定その2（Phase 17）: 攻撃すること自体が挑発（以後ずっと突撃型として振る舞う）
-        if (plan.kind == ActionKind.Attack)
+        // 挑発の判定その2（Phase 17）: 攻撃すること自体が挑発（以後ずっと突撃型として振る舞う）。
+        // 離陸からの空対空攻撃（TakeOff で target あり。Phase 20）も攻撃として数える
+        if (plan.kind == ActionKind.Attack || (plan.kind == ActionKind.TakeOff && plan.target != null))
             enemy.MarkProvoked();
 
         Log(enemy, plan);           // 先に思考を宣言してから
@@ -129,7 +155,15 @@ public static class EnemyAI
         if (TryPlanGuard(enemy, grid, candidates, out ActionPlan guardPlan))
             return guardPlan;
 
-        // 4) 攻撃できない・守る相手もいない：目標（攻撃できる立ち位置）へ近づく
+        // 4) 飛翔の活用（Phase 20）：
+        //    空中にいる … 着陸か巡航かをここで決める（地上向けの接近は空中では機能しない）
+        //    地上の飛行兵 … 離陸したほうが得なら飛ぶ。そうでなければ普通に接近へ
+        if (enemy.IsFlying)
+            return PlanFlying(enemy, grid, players, candidates);
+        if (TryPlanTakeOff(enemy, grid, players, out ActionPlan flightPlan))
+            return flightPlan;
+
+        // 5) 攻撃できない・守る相手もいない：目標（攻撃できる立ち位置）へ近づく
         return PlanApproach(enemy, grid, players, candidates);
     }
 
@@ -282,6 +316,333 @@ public static class EnemyAI
         return true;
     }
 
+    // ===== 飛翔の活用＝離陸・巡航・着陸（Phase 20）=====
+
+    /// <summary>
+    /// 着陸後の攻撃を見積もるための「地上の情報」ひとまとめ。
+    /// goals = 地上の状態で攻撃できる立ち位置（全プレイヤー分）、
+    /// map   = 各マスから最寄りの goals までの地上の道のり（プレイヤーの通せんぼ込み）。
+    /// </summary>
+    private struct GroundInfo
+    {
+        public List<Vector2Int> goals;
+        public Dictionary<Vector2Int, int> map;
+    }
+
+    /// <summary>
+    /// 【probe その1：一時着地】地上の目標（攻撃できる立ち位置）と道のりを計算する。
+    /// 飛翔中は CanEngage が地上の敵に false を返すため、「着陸後に攻撃する立ち位置」は
+    /// 必ず地上の状態で計算しなければならない（Phase 20 唯一の非自明点）。
+    /// そこで飛翔中なら CancelFlight で一時的に着地して計算し、finally で必ず
+    /// 元の飛翔状態（残りターン数まで）に戻す。地上のユニットが呼んだ場合はそのまま計算する。
+    /// </summary>
+    private static GroundInfo ComputeGroundInfo(Unit enemy, GridManager grid, List<Unit> players)
+    {
+        bool wasFlying = enemy.IsFlying;
+        int savedTurns = enemy.FlightTurnsLeft;
+        if (wasFlying) enemy.CancelFlight(); // お試し着地（評価専用。盤面には何も起きない）
+        try
+        {
+            var info = new GroundInfo { goals = new List<Vector2Int>() };
+            foreach (Unit p in players)
+                info.goals.AddRange(CombatRules.GetAttackFromCells(enemy, p, grid, hasMoved: true));
+
+            info.map = MovementCalculator.GetDistanceMap(grid, enemy, info.goals, ignoreEnemyUnits: false);
+            return info;
+        }
+        finally
+        {
+            if (wasFlying) enemy.StartFlight(savedTurns); // 必ず元の飛翔状態に戻す
+        }
+    }
+
+    /// <summary>
+    /// 飛翔中の敵の行動を決める（攻撃探索が空振りしたとき）。
+    ///   1) 着陸判断 … 残り飛翔2ターン以上で「着陸マスから次のターンに攻撃位置へ届く」なら
+    ///      今すぐ着陸して行動終了。着陸コマンドは行動を消費するが、次のフェイズには攻撃できる
+    ///      ＝自動着地（行動を消費しないが着地がフェイズ開始になる）を待つより1ターン早い。
+    ///      残り1ターンなら着陸しない：空中のままプレイヤーフェイズを近接無敵で過ごし、
+    ///      次フェイズ開始にタダで自動着地して、そのフェイズは普通に行動するのが得。
+    ///   2) 空中巡航 … 目標への空路が一番縮むマスへ（対空射程マスは1マス分の遠回りまで回避）
+    ///   3) 空路でも届かないときの保険 … 従来の直線距離接近
+    /// </summary>
+    private static ActionPlan PlanFlying(Unit enemy, GridManager grid, List<Unit> players, List<Vector2Int> candidates)
+    {
+        GroundInfo ground = ComputeGroundInfo(enemy, grid, players); // probe その1（一時着地）
+
+        // 1) 着陸判断
+        if (enemy.FlightTurnsLeft >= 2 && TryPlanLanding(enemy, grid, candidates, ground, out ActionPlan landing))
+            return landing;
+
+        // 2) 空中巡航
+        if (TryPickCruiseCell(enemy, grid, players, candidates, ground,
+                out Vector2Int cell, out int dist, out _, out string threatNote))
+        {
+            bool stay = cell == enemy.GridPosition;
+            string turnsNote = enemy.FlightTurnsLeft == 1
+                ? "・残り1ターンは空中待機が得（次フェイズ開始に自動着地→即行動）"
+                : $"・残り飛翔{enemy.FlightTurnsLeft}ターン";
+
+            return new ActionPlan
+            {
+                kind = stay ? ActionKind.Stay : ActionKind.Approach,
+                standCell = cell,
+                reason = stay
+                    ? $"空中で待機（目標まで残り{dist}{threatNote}{turnsNote}）"
+                    : $"({cell.x},{cell.y})へ巡航（空路・目標まで残り{dist}{threatNote}{turnsNote}）",
+            };
+        }
+
+        // 3) 保険：空路でも目標へ届かない（交戦できる相手がいない等）
+        return PlanApproachByManhattan(enemy, grid, players, candidates);
+    }
+
+    /// <summary>
+    /// 「今すぐ着陸して行動終了」する着陸マスを探す（Phase 20）。
+    /// 条件：飛行移動で立てるマス（＝空きマス。現在地も可）のうち、
+    ///   ・地上の兵種として歩いて立てる地形（城壁の上などへ手動着陸はしない。
+    ///     飛翔切れの自動着地で城壁に乗るのは従来どおり合法）
+    ///   ・そこから次のターンに攻撃位置へ届く（地上の道のり ≤ 移動力）
+    /// マスの選び方は 目標までの地上の道のり → 地形防御（着陸後は地上なので効く）→ 移動の少なさ。
+    /// </summary>
+    private static bool TryPlanLanding(
+        Unit enemy, GridManager grid, List<Vector2Int> candidates, GroundInfo ground, out ActionPlan plan)
+    {
+        plan = default;
+
+        bool found = false;
+        Vector2Int bestCell = enemy.GridPosition;
+        int bestDist = int.MaxValue;
+        int bestDefense = int.MinValue;
+        int bestMoveDist = int.MaxValue;
+
+        foreach (Vector2Int cell in candidates)
+        {
+            TileData tile = grid.GetTile(cell);
+            if (tile == null || !tile.IsWalkableFor(enemy.Class)) continue;      // 歩けない地形に手動着陸はしない
+            if (!ground.map.TryGetValue(cell, out int dist)) continue;           // そこからは目標へ地上路が無い
+            if (dist > enemy.Move) continue;                                     // 次のターンに攻撃位置まで届かない
+
+            int defense = tile.DefenseBonus; // 着陸後は地上なので地形防御が効く
+            int moveDist = CombatRules.Manhattan(enemy.GridPosition, cell);
+
+            bool better = dist < bestDist
+                || (dist == bestDist && defense > bestDefense)
+                || (dist == bestDist && defense == bestDefense && moveDist < bestMoveDist);
+            if (better)
+            {
+                found = true;
+                bestDist = dist;
+                bestDefense = defense;
+                bestMoveDist = moveDist;
+                bestCell = cell;
+            }
+        }
+
+        if (!found) return false;
+
+        bool stay = bestCell == enemy.GridPosition;
+        plan = new ActionPlan
+        {
+            kind = ActionKind.LandAndWait,
+            standCell = bestCell,
+            reason = stay
+                ? "その場に着陸（次ターン攻撃圏内・着陸で行動終了）"
+                : $"({bestCell.x},{bestCell.y})へ着陸（次ターン攻撃圏内・着陸で行動終了）",
+        };
+        return true;
+    }
+
+    /// <summary>
+    /// 空中巡航の停止マスを選ぶ（Phase 20）。目標は「地上で攻撃できる立ち位置（着陸後用）」＋
+    /// 「空対空の立ち位置（飛翔中の相手がいるときだけ返る）」。
+    /// マスの評価は 空路の残り道のり ＋ 対空射程マスなら AirThreatPenalty（1マス分の遠回りまで回避）。
+    /// 同点なら移動の少ないマス（飛翔中は地形防御が無いので防御の同点規則は無い）。
+    /// 空路が塞がれて全滅なら、通せんぼを無視して測り直す（地上の接近と同じ保険。Phase 16）。
+    /// distFromHere には現在地からの空路の道のりを返す（離陸判断のターン数計算用）。
+    /// threatNote はログ用（"・対空圏を回避"／"・対空圏内（回避先なし）"／脅威と無関係なら空文字）。
+    /// </summary>
+    private static bool TryPickCruiseCell(
+        Unit enemy, GridManager grid, List<Unit> players, List<Vector2Int> candidates, GroundInfo ground,
+        out Vector2Int bestCell, out int bestDist, out int distFromHere, out string threatNote)
+    {
+        bestCell = enemy.GridPosition;
+        bestDist = 0;
+        distFromHere = 0;
+        threatNote = "";
+
+        // 目標マス：着陸後に攻撃する地上の立ち位置 ＋ 空対空の立ち位置
+        //（GetAttackFromCells は今の飛翔状態で判定するので、飛翔中の相手の分だけが加わる）
+        var goals = new List<Vector2Int>(ground.goals);
+        foreach (Unit p in players)
+            goals.AddRange(CombatRules.GetAttackFromCells(enemy, p, grid, hasMoved: true));
+        if (goals.Count == 0) return false;
+
+        HashSet<Vector2Int> threat = ThreatMap.GetAirThreatCells(grid, enemy);
+
+        var map = MovementCalculator.GetDistanceMap(grid, enemy, goals, ignoreEnemyUnits: false);
+        if (PickCruiseFromMap(enemy, candidates, map, threat, ref bestCell, ref bestDist, ref distFromHere, ref threatNote))
+            return true;
+
+        map = MovementCalculator.GetDistanceMap(grid, enemy, goals, ignoreEnemyUnits: true);
+        return PickCruiseFromMap(enemy, candidates, map, threat, ref bestCell, ref bestDist, ref distFromHere, ref threatNote);
+    }
+
+    /// <summary>TryPickCruiseCell の1段分：距離マップから巡航マスを選ぶ。候補が全滅なら false。</summary>
+    private static bool PickCruiseFromMap(
+        Unit enemy, List<Vector2Int> candidates, Dictionary<Vector2Int, int> map, HashSet<Vector2Int> threat,
+        ref Vector2Int bestCell, ref int bestDist, ref int distFromHere, ref string threatNote)
+    {
+        bool found = false;
+        int bestCost = int.MaxValue;
+        int bestMoveDist = int.MaxValue;
+        int minRawDist = int.MaxValue; // 対空を気にしない場合の最短（回避したかどうかのログ用）
+        Vector2Int pick = enemy.GridPosition;
+        int pickDist = 0;
+
+        foreach (Vector2Int cell in candidates)
+        {
+            if (!map.TryGetValue(cell, out int dist)) continue; // そのマスからは目標へ届かない
+
+            found = true;
+            if (dist < minRawDist) minRawDist = dist;
+
+            int cost = dist + (threat.Contains(cell) ? AirThreatPenalty : 0);
+            int moveDist = CombatRules.Manhattan(enemy.GridPosition, cell);
+
+            if (cost < bestCost || (cost == bestCost && moveDist < bestMoveDist))
+            {
+                bestCost = cost;
+                bestMoveDist = moveDist;
+                pick = cell;
+                pickDist = dist;
+            }
+        }
+
+        if (!found) return false;
+
+        bestCell = pick;
+        bestDist = pickDist;
+        if (pickDist > minRawDist)
+            threatNote = "・対空圏を回避";           // 遠回りしてでも対空射程マスの外を選んだ
+        else if (threat.Contains(pick))
+            threatNote = "・対空圏内（回避先なし）"; // 1マスの遠回りでは逃げ場が無く、撃たれうるマスに停止
+        else
+            threatNote = "";
+        map.TryGetValue(enemy.GridPosition, out distFromHere); // 現在地からの道のり（離陸判断用）
+        return true;
+    }
+
+    /// <summary>
+    /// 地上の飛行兵が「離陸したほうが得か」を判断する（Phase 20・攻撃探索とガードが空振りしたとき）。
+    /// 離陸する条件（いずれか）：
+    ///   (1) 離陸すれば今すぐ空対空攻撃できる（飛翔は行動を消費しない＝離陸→移動→攻撃が1行動）
+    ///   (2) 地上では目標へ到達できないが、空中なら行き先がある
+    ///   (3) 空路のほうが速い：空路ターン数+1 ≤ 陸路ターン数
+    ///       （+1 は着陸行動の分。同数なら空路優先＝門を味方に譲れて、移動中に近接に絡まれない。作者合意）
+    ///   ※(2)(3)のとき「空中でしか攻撃できない相手（飛翔中のプレイヤー）」も目標に含まれている
+    /// 【probe その2：お試し飛翔】空中の評価は StartFlight で実際に飛翔状態にして行い、
+    /// 採用・不採用にかかわらず finally で必ず CancelFlight で地上に戻す
+    /// （採用したときの本当の離陸は Execute が行う。評価では盤面を変えない約束を守る）。
+    /// </summary>
+    private static bool TryPlanTakeOff(Unit enemy, GridManager grid, List<Unit> players, out ActionPlan plan)
+    {
+        plan = default;
+        if (enemy.Class != UnitClass.Flier) return false; // 飛翔は飛行兵専用
+        if (enemy.Weapon == null) return false;           // 武装無しは攻撃目標を定義できない
+
+        // 陸路の見積もり（今は地上なのでそのまま計算）。
+        // 門を塞がれているだけなら、通せんぼを無視した測り直しで「道はある」とみなす（接近の第2段と同じ）
+        GroundInfo ground = ComputeGroundInfo(enemy, grid, players);
+        bool groundReachable = ground.map.TryGetValue(enemy.GridPosition, out int groundDist);
+        if (!groundReachable)
+        {
+            var retry = MovementCalculator.GetDistanceMap(grid, enemy, ground.goals, ignoreEnemyUnits: true);
+            groundReachable = retry.TryGetValue(enemy.GridPosition, out groundDist);
+        }
+
+        // 空中でしか攻撃できない相手（飛翔中のプレイヤー）がいるか。今は地上なので CanEngage が false になる相手
+        bool airOnlyTarget = false;
+        foreach (Unit p in players)
+        {
+            if (p.IsFlying && !CombatRules.CanEngage(enemy, p))
+            {
+                airOnlyTarget = true;
+                break;
+            }
+        }
+
+        // ── probe その2：お試し飛翔で空中の行動を評価 ──
+        bool attackFound = false;
+        ActionPlan airAttack = default;
+        bool cruiseFound = false;
+        Vector2Int cruiseCell = default;
+        int distFromHere = 0;
+        string threatNote = "";
+
+        enemy.StartFlight(); // お試し飛翔（評価専用）
+        try
+        {
+            var airCandidates = new List<Vector2Int>(MovementCalculator.GetReachableCells(grid, enemy));
+            airCandidates.Add(enemy.GridPosition);
+
+            // (1) 離陸して今すぐ空対空攻撃できるか
+            attackFound = TryFindBestAttack(enemy, grid, players, airCandidates, out airAttack);
+
+            // (2)(3)用：空路での巡航先と、現在地からの空路の道のり
+            if (!attackFound)
+            {
+                cruiseFound = TryPickCruiseCell(enemy, grid, players, airCandidates, ground,
+                    out cruiseCell, out _, out distFromHere, out threatNote);
+            }
+        }
+        finally
+        {
+            enemy.CancelFlight(); // 必ず地上に戻す（採用時の本当の離陸は Execute が行う）
+        }
+
+        // (1) 空対空攻撃：離陸してそのまま攻撃する
+        if (attackFound)
+        {
+            airAttack.kind = ActionKind.TakeOff;
+            airAttack.reason = "離陸して空中戦 → " + airAttack.reason;
+            plan = airAttack;
+            return true;
+        }
+
+        if (!cruiseFound) return false; // 空中にも行き先が無いなら離陸しない
+
+        // (2)(3) 陸路と空路のターン数を比べる（ターン数 = 道のり ÷ 移動力 の切り上げ）
+        int move = Mathf.Max(1, enemy.Move);
+        int airTurns = (distFromHere + move - 1) / move;
+
+        string reason;
+        if (!groundReachable)
+        {
+            reason = $"地上では目標へ到達できない → 離陸して({cruiseCell.x},{cruiseCell.y})へ（空路{airTurns}ターン）";
+        }
+        else
+        {
+            int groundTurns = (groundDist + move - 1) / move;
+            bool airFaster = airTurns + 1 <= groundTurns; // +1 は着陸行動の分。同数なら空路優先（作者合意）
+            if (airFaster)
+                reason = $"離陸して({cruiseCell.x},{cruiseCell.y})へ巡航（空{airTurns}ターン+着陸1 vs 陸{groundTurns}ターン）";
+            else if (airOnlyTarget)
+                reason = $"飛翔中の相手を追って離陸 → ({cruiseCell.x},{cruiseCell.y})へ巡航";
+            else
+                return false; // 陸路のほうが速く、空中限定の相手もいない → 歩いたほうが得
+        }
+        reason += threatNote;
+
+        plan = new ActionPlan
+        {
+            kind = ActionKind.TakeOff,
+            standCell = cruiseCell,
+            reason = reason,
+        };
+        return true;
+    }
+
     /// <summary>
     /// 攻撃できないときの接近先を決める。保険を含めた3段構え（Phase 16）：
     ///   第1段: 経路ベース（プレイヤーのマスは通れない前提の、本当の道のり）
@@ -406,11 +767,22 @@ public static class EnemyAI
 
     private static void Execute(Unit enemy, GridManager grid, ActionPlan plan)
     {
+        // 離陸（Phase 20）：飛翔は行動を消費しないコマンド（プレイヤーと同じ）。
+        // 移動より先に発動する（移動の可否評価も飛翔状態で行った）
+        if (plan.kind == ActionKind.TakeOff)
+            enemy.StartFlight();
+
         if (plan.standCell != enemy.GridPosition)
             enemy.MoveTo(grid, plan.standCell);
 
-        if (plan.kind == ActionKind.Attack && plan.target != null)
+        // 離陸からの空対空攻撃もここで実行される（target が入っているのは攻撃プランだけ）
+        if (plan.target != null && (plan.kind == ActionKind.Attack || plan.kind == ActionKind.TakeOff))
             CombatSystem.ResolveAttack(enemy, plan.target, grid);
+
+        // 着陸（Phase 20）：プレイヤーの着陸コマンドと同じ「飛翔解除＋行動終了」の意味論。
+        // 行動終了は、TurnManager が TakeAction の直後に SetActed(true) することで満たされる
+        if (plan.kind == ActionKind.LandAndWait)
+            enemy.CancelFlight();
     }
 
     // ===== 行動の点数付け =====

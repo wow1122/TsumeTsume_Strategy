@@ -78,7 +78,7 @@ MonoBehaviour:
     initialFlightTurns: 0
   - unitData: {fileID: 11400000, guid: 6fd6a4f4dc2e4a689fca726a08685521, type: 2}
     cell: {x: 3, y: 9}
-    initialFlightTurns: 99
+    initialFlightTurns: 0
   - unitData: {fileID: 11400000, guid: 6fd6a4f4dc2e4a689fca726a08685521, type: 2}
     cell: {x: 10, y: 9}
     initialFlightTurns: 0

@@ -4,7 +4,8 @@ using UnityEngine;
 /// <summary>
 /// 盤面から「次の相手フェイズにどんな危険があるか」を読み取る道具集（Phase 19〜）。
 /// 判定の部品は CombatRules / MovementCalculator / DamageCalculator にあるものを使い、
-/// ここではそれを組み合わせるだけ（一元化の方針）。今は「挟撃の脅威」だけを扱う。
+/// ここではそれを組み合わせるだけ（一元化の方針）。
+/// 扱う脅威は「挟撃の脅威」（Phase 19）と「対空射程マス」（Phase 20）。
 /// </summary>
 public static class ThreatMap
 {
@@ -132,6 +133,63 @@ public static class ThreatMap
         foreach (Vector2Int dir in Directions)
             if (reach.Contains(cell + dir)) return true;
         return false;
+    }
+
+    // ===== 対空射程マス（Phase 20・飛翔AI用）=====
+
+    /// <summary>
+    /// self（飛翔中／これから飛翔する敵）から見て「次のプレイヤーフェイズに、空中の自分を
+    /// 攻撃されうるマス」の集合（Phase 20・空中巡航の停止マス選び用）。
+    ///
+    /// 空中のユニットを攻撃できるのは「後衛武器（弓・魔法の対空）」か「飛翔中のユニット」だけ
+    /// （CombatRules.CanEngage）。そこで相手陣営のその2種について、
+    ///   ・静止して撃つ … 今いるマスから武器の上限射程まで
+    ///   ・移動して撃つ … 移動で立てる各マスから（後衛武器は最小射程ちょうどに縮む）
+    /// の届くマスを全部集める。移動後の射程短縮は TryGetAttackRange がそのまま反映する。
+    ///
+    /// ※相手の飛行兵が「次のターンに飛翔コマンドで飛び上がる」可能性までは読まない
+    ///   （今飛翔中の相手だけを数える。v1 の割り切り）。
+    /// </summary>
+    public static HashSet<Vector2Int> GetAirThreatCells(GridManager grid, Unit self)
+    {
+        var result = new HashSet<Vector2Int>();
+        if (self == null) return result;
+
+        Faction opponentFaction = self.Faction == Faction.Player ? Faction.Enemy : Faction.Player;
+        foreach (Unit p in UnitRegistry.GetUnits(opponentFaction))
+        {
+            // 空中の相手を攻撃できるユニットか（後衛武器 or 飛翔中。武装無しは攻撃できない）
+            if (p.Weapon == null) continue;
+            if (p.Weapon.category != WeaponCategory.Ranged && !p.IsFlying) continue;
+
+            // 静止して撃つ（武器の上限射程まで届く）
+            AddAttackRing(result, grid, p, p.GridPosition, hasMoved: false);
+
+            // 移動して撃つ（後衛武器は最小射程ちょうどに縮む）
+            foreach (Vector2Int cell in MovementCalculator.GetReachableCells(grid, p))
+                AddAttackRing(result, grid, p, cell, hasMoved: true);
+        }
+        return result;
+    }
+
+    /// <summary>unit が center に立って（移動有無 hasMoved で）撃てるマスを result に足す。</summary>
+    private static void AddAttackRing(
+        HashSet<Vector2Int> result, GridManager grid, Unit unit, Vector2Int center, bool hasMoved)
+    {
+        if (!CombatRules.TryGetAttackRange(unit, hasMoved, out int min, out int max)) return;
+
+        for (int dx = -max; dx <= max; dx++)
+        {
+            for (int dy = -max; dy <= max; dy++)
+            {
+                int d = Mathf.Abs(dx) + Mathf.Abs(dy);
+                if (d < min || d > max) continue;
+
+                var cell = new Vector2Int(center.x + dx, center.y + dy);
+                if (grid.GetTile(cell) == null) continue; // 盤外
+                result.Add(cell);
+            }
+        }
     }
 
     /// <summary>ally に self 以外のガード役が既に付いているか（FindPincerGuard の self 除外版）。</summary>

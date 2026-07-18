@@ -68,7 +68,7 @@ public class TurnManager : MonoBehaviour
 
         CurrentPhase = TurnPhase.Enemy;
         foreach (Unit u in UnitRegistry.GetUnits(Faction.Enemy))
-            u.TickFlight(); // 敵側の飛翔もフェイズ開始で数える（現状は「開始時から飛翔」の敵のみ該当）
+            u.TickFlight(); // 敵側の飛翔もフェイズ開始で数える（Phase 20 から敵AIも自分で離陸する）
         Debug.Log($"ターン {TurnNumber}：敵フェイズ 開始");
         StartCoroutine(EnemyPhaseRoutine());
     }

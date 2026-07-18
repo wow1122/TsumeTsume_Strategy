@@ -43,7 +43,7 @@ MonoBehaviour:
     initialFlightTurns: 0
   - unitData: {fileID: 11400000, guid: 43975648fa4e412f9e830d26585ae6ab, type: 2}
     cell: {x: 5, y: 8}
-    initialFlightTurns: 99
+    initialFlightTurns: 0
   terrainTable: {fileID: 11400000, guid: ab7adf8c0ffdbd8e6818d76fdffbee85, type: 2}
   terrainRows:
   - '..........'
