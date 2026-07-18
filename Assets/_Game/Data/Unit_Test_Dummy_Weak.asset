@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
   m_Name: Unit_Test_Dummy_Weak
   m_EditorClassIdentifier: Assembly-CSharp::UnitData
-  unitName: "弱ダミー"
+  unitName: "\u5F31\u30C0\u30DF\u30FC"
   faction: 0
   unitClass: 0
   maxHP: 12
@@ -22,5 +22,5 @@ MonoBehaviour:
   speed: 1
   defense: 2
   resistance: 0
-  move: 4
+  move: 3
   weapon: {fileID: 11400000, guid: 9bd17bf5451e17949960a7fc64eb7eca, type: 2}

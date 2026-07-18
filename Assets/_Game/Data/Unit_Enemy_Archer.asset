@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
   m_Name: Unit_Enemy_Archer
   m_EditorClassIdentifier: Assembly-CSharp::UnitData
-  unitName: "敵弓兵"
+  unitName: "\u6575\u5F13\u5175"
   faction: 1
   unitClass: 0
   maxHP: 16
@@ -22,5 +22,5 @@ MonoBehaviour:
   speed: 5
   defense: 1
   resistance: 1
-  move: 4
+  move: 3
   weapon: {fileID: 11400000, guid: f70f71df3199458785d018f5ae0df8f0, type: 2}

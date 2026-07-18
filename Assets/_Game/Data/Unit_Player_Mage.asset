@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
   m_Name: Unit_Player_Mage
   m_EditorClassIdentifier: Assembly-CSharp::UnitData
-  unitName: "味方魔道士"
+  unitName: "\u5473\u65B9\u9B54\u9053\u58EB"
   faction: 0
   unitClass: 0
   maxHP: 16
@@ -22,5 +22,5 @@ MonoBehaviour:
   speed: 4
   defense: 1
   resistance: 4
-  move: 4
+  move: 3
   weapon: {fileID: 11400000, guid: c03502918df945798e12329ed98a7d75, type: 2}

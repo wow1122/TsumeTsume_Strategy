@@ -22,5 +22,5 @@ MonoBehaviour:
   speed: 5
   defense: 3
   resistance: 0
-  move: 4
+  move: 3
   weapon: {fileID: 11400000, guid: 9bd17bf5451e17949960a7fc64eb7eca, type: 2}

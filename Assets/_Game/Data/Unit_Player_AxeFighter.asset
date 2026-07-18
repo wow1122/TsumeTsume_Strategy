@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
   m_Name: Unit_Player_AxeFighter
   m_EditorClassIdentifier: Assembly-CSharp::UnitData
-  unitName: "味方斧兵"
+  unitName: "\u5473\u65B9\u65A7\u5175"
   faction: 0
   unitClass: 0
   maxHP: 20
@@ -22,5 +22,5 @@ MonoBehaviour:
   speed: 4
   defense: 4
   resistance: 0
-  move: 4
+  move: 3
   weapon: {fileID: 11400000, guid: a0f6faa61c579d448b3f9bcf09b572cf, type: 2}
