@@ -80,6 +80,10 @@ public class BattleController : MonoBehaviour
         if (cargoMenu == null) cargoMenu = gameObject.AddComponent<CargoListMenu>();
         forecast = GetComponent<BattleForecast>();
         if (forecast == null) forecast = gameObject.AddComponent<BattleForecast>();
+
+        // デバッグ用のユニット情報パネル（クリックで能力値・状態を表示）。
+        // 自分でクリックを読む独立部品なので、生成するだけでよい（呼び出しは不要）
+        if (GetComponent<DebugUnitPanel>() == null) gameObject.AddComponent<DebugUnitPanel>();
     }
 
     void Update()
