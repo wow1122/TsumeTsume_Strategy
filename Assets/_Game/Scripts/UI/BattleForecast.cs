@@ -3,8 +3,10 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// 戦闘予測パネル（Phase 15・IMGUI）。攻撃の対象選択中、対象の敵にマウスを重ねると
-/// 「与えるダメージの内訳・挟撃の見込み・相手の残りHP」を画面右下に表示する。
+/// 戦闘予測パネル（Phase 15・IMGUI）。攻撃の対象選択に入った瞬間から
+/// 「与えるダメージの内訳・三すくみ補正・挟撃の見込み・相手の残りHP」を画面右下に表示する。
+/// 対象が複数いるときは最初の対象で表示を始め、別の対象にマウスを重ねるとそちらへ切り替わる
+/// （マウスが離れても最後の対象を表示し続ける。2026-07-18 作者要望 — 以前は重ねたときだけ表示）。
 /// 計算は実際の戦闘と同じ共有関数（DamageCalculator / CombatRules）を使うので、
 /// 表示された数字と実戦の結果は必ず一致する。
 /// BattleController が自動生成し、対象選択の開始・終了で Show / Hide を呼ぶ。
@@ -24,6 +26,7 @@ public class BattleForecast : MonoBehaviour
     private Unit attacker;
     private List<Unit> targets;
     private GridManager grid;
+    private Unit current; // いま予測を表示している対象（選択直後は最初の対象）
 
     /// <summary>対象選択の開始時に呼ぶ（attacker はいまの位置から targets を攻撃できる前提）。</summary>
     public void Show(Unit attacker, List<Unit> targets, GridManager grid)
@@ -31,6 +34,9 @@ public class BattleForecast : MonoBehaviour
         this.attacker = attacker;
         this.targets = targets;
         this.grid = grid;
+
+        // 対象選択に入った瞬間から最初の対象で表示する（マウスを重ねるのを待たない）
+        current = (targets != null && targets.Count > 0) ? targets[0] : null;
     }
 
     /// <summary>対象選択の終了時（攻撃実行・キャンセル・選択解除）に呼ぶ。</summary>
@@ -39,22 +45,27 @@ public class BattleForecast : MonoBehaviour
         attacker = null;
         targets = null;
         grid = null;
+        current = null;
     }
 
     void OnGUI()
     {
         if (attacker == null || targets == null || grid == null) return;
-        if (Mouse.current == null || Camera.main == null) return;
 
-        // マウスの下のマスに攻撃対象がいるときだけ表示する
-        Vector3 world = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());
-        if (!grid.TryWorldToCell(world, out Vector2Int cell)) return;
+        // マウスの下に別の対象がいればそちらへ切り替える（離れても最後の対象を表示し続ける）
+        if (Mouse.current != null && Camera.main != null)
+        {
+            Vector3 world = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());
+            if (grid.TryWorldToCell(world, out Vector2Int cell))
+            {
+                TileData tile = grid.GetTile(cell);
+                Unit hovered = tile != null ? tile.Occupant : null;
+                if (hovered != null && targets.Contains(hovered)) current = hovered;
+            }
+        }
 
-        TileData tile = grid.GetTile(cell);
-        Unit defender = tile != null ? tile.Occupant : null;
-        if (defender == null || !targets.Contains(defender)) return;
-
-        DrawForecast(defender);
+        if (current == null) return;
+        DrawForecast(current);
     }
 
     /// <summary>defender への攻撃の予測を組み立てて描く。</summary>
@@ -80,6 +91,7 @@ public class BattleForecast : MonoBehaviour
         {
             $"{attacker.Data.unitName} → {defender.Data.unitName}",
             $"与ダメージ　{main.ToLogString()}",
+            BuildTriangleLine(main.triangle),
         };
         if (ally != null)
         {
@@ -90,6 +102,24 @@ public class BattleForecast : MonoBehaviour
         lines.Add(hpAfter == 0
             ? $"相手HP {defender.CurrentHP} → 0　撃破！"
             : $"相手HP {defender.CurrentHP} → {hpAfter}");
+
+        DrawPanel(lines);
+    }
+
+    /// <summary>
+    /// 三すくみ補正の行（2026-07-18 作者要望: 補正0のときも必ず表示する）。
+    /// 式の中の「相性+3」表記とは別に、補正値だけを取り出して分かりやすく1行にする。
+    /// </summary>
+    private static string BuildTriangleLine(int triangle)
+    {
+        if (triangle > 0) return $"三すくみ +{triangle}（有利）";
+        if (triangle < 0) return $"三すくみ {triangle}（不利）";
+        return "三すくみ ±0（補正なし）";
+    }
+
+    /// <summary>組み立てた行を画面右下のパネルに描く。</summary>
+    private void DrawPanel(List<string> lines)
+    {
 
         // 画面右下に描く（左下の地形情報表示と重ならない位置）
         float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f; // +1 は見出しの行
