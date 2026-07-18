@@ -70,6 +70,7 @@ public class BattleController : MonoBehaviour
     private ActionMenu menu;                    // 行動メニュー（IMGUI）
     private CargoListMenu cargoMenu;            // 貨物リストメニュー（IMGUI・Phase 12）
     private BattleForecast forecast;            // 戦闘予測パネル（IMGUI・Phase 15）
+    private Unit previewedEnemy;                // 行動範囲を下見表示中の敵（Idle のときだけ使う）
 
     void Awake()
     {
@@ -94,6 +95,7 @@ public class BattleController : MonoBehaviour
         if (turnManager.IsGameOver || turnManager.CurrentPhase != TurnPhase.Player)
         {
             if (state != State.Idle) CancelAll();
+            else ClearEnemyPreview(); // 敵フェイズに入ったら敵の範囲プレビューも片付ける
             return;
         }
 
@@ -138,7 +140,20 @@ public class BattleController : MonoBehaviour
             case State.Idle:
                 // 未行動の味方をクリックで選択
                 if (IsSelectablePlayer(clickedUnit))
+                {
+                    ClearEnemyPreview();
                     EnterMoveSelect(clickedUnit);
+                }
+                // 敵をクリック → その敵の移動できるマス（青）と攻撃可能マス（赤）を下見表示（2026-07-18 作者要望）
+                else if (clickedUnit != null && clickedUnit.Faction == Faction.Enemy)
+                {
+                    ShowEnemyPreview(clickedUnit);
+                }
+                // それ以外（空きマス・行動済みの味方）→ プレビューを消す
+                else
+                {
+                    ClearEnemyPreview();
+                }
                 break;
 
             case State.MoveSelect:
@@ -218,6 +233,10 @@ public class BattleController : MonoBehaviour
     {
         switch (state)
         {
+            case State.Idle:
+                ClearEnemyPreview(); // 敵の範囲プレビューを消すだけ（選択は無いので他に戻るものが無い）
+                break;
+
             case State.TargetSelect:
             case State.UnitTargetSelect:
                 // 対象選択 → メニューへ戻る（移動した位置はそのまま保持）
@@ -298,7 +317,44 @@ public class BattleController : MonoBehaviour
         foreach (Vector2Int c in reachableCells)
             grid.AddHighlight(c, HighlightKind.MoveRange);
 
+        // 攻撃可能マス（2026-07-18 作者要望）: 立てるマスから武器で届くマスを赤で示す。
+        // 救出・引き受けの後は攻撃コマンド自体が出ない（BuildCommands と同じ条件）ので表示しない
+        if (!context.usedRescue && !context.usedTakeOver)
+        {
+            foreach (Vector2Int c in ComputeAttackCells(unit, reachableCells))
+                grid.AddHighlight(c, HighlightKind.AttackRange);
+        }
+
         state = State.MoveSelect;
+    }
+
+    // ===== 敵の行動範囲プレビュー（2026-07-18 作者要望）=====
+
+    /// <summary>
+    /// クリックした敵の移動できるマス（青）と攻撃可能マス（赤）を下見表示する。
+    /// 見るだけの機能で、選択状態（Idle のまま）も敵の状態も一切変えない。
+    /// 別のマスのクリック・右クリック/ESC・味方の選択・敵フェイズ開始で消える。
+    /// </summary>
+    private void ShowEnemyPreview(Unit enemy)
+    {
+        previewedEnemy = enemy;
+
+        HashSet<Vector2Int> reachable = MovementCalculator.GetReachableCells(grid, enemy);
+
+        grid.ResetAllHighlights();
+        grid.AddHighlight(enemy.GridPosition, HighlightKind.Selection);
+        foreach (Vector2Int c in reachable)
+            grid.AddHighlight(c, HighlightKind.MoveRange);
+        foreach (Vector2Int c in ComputeAttackCells(enemy, reachable))
+            grid.AddHighlight(c, HighlightKind.AttackRange);
+    }
+
+    /// <summary>敵の範囲プレビューを消す（表示していなければ何もしない）。</summary>
+    private void ClearEnemyPreview()
+    {
+        if (previewedEnemy == null) return;
+        previewedEnemy = null;
+        grid.ResetAllHighlights();
     }
 
     /// <summary>行動メニューを開く（移動直後・静止選択時・対象選択からの戻りで呼ばれる）。</summary>
@@ -682,6 +738,7 @@ public class BattleController : MonoBehaviour
         cargoMenu.Hide();
         forecast.Hide();
         grid.ResetAllHighlights();
+        previewedEnemy = null;
         context = null;
         reachableCells = null;
         attackTargets = null;
@@ -694,6 +751,48 @@ public class BattleController : MonoBehaviour
     }
 
     // ===== 補助 =====
+
+    /// <summary>
+    /// 攻撃可能マス（赤表示）の集合を作る。「立てるマス（現在地＋移動できるマス）」の
+    /// それぞれから武器の射程で届くマスを集め、立てるマス自体は除く（そこは青で見せる）。
+    /// 射程は実戦と同じ CombatRules.TryGetAttackRange を使うので、
+    /// 「後衛武器は移動すると最小射程ちょうどに縮む」ルールも正しく反映される。
+    /// 表示用の下見なので、相手ごとの可否（飛翔の相性 CanEngage）までは見ない。
+    /// 誰も立ち入れない壁マス（通行不可かつ飛行も不可）は塗らない。武装無しなら空を返す。
+    /// </summary>
+    private HashSet<Vector2Int> ComputeAttackCells(Unit unit, HashSet<Vector2Int> reachable)
+    {
+        var result = new HashSet<Vector2Int>();
+
+        var stands = new List<Vector2Int>(reachable) { unit.GridPosition };
+        foreach (Vector2Int stand in stands)
+        {
+            // 現在地に居座る場合だけ hasMoved=false（後衛武器は武器上限まで届く）
+            bool hasMoved = stand != unit.GridPosition;
+            if (!CombatRules.TryGetAttackRange(unit, hasMoved, out int min, out int max)) continue;
+
+            // stand を中心に、マンハッタン距離 min〜max のひし形の輪を集める
+            for (int dx = -max; dx <= max; dx++)
+            {
+                int rest = max - Mathf.Abs(dx);
+                for (int dy = -rest; dy <= rest; dy++)
+                {
+                    if (Mathf.Abs(dx) + Mathf.Abs(dy) < min) continue; // 内側（射程未満）は届かない
+
+                    var cell = new Vector2Int(stand.x + dx, stand.y + dy);
+                    TileData tile = grid.GetTile(cell);
+                    if (tile == null) continue;                         // 盤外
+                    if (!tile.IsWalkable && !tile.CanFlyOver) continue; // 壁（誰も立てない）
+                    result.Add(cell);
+                }
+            }
+        }
+
+        // 立てるマスは移動範囲（青）として見せたいので、赤にするのは「移動の外側」だけ
+        result.ExceptWith(reachable);
+        result.Remove(unit.GridPosition);
+        return result;
+    }
 
     private bool IsSelectablePlayer(Unit u)
     {

@@ -50,8 +50,8 @@ public class GridManager : MonoBehaviour
     public Color selectionColor = new Color(1f, 0.9f, 0.4f);      // 黄
     [Tooltip("攻撃対象の候補のマス")]
     public Color targetChoiceColor = new Color(1f, 0.45f, 0.45f); // 赤
-    [Tooltip("攻撃が届くマス（将来の射程表示用）")]
-    public Color attackRangeColor = new Color(1f, 0.70f, 0.50f);  // 橙
+    [Tooltip("攻撃が届くマス（移動範囲の外側の、武器で届く範囲）")]
+    public Color attackRangeColor = new Color(1f, 0.5f, 0.5f);    // 赤
     [Tooltip("移動できるマス")]
     public Color moveRangeColor = new Color(0.5f, 0.8f, 1f);      // 水色
 
