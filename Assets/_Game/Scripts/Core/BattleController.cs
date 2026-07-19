@@ -47,7 +47,7 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck }
+    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect }
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
@@ -69,6 +69,7 @@ public class BattleController : MonoBehaviour
     private Unit selectedCargo;                 // 貨物リストで選んだ（または自動選択された）貨物
     private ActionMenu menu;                    // 行動メニュー（IMGUI）
     private CargoListMenu cargoMenu;            // 貨物リストメニュー（IMGUI・Phase 12）
+    private ItemListMenu itemMenu;              // 所持品リストメニュー（IMGUI・フェーズ23）
     private BattleForecast forecast;            // 戦闘予測パネル（IMGUI・Phase 15）
     private Unit previewedEnemy;                // 行動範囲を下見表示中の敵（Idle のときだけ使う）
 
@@ -79,6 +80,8 @@ public class BattleController : MonoBehaviour
         if (menu == null) menu = gameObject.AddComponent<ActionMenu>();
         cargoMenu = GetComponent<CargoListMenu>();
         if (cargoMenu == null) cargoMenu = gameObject.AddComponent<CargoListMenu>();
+        itemMenu = GetComponent<ItemListMenu>();
+        if (itemMenu == null) itemMenu = gameObject.AddComponent<ItemListMenu>();
         forecast = GetComponent<BattleForecast>();
         if (forecast == null) forecast = gameObject.AddComponent<BattleForecast>();
 
@@ -111,9 +114,9 @@ public class BattleController : MonoBehaviour
 
         if (Mouse.current == null || Camera.main == null) return;
 
-        // メニュー表示中のセルクリックは無効。ボタンの処理は ActionMenu / CargoListMenu（IMGUI）側が
-        // 行うので、ここで盤面まで反応すると二重処理になるのを防ぐ
-        if (state == State.CommandMenu || state == State.CargoSelect) return;
+        // メニュー表示中のセルクリックは無効。ボタンの処理は ActionMenu / CargoListMenu /
+        // ItemListMenu（IMGUI）側が行うので、ここで盤面まで反応すると二重処理になるのを防ぐ
+        if (state == State.CommandMenu || state == State.CargoSelect || state == State.ItemSelect) return;
 
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -276,6 +279,13 @@ public class BattleController : MonoBehaviour
                     case CargoSelectPurpose.TakeOver: EnterTakeOverCarrierSelect(); break;
                     case CargoSelectPurpose.ProxyDrop: EnterProxyCarrierSelect(); break;
                 }
+                break;
+
+            case State.ItemSelect:
+                // 所持品 → メニューへ戻る（すでに装備を変えていても、それは元に戻さない＝
+                // 装備変更に取り消しは無い。作者合意(a)）
+                itemMenu.Hide();
+                OpenCommandMenu();
                 break;
 
             case State.CommandMenu:
@@ -452,6 +462,12 @@ public class BattleController : MonoBehaviour
         List<Unit> proxyCarriers = RescueRules.FindProxyDropCarriers(unit, grid);
         if (proxyCarriers.Count > 0)
             commands.Add(new ActionMenu.Entry("代わりに降ろす", EnterProxyCarrierSelect));
+
+        // 所持品（フェーズ23）：武器の持ち替え・武装解除。所持品を持っているときに出す。
+        // 装備の変更は行動を消費しない。救出・引き受けの後は上で別メニューに分岐済みなので、
+        // ここには来ない＝それらの制限（合意）を保つ。武器なしユニット（Items 0個）には出ない
+        if (unit.Items.Count > 0)
+            commands.Add(new ActionMenu.Entry("所持品", EnterItemSelect));
 
         commands.Add(new ActionMenu.Entry("待機", FinishAction));
         return commands;
@@ -728,6 +744,95 @@ public class BattleController : MonoBehaviour
         FinishAction(); // 降ろしたら行動終了（作者合意）
     }
 
+    // ===== 所持品（武器の持ち替え・武装解除。フェーズ23）=====
+    // 装備の変更は行動を消費しない（FE準拠：同一行動で持ち替え→攻撃ができる）。
+    // 実行後はコマンドメニューを開き直すので、攻撃対象・被ダメが新しい装備で再計算される。
+
+    /// <summary>
+    /// 「所持品」が選ばれた：所持品リストを開く。武器は装備可能な未装備のものだけ押せて、
+    /// 装備中・装備不可・道具（フェーズ24で使えるようになる）は無効行として見せる。
+    /// </summary>
+    private void EnterItemSelect()
+    {
+        menu.Hide();
+
+        // 選択マークだけ現在位置に付け直す（コマンドメニューと同じ見せ方）
+        grid.ResetAllHighlights();
+        grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
+
+        itemMenu.Show(grid.CellToWorld(context.unit.GridPosition), grid.cellSize, BuildItemEntries());
+        state = State.ItemSelect;
+        Debug.Log($"所持品を開いた（{context.unit.Items.Count} 個）。右クリック/ESCでメニューへ戻る。");
+    }
+
+    /// <summary>
+    /// 所持品リストの行を作る。武器＝装備可能な未装備のものは押せて（クリックで装備）、
+    /// 装備中は「（装備中）」、その兵種で使えない武器は「（装備不可）」の無効行。
+    /// 道具は残り回数つきで見せる（使用＝行動終了はフェーズ24で実装）。
+    /// 最下行に「武装解除」（武器を装備しているときだけ・メニューの肥大を避けて末尾に置く）。
+    /// </summary>
+    private List<ItemListMenu.Entry> BuildItemEntries()
+    {
+        var entries = new List<ItemListMenu.Entry>();
+        Unit unit = context.unit;
+
+        foreach (ItemSlot slot in unit.Items)
+        {
+            if (slot.Item is WeaponData weapon)
+            {
+                if (weapon == unit.EquippedWeapon)
+                {
+                    entries.Add(new ItemListMenu.Entry($"{weapon.DisplayName}（装備中）", false, null));
+                }
+                else if (!CanEquip(unit, weapon))
+                {
+                    entries.Add(new ItemListMenu.Entry($"{weapon.DisplayName}（装備不可）", false, null));
+                }
+                else
+                {
+                    WeaponData w = weapon; // ラムダが最後の値を掴まないようローカルに退避
+                    entries.Add(new ItemListMenu.Entry(weapon.DisplayName, true, () => EquipWeapon(w)));
+                }
+            }
+            else if (slot.Item is ToolData tool)
+            {
+                // 道具は残り回数つきで表示。使用（→行動終了）はフェーズ24で足すので、今は無効行
+                entries.Add(new ItemListMenu.Entry($"{tool.DisplayName}（残り{slot.UsesLeft}）", false, null));
+            }
+        }
+
+        // 武装解除：武器を装備しているときだけ、リストの最下行に出す
+        if (unit.EquippedWeapon != null)
+            entries.Add(new ItemListMenu.Entry("武装解除", true, UnequipWeapon));
+
+        return entries;
+    }
+
+    /// <summary>その兵種でこの武器を装備できるか（兵種データが無ければ従来どおり可）。</summary>
+    private bool CanEquip(Unit unit, WeaponData weapon)
+    {
+        ClassData cls = unit.Data.classData;
+        return cls == null || cls.CanUse(weapon.type);
+    }
+
+    /// <summary>武器を装備して行動メニューへ戻る（行動は消費しない）。攻撃対象が新装備で再計算される。</summary>
+    private void EquipWeapon(WeaponData weapon)
+    {
+        itemMenu.Hide();
+        context.unit.Equip(weapon);
+        Debug.Log($"{context.unit.Data.unitName} は {weapon.DisplayName} を装備した");
+        OpenCommandMenu();
+    }
+
+    /// <summary>武装解除して行動メニューへ戻る（行動は消費しない）。攻撃・被ダメ確認が消える。</summary>
+    private void UnequipWeapon()
+    {
+        itemMenu.Hide();
+        context.unit.Unequip();
+        Debug.Log($"{context.unit.Data.unitName} は武装解除した");
+        OpenCommandMenu();
+    }
+
     // ===== 行動の終了・取り消し =====
 
     /// <summary>行動を確定して終える。ここまで来たら移動の取り消しはもうできない。</summary>
@@ -764,6 +869,7 @@ public class BattleController : MonoBehaviour
     {
         menu.Hide();
         cargoMenu.Hide();
+        itemMenu.Hide();
         forecast.Hide();
         grid.ResetAllHighlights();
         previewedEnemy = null;

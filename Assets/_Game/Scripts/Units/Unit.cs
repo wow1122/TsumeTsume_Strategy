@@ -52,6 +52,25 @@ public class Unit : MonoBehaviour
     /// <summary>装備中の武器（null = 武装無し）。</summary>
     public WeaponData EquippedWeapon { get; private set; }
 
+    /// <summary>
+    /// 武器を装備する（フェーズ23の「所持品」コマンド）。行動は消費しない。
+    /// 呼び出し側（BattleController）が所持品の中の装備可能な武器だけを渡すので、
+    /// ここでは所持や兵種の可否は確認しない。読む側は従来どおり Weapon 窓口で自動追随する。
+    /// </summary>
+    public void Equip(WeaponData weapon)
+    {
+        EquippedWeapon = weapon;
+    }
+
+    /// <summary>
+    /// 武装解除する（EquippedWeapon = null＝武装無し扱い）。攻撃コマンドが出なくなり、
+    /// 前衛から攻撃されると不利判定、挟撃の資格も失う（既存の武装無しルールが自動で効く）。
+    /// </summary>
+    public void Unequip()
+    {
+        EquippedWeapon = null;
+    }
+
     // ── 救出（Phase 11〜）──
     // 「運ぶ側」は Carried に相手を格納し、「運ばれる側」は IsCarried=true で
     // 非アクティブ化される（盤上から消え、マスの占有も明け渡す。名簿には残るので
