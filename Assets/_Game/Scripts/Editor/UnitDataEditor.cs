@@ -50,8 +50,26 @@ public class UnitDataEditor : Editor
             Draw("move", "移動力（旧式・兵種データ未設定時のみ有効）");
 
         EditorGUILayout.Space();
-        EditorGUILayout.LabelField("装備", EditorStyles.boldLabel);
-        Draw("weapon", "武器");
+        EditorGUILayout.LabelField("装備・所持品", EditorStyles.boldLabel);
+        Draw("items", "所持品（上限7・一番上の武器が初期装備）");
+
+        // 所持品が設定されていれば、初期装備はそこから決まる（読み取り専用で表示）。
+        // 空なら旧フィールド（weapon）をそのまま編集できる（兵種データと同じ新旧共存パターン）
+        SerializedProperty items = serializedObject.FindProperty("items");
+        bool useItems = items.arraySize > 0 && !items.hasMultipleDifferentValues;
+        if (useItems)
+        {
+            WeaponData initial = ((UnitData)target).GetInitialWeapon();
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.LabelField("初期装備（所持品由来）",
+                    initial != null ? initial.weaponName : "武装無し");
+            }
+        }
+        else
+        {
+            Draw("weapon", "武器（旧式・所持品が空のときのみ有効）");
+        }
 
         serializedObject.ApplyModifiedProperties();
     }

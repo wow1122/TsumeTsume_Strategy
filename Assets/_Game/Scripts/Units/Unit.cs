@@ -30,14 +30,27 @@ public class Unit : MonoBehaviour
     /// <summary>兵種＝移動タイプ（UnitData から取得。兵種データがあればそちらが優先）。</summary>
     public UnitClass Class => Data.EffectiveClass;
 
-    /// <summary>装備中の武器。武器はこの窓口から読む（Data.weapon の直読みはしない約束）。</summary>
-    public WeaponData Weapon => Data.weapon;
+    /// <summary>装備中の武器。武器はこの窓口から読む（Data.weapon の直読みはしない約束。
+    /// フェーズ22からはランタイム装備 EquippedWeapon を指す）。</summary>
+    public WeaponData Weapon => EquippedWeapon;
 
     /// <summary>このターンに行動済みか（移動・攻撃を終えたか）。</summary>
     public bool HasActed { get; private set; }
 
     /// <summary>まだ生存しているか。</summary>
     public bool IsAlive => CurrentHP > 0;
+
+    // ── 所持品（フェーズ22〜）──
+    // 所持品は UnitData.items（無ければ旧 weapon 欄）を Initialize でコピーした
+    // ランタイム状態（ItemSlot）で持つ。道具の残り回数などユニットごとの消費を、
+    // 元データ（アセット）を汚さずに管理する（ランタイム能力値と同じ考え方）。
+    // 装備中の武器も同様にランタイム状態で、読む側は従来どおり Weapon プロパティだけを見る。
+
+    /// <summary>所持品の一覧（ランタイム状態）。</summary>
+    public List<ItemSlot> Items { get; } = new List<ItemSlot>();
+
+    /// <summary>装備中の武器（null = 武装無し）。</summary>
+    public WeaponData EquippedWeapon { get; private set; }
 
     // ── 救出（Phase 11〜）──
     // 「運ぶ側」は Carried に相手を格納し、「運ばれる側」は IsCarried=true で
@@ -154,12 +167,18 @@ public class Unit : MonoBehaviour
         Move = data.EffectiveMove;   // 移動力は兵種データ優先（無ければ旧 move）
         CurrentHP = MaxHP;
 
-        // 装備武器が兵種の武器リストに無ければ警告（実行時側の保険。警告のみで続行）
-        if (data.classData != null && data.weapon != null && !data.classData.CanUse(data.weapon.type))
+        // 所持品をコピーし（ランタイム状態）、一番上の武器を初期装備にする（フェーズ22）
+        Items.Clear();
+        foreach (ItemData item in data.GetInitialItems())
+            Items.Add(new ItemSlot(item));
+        EquippedWeapon = data.GetInitialWeapon();
+
+        // 初期装備が兵種の武器リストに無ければ警告（実行時側の保険。警告のみで続行）
+        if (data.classData != null && EquippedWeapon != null && !data.classData.CanUse(EquippedWeapon.type))
         {
             Debug.LogWarning(
                 $"ユニット「{data.unitName}」: 兵種「{data.classData.className}」は " +
-                $"武器「{data.weapon.weaponName}」を装備できません（警告のみ・動作は続行）。");
+                $"武器「{EquippedWeapon.weaponName}」を装備できません（警告のみ・動作は続行）。");
         }
 
         // 見た目：陣営で色分け（自軍=青 / 敵=赤）。スプライトはグリッドのものを流用。

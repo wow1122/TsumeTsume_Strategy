@@ -90,6 +90,7 @@ public class DebugUnitPanel : MonoBehaviour
         lines.Add($"力{unit.Strength}　魔力{unit.Magic}　技{unit.Skill}　速さ{unit.Speed}");
         lines.Add($"守備{unit.Defense}　魔防{unit.Resistance}　移動{unit.Move}");
         lines.Add(BuildWeaponLine());
+        AddItemLines(lines);
         lines.Add(BuildStateLine());
 
         if (unit.Faction == Faction.Enemy)
@@ -113,6 +114,25 @@ public class DebugUnitPanel : MonoBehaviour
         string cat = w.category == WeaponCategory.Melee ? "前衛" : "後衛";
         string range = w.minRange == w.maxRange ? $"{w.maxRange}" : $"{w.minRange}〜{w.maxRange}";
         return $"武器: {w.weaponName}（{cat}・威力{w.might}・射程{range}）";
+    }
+
+    /// <summary>所持品の行を追加する（フェーズ22）。装備中の武器は「装備中」、道具は残り回数を添える。</summary>
+    private void AddItemLines(List<string> lines)
+    {
+        if (unit.Items.Count == 0)
+        {
+            lines.Add("所持品: なし");
+            return;
+        }
+
+        lines.Add($"所持品（{unit.Items.Count}／{UnitData.InventoryCapacity}）:");
+        foreach (ItemSlot slot in unit.Items)
+        {
+            string note = "";
+            if (slot.Item is ToolData) note = $"（残り{slot.UsesLeft}回）";
+            else if (slot.Item == unit.Weapon) note = "（装備中）";
+            lines.Add($"・{slot.Item.DisplayName}{note}");
+        }
     }
 
     /// <summary>状態の行。行動済みかどうかに、飛翔・救出・格納の状態を「・」でつなげる。</summary>

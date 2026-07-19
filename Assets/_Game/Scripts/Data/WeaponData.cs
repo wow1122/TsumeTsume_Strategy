@@ -4,9 +4,10 @@ using UnityEngine;
 /// 武器1種類分のデータ。Project で右クリック →
 /// Create → TsumeTsume → Weapon Data から作れます。
 /// 射程は「最小〜最大」で表し、近接武器は 1〜1、弓・魔法は 2〜2 など。
+/// 所持品（ItemData）の一種でもあり、ユニットの所持品リストに入る（フェーズ22）。
 /// </summary>
 [CreateAssetMenu(fileName = "WeaponData", menuName = "TsumeTsume/Weapon Data")]
-public class WeaponData : ScriptableObject
+public class WeaponData : ItemData
 {
     [Header("基本情報")]
     public string weaponName = "武器";
@@ -23,6 +24,9 @@ public class WeaponData : ScriptableObject
     public int minRange = 1;
     [Tooltip("最大射程（静止時の後衛武器はここまで届く。弓3・魔法2）")]
     public int maxRange = 1;
+
+    /// <summary>所持品リストでの表示名（武器名。ItemData の窓口）。</summary>
+    public override string DisplayName => weaponName;
 
     /// <summary>武器種から見た「正しい分類」。弓・魔導書・光魔法・杖が後衛。</summary>
     public static WeaponCategory DefaultCategoryFor(WeaponType type)
