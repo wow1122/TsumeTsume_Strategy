@@ -744,9 +744,10 @@ public class BattleController : MonoBehaviour
         FinishAction(); // 降ろしたら行動終了（作者合意）
     }
 
-    // ===== 所持品（武器の持ち替え・武装解除。フェーズ23）=====
+    // ===== 所持品（武器の持ち替え・武装解除・道具の使用。フェーズ23〜24）=====
     // 装備の変更は行動を消費しない（FE準拠：同一行動で持ち替え→攻撃ができる）。
     // 実行後はコマンドメニューを開き直すので、攻撃対象・被ダメが新しい装備で再計算される。
+    // 道具（傷薬）は装備と違って「使うと行動終了」（合意(b)）＝使用後は FinishAction する。
 
     /// <summary>
     /// 「所持品」が選ばれた：所持品リストを開く。武器は装備可能な未装備のものだけ押せて、
@@ -768,7 +769,8 @@ public class BattleController : MonoBehaviour
     /// <summary>
     /// 所持品リストの行を作る。武器＝装備可能な未装備のものは押せて（クリックで装備）、
     /// 装備中は「（装備中）」、その兵種で使えない武器は「（装備不可）」の無効行。
-    /// 道具は残り回数つきで見せる（使用＝行動終了はフェーズ24で実装）。
+    /// 道具はHPが満タンでなければ押せて（クリックで使用＝回復して行動終了・フェーズ24）、
+    /// 満タンのときは「（満タン）」の無効行。
     /// 最下行に「武装解除」（武器を装備しているときだけ・メニューの肥大を避けて末尾に置く）。
     /// </summary>
     private List<ItemListMenu.Entry> BuildItemEntries()
@@ -796,8 +798,17 @@ public class BattleController : MonoBehaviour
             }
             else if (slot.Item is ToolData tool)
             {
-                // 道具は残り回数つきで表示。使用（→行動終了）はフェーズ24で足すので、今は無効行
-                entries.Add(new ItemListMenu.Entry($"{tool.DisplayName}（残り{slot.UsesLeft}）", false, null));
+                // 道具（フェーズ24）：HPが満タンでなければ押せて、クリックで使用＝回復して行動終了。
+                // 満タンのときは押せない無効行にする（合意(b)：満タンの対象には使えない）。
+                if (unit.CurrentHP >= unit.MaxHP)
+                {
+                    entries.Add(new ItemListMenu.Entry($"{tool.DisplayName}（満タン）", false, null));
+                }
+                else
+                {
+                    ItemSlot s = slot; // ラムダが最後の値を掴まないようローカルに退避
+                    entries.Add(new ItemListMenu.Entry($"{tool.DisplayName}（残り{slot.UsesLeft}）", true, () => UseToolItem(s)));
+                }
             }
         }
 
@@ -831,6 +842,24 @@ public class BattleController : MonoBehaviour
         context.unit.Unequip();
         Debug.Log($"{context.unit.Data.unitName} は武装解除した");
         OpenCommandMenu();
+    }
+
+    /// <summary>
+    /// 道具を使う（フェーズ24）。効果を適用し、残り回数を減らして（0で所持品から消える）、
+    /// 「使うと行動終了」（合意(b)）＝装備変更と違って行動を消費する。
+    /// 呼ばれるのはHPが満タンでない＝回復できるとき（満タンは無効行なので押せない）。
+    /// </summary>
+    private void UseToolItem(ItemSlot slot)
+    {
+        itemMenu.Hide();
+        Unit unit = context.unit;
+        string name = slot.Item.DisplayName;
+
+        int healed = unit.UseTool(slot);          // 効果適用＋残り回数-1（0で所持品から消える）
+        string tail = slot.UsesLeft > 0 ? $"、残り{slot.UsesLeft}回" : "・使い切った";
+
+        Debug.Log($"{unit.Data.unitName} は {name} を使った（HP{healed}回復 → {unit.CurrentHP}／{unit.MaxHP}{tail}）");
+        FinishAction();
     }
 
     // ===== 行動の終了・取り消し =====

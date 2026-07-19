@@ -71,6 +71,27 @@ public class Unit : MonoBehaviour
         EquippedWeapon = null;
     }
 
+    /// <summary>
+    /// 道具を使う（フェーズ24）。効果（今は使用者自身のHP回復のみ）を適用し、
+    /// 残り回数を1減らす。0回になったら所持品リストから取り除く。
+    /// 戻り値は実際に回復した量（ログ表示用）。使用の可否（HPが満タンでない等）と
+    /// 「使うと行動終了」は呼び出し側（BattleController）が扱う。
+    /// </summary>
+    public int UseTool(ItemSlot slot)
+    {
+        int healed = 0;
+        if (slot.Item is ToolData tool)
+        {
+            int before = CurrentHP;
+            Heal(tool.healAmount);
+            healed = CurrentHP - before;
+        }
+
+        slot.UsesLeft--;
+        if (slot.UsesLeft <= 0) Items.Remove(slot);
+        return healed;
+    }
+
     // ── 救出（Phase 11〜）──
     // 「運ぶ側」は Carried に相手を格納し、「運ばれる側」は IsCarried=true で
     // 非アクティブ化される（盤上から消え、マスの占有も明け渡す。名簿には残るので
@@ -300,6 +321,17 @@ public class Unit : MonoBehaviour
         CurrentHP -= amount;
         if (CurrentHP < 0) CurrentHP = 0;
         if (CurrentHP == 0) Die();
+    }
+
+    /// <summary>
+    /// HPを回復する（最大HPを超えない。0以下の量は無視）。TakeDamage の対。
+    /// 道具（傷薬・フェーズ24）や杖（Phase 25 予定）の回復の共通の土台。
+    /// </summary>
+    public void Heal(int amount)
+    {
+        if (amount <= 0) return;
+        CurrentHP += amount;
+        if (CurrentHP > MaxHP) CurrentHP = MaxHP;
     }
 
     /// <summary>戦闘不能：マスの占有を外し、名簿からも外して盤上から消える。</summary>
