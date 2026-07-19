@@ -85,7 +85,7 @@ public class DebugUnitPanel : MonoBehaviour
         var lines = new List<string>();
 
         string side = unit.Faction == Faction.Player ? "自軍" : "敵軍";
-        lines.Add($"{unit.Data.unitName}（{side}・{ClassName(unit.Class)}）({unit.GridPosition.x},{unit.GridPosition.y})");
+        lines.Add($"{unit.Data.unitName}（{side}・{ClassName(unit)}）({unit.GridPosition.x},{unit.GridPosition.y})");
         lines.Add($"HP {unit.CurrentHP}／{unit.MaxHP}");
         lines.Add($"力{unit.Strength}　魔力{unit.Magic}　技{unit.Skill}　速さ{unit.Speed}");
         lines.Add($"守備{unit.Defense}　魔防{unit.Resistance}　移動{unit.Move}");
@@ -140,15 +140,10 @@ public class DebugUnitPanel : MonoBehaviour
         return "AI: 突撃型";
     }
 
-    /// <summary>兵種の日本語名（表示用）。</summary>
-    private static string ClassName(UnitClass c)
+    /// <summary>兵種の表示名。兵種データがあればその名前（例：剣闘士）、無ければ移動タイプ名。</summary>
+    private static string ClassName(Unit u)
     {
-        switch (c)
-        {
-            case UnitClass.Cavalry: return "騎兵";
-            case UnitClass.Flier: return "飛行兵";
-            case UnitClass.Transporter: return "輸送隊";
-            default: return "歩兵";
-        }
+        if (u.Data.classData != null) return u.Data.classData.className;
+        return u.Class.DisplayName();
     }
 }

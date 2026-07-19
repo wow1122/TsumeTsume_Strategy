@@ -27,8 +27,8 @@ public class Unit : MonoBehaviour
     /// <summary>陣営（UnitData から取得）。</summary>
     public Faction Faction => Data.faction;
 
-    /// <summary>兵種（UnitData から取得）。</summary>
-    public UnitClass Class => Data.unitClass;
+    /// <summary>兵種＝移動タイプ（UnitData から取得。兵種データがあればそちらが優先）。</summary>
+    public UnitClass Class => Data.EffectiveClass;
 
     /// <summary>装備中の武器。武器はこの窓口から読む（Data.weapon の直読みはしない約束）。</summary>
     public WeaponData Weapon => Data.weapon;
@@ -151,8 +151,16 @@ public class Unit : MonoBehaviour
         Speed = data.speed;
         Defense = data.defense;
         Resistance = data.resistance;
-        Move = data.move;
+        Move = data.EffectiveMove;   // 移動力は兵種データ優先（無ければ旧 move）
         CurrentHP = MaxHP;
+
+        // 装備武器が兵種の武器リストに無ければ警告（実行時側の保険。警告のみで続行）
+        if (data.classData != null && data.weapon != null && !data.classData.CanUse(data.weapon.type))
+        {
+            Debug.LogWarning(
+                $"ユニット「{data.unitName}」: 兵種「{data.classData.className}」は " +
+                $"武器「{data.weapon.weaponName}」を装備できません（警告のみ・動作は続行）。");
+        }
 
         // 見た目：陣営で色分け（自軍=青 / 敵=赤）。スプライトはグリッドのものを流用。
         spriteRenderer = gameObject.AddComponent<SpriteRenderer>();

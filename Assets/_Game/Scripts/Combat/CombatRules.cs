@@ -33,11 +33,11 @@ public static class CombatRules
     public static bool TryGetAttackRange(Unit unit, bool hasMoved, out int minRange, out int maxRange)
     {
         WeaponData weapon = unit.Weapon;
-        if (weapon == null)
+        if (weapon == null || weapon.type == WeaponType.Staff)
         {
             minRange = 0;
             maxRange = -1;
-            return false; // 武装無しは攻撃できない
+            return false; // 武装無しは攻撃できない（杖は攻撃できない武器なので同じ扱い）
         }
 
         if (weapon.category == WeaponCategory.Ranged)

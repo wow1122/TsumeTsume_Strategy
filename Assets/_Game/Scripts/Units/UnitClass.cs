@@ -7,7 +7,8 @@ using UnityEngine;
 ///          └ 飛行兵
 /// 救出（Phase 11〜）や飛翔（Phase 14）は、この兵種を条件に使えるようになる。
 /// 「騎兵向け」のルールを書くときは IsCavalry() を使うと輸送隊にも自動で効く。
-/// 標準の移動力の目安：歩兵4・騎兵6・飛行兵6・輸送隊5。
+/// 兵種データ（ClassData）導入後は、これは「移動タイプ」の分類として使われ、
+/// 職業としての兵種（剣闘士・弓使など）と移動力は ClassData が持つ。
 /// </summary>
 public enum UnitClass
 {
@@ -30,5 +31,17 @@ public static class UnitClassExtensions
     public static bool IsCavalry(this UnitClass unitClass)
     {
         return unitClass == UnitClass.Cavalry || unitClass == UnitClass.Transporter;
+    }
+
+    /// <summary>移動タイプの日本語名（表示用）。</summary>
+    public static string DisplayName(this UnitClass unitClass)
+    {
+        switch (unitClass)
+        {
+            case UnitClass.Cavalry: return "騎兵";
+            case UnitClass.Flier: return "飛行兵";
+            case UnitClass.Transporter: return "輸送隊";
+            default: return "歩兵";
+        }
     }
 }

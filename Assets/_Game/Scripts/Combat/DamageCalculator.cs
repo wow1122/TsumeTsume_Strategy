@@ -43,8 +43,8 @@ public static class DamageCalculator
         // 防御側がいるマスの地形防御ボーナス
         TileData defTile = grid.GetTile(defender.GridPosition);
 
-        // 魔法武器なら 魔力 vs 魔防、それ以外は 力 vs 守備
-        bool isMagic = weapon != null && weapon.type == WeaponType.Magic;
+        // 魔法系武器（魔導書・光魔法）なら 魔力 vs 魔防、それ以外は 力 vs 守備
+        bool isMagic = weapon != null && weapon.type.IsMagicDamage();
 
         return new DamageBreakdown
         {

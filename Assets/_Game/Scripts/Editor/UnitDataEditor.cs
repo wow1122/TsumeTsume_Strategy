@@ -17,7 +17,25 @@ public class UnitDataEditor : Editor
         EditorGUILayout.LabelField("基本情報", EditorStyles.boldLabel);
         Draw("unitName", "名前");
         Draw("faction", "陣営");
-        Draw("unitClass", "兵種");
+        Draw("classData", "兵種データ");
+
+        // 兵種データが設定されていれば、移動タイプと移動力はそちら由来（読み取り専用で表示）。
+        // 未設定なら旧フィールド（unitClass / move）をそのまま編集できる（フォールバック）。
+        SerializedProperty cd = serializedObject.FindProperty("classData");
+        bool useClass = cd.objectReferenceValue != null && !cd.hasMultipleDifferentValues;
+        if (useClass)
+        {
+            var c = (ClassData)cd.objectReferenceValue;
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.LabelField("兵種（データ由来）",
+                    $"{c.className}（{c.moveType.DisplayName()}・移動{c.move}）");
+            }
+        }
+        else
+        {
+            Draw("unitClass", "兵種（旧式・兵種データ未設定時のみ有効）");
+        }
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("能力値", EditorStyles.boldLabel);
@@ -28,7 +46,8 @@ public class UnitDataEditor : Editor
         Draw("speed", "速さ");
         Draw("defense", "守備");
         Draw("resistance", "魔防");
-        Draw("move", "移動力");
+        if (!useClass)
+            Draw("move", "移動力（旧式・兵種データ未設定時のみ有効）");
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("装備", EditorStyles.boldLabel);

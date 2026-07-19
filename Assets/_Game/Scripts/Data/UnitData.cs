@@ -16,8 +16,11 @@ public class UnitData : ScriptableObject
     public string unitName = "ユニット";
     public Faction faction = Faction.Player;
 
-    [Tooltip("兵種。歩兵以外（騎兵・飛行兵・輸送隊）は騎乗ユニット扱い")]
+    [Tooltip("兵種。歩兵以外（騎兵・飛行兵・輸送隊）は騎乗ユニット扱い。※兵種データ設定時は使われない（旧式）")]
     public UnitClass unitClass = UnitClass.Infantry;
+
+    [Tooltip("兵種データ。設定すると移動タイプと移動力はこちらが優先され、上の兵種と下の移動力は使われない")]
+    public ClassData classData;
 
     [Header("能力値")]
     [Tooltip("最大HP")]
@@ -44,10 +47,28 @@ public class UnitData : ScriptableObject
     [Tooltip("魔防：魔法攻撃への防御")]
     public int resistance = 0;
 
-    [Tooltip("1ターンに移動できるマス数（標準：歩兵4・騎兵6・飛行兵6・輸送隊5）")]
+    [Tooltip("1ターンに移動できるマス数。※兵種データ設定時は使われない（旧式）")]
     public int move = 4;
 
     [Header("装備")]
     [Tooltip("装備する武器。攻撃の威力・射程・相性に使われます")]
     public WeaponData weapon;
+
+    /// <summary>実効の移動タイプ。兵種データがあればそちら、無ければ旧 unitClass（フォールバック）。</summary>
+    public UnitClass EffectiveClass => classData != null ? classData.moveType : unitClass;
+
+    /// <summary>実効の移動力。兵種データがあればそちら、無ければ旧 move（フォールバック）。</summary>
+    public int EffectiveMove => classData != null ? classData.move : move;
+
+    // Inspector で値を変更したときに呼ばれる。装備武器が兵種の武器リストに無ければ警告を出す。
+    // 警告のみで動作は止めない（WeaponData と同じ方針。意図的な例外装備も許す）。
+    private void OnValidate()
+    {
+        if (classData != null && weapon != null && !classData.CanUse(weapon.type))
+        {
+            Debug.LogWarning(
+                $"ユニット「{unitName}」({name}): 兵種「{classData.className}」は " +
+                $"武器「{weapon.weaponName}」({weapon.type}) を装備できません（警告のみ・動作は続行）。");
+        }
+    }
 }
