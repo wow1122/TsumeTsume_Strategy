@@ -24,6 +24,10 @@ Play 確認済み・コミット済み。**Phase 8〜15 ロードマップと敵
 （Stage_01 の通しプレイ確認）は、作者のプレイの結果「手応え・面白さ十分、調整不要」で完了
 （点数定数・アセットの追加変更なし）。
 
+さらに同日（2026-07-18）、**兵種（クラス）システムのデータ基盤**を導入:
+ClassData（ScriptableObject）38種（下級14職・上級24職。「兵種データの合意仕様」の節参照）を新設し、
+全ユニット17体を兵種に紐付け（移動タイプ・移動力は兵種データ由来へ）。武器種に杖・光魔法を追加（定義のみ）。
+
 過去のロードマップ2本（どちらも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
 敵AI強化（Phase 16〜21）は `/home/wawo/.claude/plans/tsumetsume-strategy-ai-ai-ai-robust-quasar.md`
@@ -34,7 +38,9 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 ## 確定済みの仕様（作者との合意。勝手に変えない）
 
 - 命中は必中（命中・回避RNGなし）。ダメージ = max(0, 攻撃+武器威力+三すくみ補正-(防御+地形防御))
-- 武器分類（WeaponCategory）: 剣・斧・槍＝前衛(Melee=0)、弓・魔法＝後衛(Ranged=1)。データ駆動（WeaponData.category）
+- 武器分類（WeaponCategory）: 剣・斧・槍＝前衛(Melee=0)、弓・魔導書・光魔法・杖＝後衛(Ranged=1)。データ駆動（WeaponData.category）。
+  武器種（WeaponType）は7種: 剣・槍・斧・弓・魔導書（＝魔法。同一武器）・杖・光魔法（2026-07-18 追加。杖・光魔法は定義のみ）。
+  魔法ダメージ（魔力vs魔防）の判定は WeaponType.IsMagicDamage()（魔導書・光魔法）。杖は攻撃不可（武装無し扱い）
 - 三すくみ（Phase 9 で新式へ移行済み）: 前衛武器の攻撃のみ。剣>斧>槍>剣。
   有利側が攻撃 = +max(2, 攻撃側の技−防御側の速さ)、有利側が防御 = −max(2, 防御側の速さ−攻撃側の技)。
   後衛武器・武装無しは前衛から攻撃されると「武装無し扱い」で不利判定。後衛側の攻撃時は三すくみなし
@@ -52,10 +58,14 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - 仮素材（色付き四角＋IMGUI）で進行中。本番素材への差し替えは後
 - 能力値は7種（HP・力・魔力・技・速さ・守備・魔防）。物理=力vs守備、魔法=魔力vs魔防（地形防御は両方に加算）
 - 兵種の階層: 歩兵／騎乗兵（騎兵・飛行兵）。輸送隊は騎兵の一種（2026-07-11 合意）。
-  騎兵向けルールは UnitClass.IsCavalry()（騎兵+輸送隊）、騎乗全体は IsMounted() を使う
-- 標準移動力: 歩兵 3（2026-07-18 の能力値調整で 4→3）・騎兵 6・飛行兵 6・輸送隊 5。
-  実数値はアセット（Assets/_Game/Data/Unit_*.asset）が正で、作者が Unity のエディタで調整する
+  騎兵向けルールは UnitClass.IsCavalry()（騎兵+輸送隊）、騎乗全体は IsMounted() を使う。
+  兵種データ導入後（2026-07-18）、UnitClass は「移動タイプ」の分類として使われる
+- 兵種（クラス）: ClassData（ScriptableObject）38種で定義（「兵種データの合意仕様」の節参照）。
+  移動タイプ・移動力・装備可能武器は兵種で決まる。移動力の実数値は
+  Assets/_Game/Data/Classes/Class_*.asset が正で、作者が Unity のエディタで調整する
+  （旧「標準移動力」の合意は兵種ごとの値に置き換え。例: 剣闘士3・剣士4・重装兵2・騎馬兵6・竜騎兵5）
 - Unit は Initialize で UnitData をコピーした「ランタイム能力値」を使う（Strength〜Move/Class/Weapon プロパティ経由。
+  移動タイプと移動力は UnitData.EffectiveClass/EffectiveMove＝兵種データ優先・未設定時は旧フィールドで解決。
   Data 直読みは Unit 内の窓口のみ。ユニット列挙は UnitRegistry（名簿）経由で、FindObjectsByType は使わない）
 - 移動: 味方のマスは通過可・停止不可、敵のマスは侵入・通過不可。非アクティブ化＝盤上から外れる（占有も明け渡す）。
   飛翔中の例外は「飛翔の合意仕様」の節を参照
@@ -311,6 +321,24 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   「単発のみ・挟撃含まず」の注記）。クリックは無視され、ESC/右クリックでメニューへ戻る。
   行動は消費しない
 
+### 兵種データの合意仕様（2026-07-18 作者合意）
+
+- 兵種は ClassData（ScriptableObject、Assets/_Game/Data/Classes/）で38種を定義:
+  下級14職・上級24職。聖騎馬兵は槍兵と騎馬兵の**共有**昇格先でアセットは1つ。
+  各兵種 = 名前・階級（下級/上級 ClassTier）・移動タイプ（UnitClass）・移動力・装備可能武器種・
+  特攻タグ（ClassTag: 騎馬/天馬/竜）・昇格先（下級のみ最大2つ）。兵種表は作者提供（2026-07-18）
+- 特攻タグと昇格先は**データのみ**。クラスチェンジの実行（レベル/経験値が前提）と
+  特攻ダメージの戦闘反映（特効武器が前提）は将来実装
+- 昇格で騎乗になる職（聖騎馬兵・鎧騎馬兵・ノマディ・ヴァルキュリア・ダークナイト）は移動タイプ「騎兵」
+  → 騎乗の地形ルール・救出可（容量1）・騎馬特攻タグが付く
+- 魔法＝魔導＝魔導書は同一武器（WeaponType.Magic）。光魔法は司祭用の別武器種（定義のみ）。
+  杖は攻撃できない武器（回復などの効果は将来）
+- 武器制限は**警告のみ**（UnitData.OnValidate と Unit.Initialize で Console 警告。動作は止めない）
+- 既存ユニットへの適用（作者合意）: 剣歩兵（味方兵・ダミー2体）は剣闘士（移動3維持。剣士だと移動4のため）。
+  武器を兵種に合わせて変更 = 味方飛行兵 剣→槍（天馬兵）、斧騎兵2体 斧→槍（騎馬兵。
+  名前も味方槍騎兵/敵槍騎兵へ変更。ファイル名 Unit_*_AxeCavalry は GUID 保全のため旧名のまま）。
+  敵飛行兵は竜騎兵になり移動力 6→5（ステージ上の敵の到達が変わりうる点は作者了承）
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -345,7 +373,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   panelEnabledでOFF可・ゲーム状態は変えない)
 - Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried・飛翔IsFlying/FlightTurnsLeft・
   AI性格AIProfile/挑発済みIsProvoked※永続),
-  UnitClass(兵種enum+IsMounted),
+  UnitClass(移動タイプenum+IsMounted/IsCavalry/DisplayName),
+  ClassTier(階級enum: 下級/上級), ClassTag(特攻タグ[Flags]: 騎馬/天馬/竜),
   RescueRules(救出系コマンドの可否判定一元化・乗り込む判定・飛翔の制限と空中引き受け・
   貨物の兵種で判定する GetDroppableCargoes/GetDropCells・死亡時配置先探索FindReleaseCell),
   UnitRegistry(全ユニットの名簿・輸送隊死亡フラグPlayerTransporterLost), Faction(陣営enum)
@@ -353,8 +382,11 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   CombatRules(射程・三すくみ・挟撃可否・飛翔の戦闘制限CanEngageの一元判定・
   攻撃できる立ち位置一覧GetAttackFromCells・挟撃の反対側マスGetPincerOppositeCell・
   仮定位置ガード判定WouldGuardAt・ガード役かどうかIsGuardingSomeone※Phase 18),
-  DamageCalculator(物理/魔法分岐・DamageBreakdown内訳・飛翔中は地形防御なし), WeaponType, WeaponCategory(前衛/後衛)
-- Data/ … UnitData(7能力値+兵種), WeaponData, StageData(初期配置+開始時飛翔initialFlightTurns+
+  DamageCalculator(物理/魔法分岐・DamageBreakdown内訳・飛翔中は地形防御なし),
+  WeaponType(7種+魔法ダメージ判定IsMagicDamage), WeaponCategory(前衛/後衛)
+- Data/ … UnitData(7能力値+兵種データclassData。移動タイプ/移動力は EffectiveClass/EffectiveMove で解決・
+  武器不一致はOnValidateで警告), ClassData(兵種1種の定義: 名前・階級・移動タイプ・移動力・装備可能武器・
+  特攻タグ・昇格先), WeaponData, StageData(初期配置+開始時飛翔initialFlightTurns+
   AI性格aiProfile+地形マップterrainRows+盤面サイズgridWidth/gridHeight+ターン制限turnLimit),
   TerrainTable(地形定義一覧・記号引き) (ScriptableObject定義)
 - AI/ … EnemyAI(点数評価型・「考えるEvaluate→動かすExecute」の2段構え・
@@ -373,7 +405,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   EnemyAIProfile(性格enum: 突撃型/待ち伏せ型。Phase 17),
   ActionPlan(行動予定の構造体+ActionKind。Guard※Phase 19、
   TakeOff/LandAndWait※Phase 20 まで全種実装済み)
-- Editor/ … UnitDataEditor, WeaponDataEditor(Inspectorの日本語表示。エディタ専用・ビルド非含有)
+- Editor/ … UnitDataEditor(兵種データ設定時は旧 兵種/移動力 欄を隠し「データ由来」を読み取り専用表示),
+  WeaponDataEditor, ClassDataEditor(Inspectorの日本語表示。エディタ専用・ビルド非含有)
 
 アセット実体: Assets/_Game/Data/
 （Unit_Player, Unit_Enemy, Unit_Player_Archer, Unit_Player_Mage, Unit_Player_Cavalry,
@@ -382,7 +415,9 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   Unit_Enemy_AxeCavalry, Unit_Test_Dummy, Unit_Test_Dummy_Weak（弱ダミーHP12・集中攻撃の検証用）,
   W_Sword, W_Axe, W_Lance, W_Bow, W_Tome, Stage_Test, Stage_01, Stage_AITest_Path,
   Stage_AITest_Ambush, Stage_AITest_Pincer, Stage_AITest_Guard, Stage_AITest_Flight,
-  Stage_AITest_Focus, TerrainTable）
+  Stage_AITest_Focus, TerrainTable。
+  Classes/ サブフォルダに兵種 ClassData 38種: Class_Tactician（軍師）〜Class_MaligKnight（魔竜騎兵）。
+  ※Unit_Player_AxeCavalry / Unit_Enemy_AxeCavalry はファイル名こそ旧名だが中身は槍騎兵（兵種データ導入時に持ち替え））
 シーン: Assets/_Game/Scenes/BattleScene.unity
 
 ## 次にやること
@@ -399,6 +434,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   - 敵側の輸送隊（現状はプレイヤー専用。Phase 12 合意(c)）
   - uGUI化・本番素材への差し替え（IMGUIと色付き四角の置き換え。素材差し替え時期にまとめて）
   - 育成要素（レベル・経験値・成長率。従来からロードマップ外の将来枠）
+  - 兵種データの残り（クラスチェンジの実行・特攻ダメージの戦闘反映・杖/光魔法の効果・主人公＝軍師ユニットの作成。
+    データ基盤は 2026-07-18 導入済み）
 - 新ステージの追加・能力値や配置の調整（アセット編集）は作者の依頼があれば随時
 
 ## 環境・運用の注意
