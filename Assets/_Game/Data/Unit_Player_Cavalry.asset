@@ -15,6 +15,7 @@ MonoBehaviour:
   unitName: "味方騎兵"
   faction: 0
   unitClass: 1
+  classData: {fileID: 11400000, guid: 74787bae67984d70b61e3db4eb3c7ada, type: 2}
   maxHP: 22
   strength: 6
   magic: 0

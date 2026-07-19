@@ -15,6 +15,7 @@ MonoBehaviour:
   unitName: "輸送隊"
   faction: 0
   unitClass: 3
+  classData: {fileID: 11400000, guid: 88ed28fe227546b6844ea9a545b06e2d, type: 2}
   maxHP: 20
   strength: 3
   magic: 0

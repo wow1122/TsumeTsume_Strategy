@@ -12,9 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
   m_Name: Unit_Enemy_AxeCavalry
   m_EditorClassIdentifier: Assembly-CSharp::UnitData
-  unitName: "敵斧騎兵"
+  unitName: "敵槍騎兵"
   faction: 1
   unitClass: 1
+  classData: {fileID: 11400000, guid: 74787bae67984d70b61e3db4eb3c7ada, type: 2}
   maxHP: 20
   strength: 6
   magic: 0
@@ -23,4 +24,4 @@ MonoBehaviour:
   defense: 3
   resistance: 0
   move: 6
-  weapon: {fileID: 11400000, guid: a0f6faa61c579d448b3f9bcf09b572cf, type: 2}
+  weapon: {fileID: 11400000, guid: c9f7b534f81e457bb18b74a09a7f5897, type: 2}

@@ -15,6 +15,7 @@ MonoBehaviour:
   unitName: "敵槍飛行兵"
   faction: 1
   unitClass: 2
+  classData: {fileID: 11400000, guid: 9a6b9e3315e9470f92457148a6ab07de, type: 2}
   maxHP: 18
   strength: 5
   magic: 0

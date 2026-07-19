@@ -15,6 +15,7 @@ MonoBehaviour:
   unitName: "\u8A13\u7DF4\u7528\u30C0\u30DF\u30FC"
   faction: 0
   unitClass: 0
+  classData: {fileID: 11400000, guid: 5eae1e9a42c24991a5e81473143824a5, type: 2}
   maxHP: 40
   strength: 1
   magic: 0

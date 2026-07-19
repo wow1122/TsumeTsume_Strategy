@@ -15,6 +15,7 @@ MonoBehaviour:
   unitName: "味方飛行兵"
   faction: 0
   unitClass: 2
+  classData: {fileID: 11400000, guid: 9a6b9e3315e9470f92457148a6ab07de, type: 2}
   maxHP: 20
   strength: 6
   magic: 0
@@ -23,4 +24,4 @@ MonoBehaviour:
   defense: 2
   resistance: 3
   move: 6
-  weapon: {fileID: 11400000, guid: 9bd17bf5451e17949960a7fc64eb7eca, type: 2}
+  weapon: {fileID: 11400000, guid: c9f7b534f81e457bb18b74a09a7f5897, type: 2}
