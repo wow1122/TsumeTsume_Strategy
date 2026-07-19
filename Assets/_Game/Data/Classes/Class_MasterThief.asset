@@ -12,13 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df93f8370db448debb8878ead1266772, type: 3}
   m_Name: Class_MasterThief
   m_EditorClassIdentifier: Assembly-CSharp::ClassData
-  className: "大盗賊"
+  className: "\u5927\u76D7\u8CCA"
   tier: 1
   moveType: 0
   move: 4
-  usableWeapons:
-  - 3
-  - 0
-  - 5
+  usableWeapons: 030000000000000005000000
   tags: 0
   promotions: []
