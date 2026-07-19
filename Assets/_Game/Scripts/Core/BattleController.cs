@@ -47,7 +47,7 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect }
+    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect }
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
@@ -116,7 +116,8 @@ public class BattleController : MonoBehaviour
 
         // メニュー表示中のセルクリックは無効。ボタンの処理は ActionMenu / CargoListMenu /
         // ItemListMenu（IMGUI）側が行うので、ここで盤面まで反応すると二重処理になるのを防ぐ
-        if (state == State.CommandMenu || state == State.CargoSelect || state == State.ItemSelect) return;
+        if (state == State.CommandMenu || state == State.CargoSelect
+            || state == State.ItemSelect || state == State.ItemActionSelect) return;
 
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -282,8 +283,14 @@ public class BattleController : MonoBehaviour
                 }
                 break;
 
+            case State.ItemActionSelect:
+                // 行動サブメニュー（列2）だけ閉じて持ち物リストへ戻る（リスト・詳細は残す・1段）
+                itemMenu.ClearActions();
+                state = State.ItemSelect;
+                break;
+
             case State.ItemSelect:
-                // 所持品 → メニューへ戻る（すでに装備を変えていても、それは元に戻さない＝
+                // 持ち物 → メニューへ戻る（すでに装備を変えていても、それは元に戻さない＝
                 // 装備変更に取り消しは無い。作者合意(a)）
                 itemMenu.Hide();
                 OpenCommandMenu();
@@ -484,11 +491,11 @@ public class BattleController : MonoBehaviour
         if (proxyCarriers.Count > 0)
             commands.Add(new ActionMenu.Entry("代わりに降ろす", EnterProxyCarrierSelect));
 
-        // 所持品（フェーズ23）：武器の持ち替え・武装解除。所持品を持っているときに出す。
-        // 装備の変更は行動を消費しない。救出・引き受けの後は上で別メニューに分岐済みなので、
-        // ここには来ない＝それらの制限（合意）を保つ。武器なしユニット（Items 0個）には出ない
+        // 持ち物：武器の持ち替え・武装解除（外す）・道具の使用・破棄（捨てる）の入口。
+        // 持ち物を1つでも持っているときに出す。装備変更・破棄は行動を消費しない。救出・引き受けの
+        // 後は上で別メニューに分岐済みなのでここには来ない＝それらの制限（合意）を保つ
         if (unit.Items.Count > 0)
-            commands.Add(new ActionMenu.Entry("所持品", EnterItemSelect));
+            commands.Add(new ActionMenu.Entry("持ち物", EnterItemSelect));
 
         commands.Add(new ActionMenu.Entry("待機", FinishAction));
         return commands;
@@ -789,14 +796,16 @@ public class BattleController : MonoBehaviour
         FinishAction(); // 降ろしたら行動終了（作者合意）
     }
 
-    // ===== 所持品（武器の持ち替え・武装解除・道具の使用。フェーズ23〜24）=====
-    // 装備の変更は行動を消費しない（FE準拠：同一行動で持ち替え→攻撃ができる）。
-    // 実行後はコマンドメニューを開き直すので、攻撃対象・被ダメが新しい装備で再計算される。
-    // 道具（傷薬）は装備と違って「使うと行動終了」（合意(b)）＝使用後は FinishAction する。
+    // ===== 持ち物（武器の持ち替え・武装解除〔外す〕・道具の使用・破棄〔捨てる〕）=====
+    // 操作は2段階：持ち物リスト（ItemSelect）で1つ選ぶ → 行動サブメニュー（ItemActionSelect）で
+    // 「外す/装備/使う」＋「捨てる」を選ぶ。装備変更・武装解除・破棄は行動を消費しない
+    // （FE準拠：同一行動で持ち替え→攻撃ができる。実行後はメニューを開き直して再計算）。
+    // 道具（傷薬）だけは「使うと行動終了」（合意(b)）＝使用後に FinishAction する。
 
     /// <summary>
-    /// 「所持品」が選ばれた：所持品リストを開く。武器は装備可能な未装備のものだけ押せて、
-    /// 装備中・装備不可・道具（フェーズ24で使えるようになる）は無効行として見せる。
+    /// 「持ち物」が選ばれた：持ち物リストを開く。各行は押せて、クリックするとリストを残したまま
+    /// 右隣に行動サブメニュー（外す/装備/使う＋捨てる）が出る。行にホバーすると武器・道具の
+    /// 性能の詳細が画面右下の定位置に出る（列やメニューを離れても最後の内容を保つ）。
     /// </summary>
     private void EnterItemSelect()
     {
@@ -808,15 +817,14 @@ public class BattleController : MonoBehaviour
 
         itemMenu.Show(grid.CellToWorld(context.unit.GridPosition), grid.cellSize, BuildItemEntries());
         state = State.ItemSelect;
-        Debug.Log($"所持品を開いた（{context.unit.Items.Count} 個）。右クリック/ESCでメニューへ戻る。");
+        Debug.Log($"持ち物を開いた（{context.unit.Items.Count} 個）。右クリック/ESCでメニューへ戻る。");
     }
 
     /// <summary>
-    /// 所持品リストの行を作る。武器＝装備可能な未装備のものは押せて（クリックで装備）、
-    /// 装備中は「（装備中）」、その兵種で使えない武器は「（装備不可）」の無効行。
-    /// 道具はHPが満タンでなければ押せて（クリックで使用＝回復して行動終了・フェーズ24）、
-    /// 満タンのときは「（満タン）」の無効行。
-    /// 最下行に「武装解除」（武器を装備しているときだけ・メニューの肥大を避けて末尾に置く）。
+    /// 持ち物リストの行を作る。各行は押せて、クリックすると行動サブメニュー（外す/装備/使う＋捨てる）
+    /// へ進む。ラベルの補足（装備中／装備不可／残りN）は状態の目印として残し、ホバー用の
+    /// 性能詳細（BuildItemDetail）も添える。従来の最下行「武装解除」は撤廃し、装備中の武器の
+    /// サブメニューの「外す」へ移した。
     /// </summary>
     private List<ItemListMenu.Entry> BuildItemEntries()
     {
@@ -825,43 +833,68 @@ public class BattleController : MonoBehaviour
 
         foreach (ItemSlot slot in unit.Items)
         {
+            string label = slot.Item.DisplayName;
             if (slot.Item is WeaponData weapon)
             {
-                if (weapon == unit.EquippedWeapon)
-                {
-                    entries.Add(new ItemListMenu.Entry($"{weapon.DisplayName}（装備中）", false, null));
-                }
-                else if (!CanEquip(unit, weapon))
-                {
-                    entries.Add(new ItemListMenu.Entry($"{weapon.DisplayName}（装備不可）", false, null));
-                }
-                else
-                {
-                    WeaponData w = weapon; // ラムダが最後の値を掴まないようローカルに退避
-                    entries.Add(new ItemListMenu.Entry(weapon.DisplayName, true, () => EquipWeapon(w)));
-                }
+                if (weapon == unit.EquippedWeapon) label += "（装備中）";
+                else if (!CanEquip(unit, weapon)) label += "（装備不可）";
             }
-            else if (slot.Item is ToolData tool)
+            else if (slot.Item is ToolData)
             {
-                // 道具（フェーズ24）：HPが満タンでなければ押せて、クリックで使用＝回復して行動終了。
-                // 満タンのときは押せない無効行にする（合意(b)：満タンの対象には使えない）。
-                if (unit.CurrentHP >= unit.MaxHP)
-                {
-                    entries.Add(new ItemListMenu.Entry($"{tool.DisplayName}（満タン）", false, null));
-                }
-                else
-                {
-                    ItemSlot s = slot; // ラムダが最後の値を掴まないようローカルに退避
-                    entries.Add(new ItemListMenu.Entry($"{tool.DisplayName}（残り{slot.UsesLeft}）", true, () => UseToolItem(s)));
-                }
+                label += $"（残り{slot.UsesLeft}）";
             }
+
+            ItemSlot s = slot; // ラムダが最後の値を掴まないようローカルに退避
+            entries.Add(new ItemListMenu.Entry(label, true, () => EnterItemActionSelect(s), BuildItemDetail(s)));
         }
 
-        // 武装解除：武器を装備しているときだけ、リストの最下行に出す
-        if (unit.EquippedWeapon != null)
-            entries.Add(new ItemListMenu.Entry("武装解除", true, UnequipWeapon));
-
         return entries;
+    }
+
+    /// <summary>
+    /// 持ち物リストで1つ選んだときの行動サブメニュー（10状態目 ItemActionSelect）。持ち物リストは
+    /// 残したまま、その右隣に「外す/装備/使う」＋「捨てる」の2ボタンを出す。押せない一次行動
+    /// （装備不可の武器の「装備」・満タンの道具の「使う」）は灰色の無効ボタンにし、「捨てる」は
+    /// 常に押せる（行動を消費しない）。詳細（右下パネル）は持ち物リスト側の担当なので、ここの Entry には付けない。
+    /// </summary>
+    private void EnterItemActionSelect(ItemSlot slot)
+    {
+        Unit unit = context.unit;
+        var entries = new List<ItemListMenu.Entry>();
+
+        if (slot.Item is WeaponData weapon)
+        {
+            if (weapon == unit.EquippedWeapon)
+            {
+                // 装備中 → 外す（＝武装解除。従来の「武装解除」コマンドと同じ機能）
+                entries.Add(new ItemListMenu.Entry("外す", true, UnequipWeapon));
+            }
+            else if (CanEquip(unit, weapon))
+            {
+                WeaponData w = weapon;
+                entries.Add(new ItemListMenu.Entry("装備", true, () => EquipWeapon(w)));
+            }
+            else
+            {
+                // 装備不可 → 「装備」は灰色（押せない）。捨てるはできる（作者合意）
+                entries.Add(new ItemListMenu.Entry("装備", false, null));
+            }
+        }
+        else if (slot.Item is ToolData)
+        {
+            if (unit.CurrentHP < unit.MaxHP)
+                entries.Add(new ItemListMenu.Entry("使う", true, () => UseToolItem(slot)));
+            else
+                entries.Add(new ItemListMenu.Entry("使う", false, null)); // 満タンには使えない（合意(b)）
+        }
+
+        // 捨てるは常に押せる（種別を問わず・行動を消費しない）
+        entries.Add(new ItemListMenu.Entry("捨てる", true, () => DiscardSelectedItem(slot)));
+
+        // 持ち物リスト（列1）は残したまま、クリックした行に合わせて行動サブメニュー（列2）を出す
+        itemMenu.SetActions(entries, unit.Items.IndexOf(slot));
+        state = State.ItemActionSelect;
+        Debug.Log($"「{slot.Item.DisplayName}」の行動を選択。右クリック/ESCで持ち物へ戻る。");
     }
 
     /// <summary>その兵種でこの武器を装備できるか（兵種データが無ければ従来どおり可）。</summary>
@@ -905,6 +938,49 @@ public class BattleController : MonoBehaviour
 
         Debug.Log($"{unit.Data.unitName} は {name} を使った（HP{healed}回復 → {unit.CurrentHP}／{unit.MaxHP}{tail}）");
         FinishAction();
+    }
+
+    /// <summary>
+    /// 「捨てる」：持ち物から1つ取り除く。装備中の武器なら Unit 側で自動的に武装解除される。
+    /// 行動は消費しない（作者合意）。捨てた後は更新した持ち物リストへ戻り、空になったら行動メニューへ。
+    /// </summary>
+    private void DiscardSelectedItem(ItemSlot slot)
+    {
+        itemMenu.Hide();
+        Unit unit = context.unit;
+        string name = slot.Item.DisplayName;
+        bool wasEquipped = slot.Item == unit.EquippedWeapon;
+
+        unit.DiscardItem(slot);
+        Debug.Log($"{unit.Data.unitName} は {name} を捨てた" + (wasEquipped ? "（装備していたので武装解除された）" : ""));
+
+        // 持ち物が残っていれば更新したリストへ、無くなったら行動メニューへ戻る
+        if (unit.Items.Count > 0) EnterItemSelect();
+        else OpenCommandMenu();
+    }
+
+    /// <summary>
+    /// 持ち物リストのホバーで出す詳細（1行目＝名前を見出しに、以降＝性能）。
+    /// 武器は種類・前衛/後衛・威力・射程、道具は効果・使用回数を見せる。
+    /// </summary>
+    private List<string> BuildItemDetail(ItemSlot slot)
+    {
+        var lines = new List<string>();
+        if (slot.Item is WeaponData w)
+        {
+            string cat = w.category == WeaponCategory.Melee ? "前衛" : "後衛";
+            string range = w.minRange == w.maxRange ? $"{w.maxRange}" : $"{w.minRange}〜{w.maxRange}";
+            lines.Add(w.weaponName);
+            lines.Add($"種類: {w.type.DisplayName()}　{cat}");
+            lines.Add($"威力 {w.might}　射程 {range}");
+        }
+        else if (slot.Item is ToolData t)
+        {
+            lines.Add(t.toolName);
+            lines.Add($"効果: HP{t.healAmount}回復");
+            lines.Add($"使用回数: 残り{slot.UsesLeft}／{t.maxUses}回");
+        }
+        return lines;
     }
 
     // ===== 行動の終了・取り消し =====

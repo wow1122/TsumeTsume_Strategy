@@ -92,6 +92,19 @@ public class Unit : MonoBehaviour
         return healed;
     }
 
+    /// <summary>
+    /// 所持品を1つ捨てる（「持ち物」の「捨てる」）。所持品リストから取り除く。
+    /// 捨てるのが装備中の武器なら武装解除も行う（持っていない武器は装備できないため）。
+    /// ランタイム状態(Items)のみ変更で元データ(アセット)は汚さない＝その戦闘中だけ消え、
+    /// 次の戦闘は Initialize で元の所持品に戻る。行動を消費するかは呼び出し側が扱う
+    /// （合意：捨てるは行動を消費しない）。
+    /// </summary>
+    public void DiscardItem(ItemSlot slot)
+    {
+        if (slot.Item == EquippedWeapon) EquippedWeapon = null;
+        Items.Remove(slot);
+    }
+
     // ── 救出（Phase 11〜）──
     // 「運ぶ側」は Carried に相手を格納し、「運ばれる側」は IsCarried=true で
     // 非アクティブ化される（盤上から消え、マスの占有も明け渡す。名簿には残るので

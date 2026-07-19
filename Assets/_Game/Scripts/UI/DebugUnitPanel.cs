@@ -116,16 +116,16 @@ public class DebugUnitPanel : MonoBehaviour
         return $"武器: {w.weaponName}（{cat}・威力{w.might}・射程{range}）";
     }
 
-    /// <summary>所持品の行を追加する（フェーズ22）。装備中の武器は「装備中」、道具は残り回数を添える。</summary>
+    /// <summary>持ち物の行を追加する（フェーズ22）。装備中の武器は「装備中」、道具は残り回数を添える。</summary>
     private void AddItemLines(List<string> lines)
     {
         if (unit.Items.Count == 0)
         {
-            lines.Add("所持品: なし");
+            lines.Add("持ち物: なし");
             return;
         }
 
-        lines.Add($"所持品（{unit.Items.Count}／{UnitData.InventoryCapacity}）:");
+        lines.Add($"持ち物（{unit.Items.Count}／{UnitData.InventoryCapacity}）:");
         foreach (ItemSlot slot in unit.Items)
         {
             string note = "";

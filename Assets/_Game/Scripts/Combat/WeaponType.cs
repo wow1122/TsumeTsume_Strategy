@@ -26,4 +26,23 @@ public static class WeaponTypeExtensions
     {
         return type == WeaponType.Magic || type == WeaponType.LightMagic;
     }
+
+    /// <summary>
+    /// 持ち物リストなどで見せる日本語の種類名（剣・槍・斧・弓・魔導書・杖・光魔法）。
+    /// enum の [InspectorName] は Inspector 専用で実行時には読めないため、ここで用意する。
+    /// </summary>
+    public static string DisplayName(this WeaponType type)
+    {
+        switch (type)
+        {
+            case WeaponType.Sword: return "剣";
+            case WeaponType.Lance: return "槍";
+            case WeaponType.Axe: return "斧";
+            case WeaponType.Bow: return "弓";
+            case WeaponType.Magic: return "魔導書";
+            case WeaponType.Staff: return "杖";
+            case WeaponType.LightMagic: return "光魔法";
+            default: return type.ToString();
+        }
+    }
 }
