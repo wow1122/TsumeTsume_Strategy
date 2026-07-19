@@ -195,8 +195,9 @@ public static class MovementCalculator
     ///       飛翔中は飛行可否（屋内壁だけ不可。Phase 14）
     /// 通せんぼ（味方のマスは常に通過できる。敵のマスだけ通せんぼがあり得る）：
     ///   地上ユニットの移動 … 地上の敵は通せんぼ。飛翔中の敵の下はすり抜けられる
-    ///   飛翔中の移動      … 「飛翔状態の敵」と「対空武器（弓・魔法）装備の敵」は
-    ///                        すり抜け不可（作者仕様 2026-07-12）。それ以外の敵の上は通過できる
+    ///   飛翔中の移動      … 「飛翔状態の敵」と「対空できる敵（弓・魔導書・光魔法。杖は不可）」は
+    ///                        すり抜け不可（作者仕様 2026-07-12。対空の判定は Phase 25 で
+    ///                        CombatRules.IsAntiAirCapable に一元化）。それ以外の敵の上は通過できる
     /// ignoreEnemyUnits=true なら敵の通せんぼを無視する（GetDistanceMap の測り直し用。Phase 16）
     /// </summary>
     private static bool CanTraverse(Unit unit, TileData tile, bool ignoreEnemyUnits)
@@ -210,8 +211,7 @@ public static class MovementCalculator
         {
             Unit blocker = tile.Occupant;
             bool blocked = unit.IsFlying
-                ? (blocker.IsFlying
-                   || (blocker.Weapon != null && blocker.Weapon.category == WeaponCategory.Ranged))
+                ? (blocker.IsFlying || CombatRules.IsAntiAirCapable(blocker))
                 : !blocker.IsFlying;
             if (blocked) return false;
         }

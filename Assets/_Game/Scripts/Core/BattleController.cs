@@ -51,7 +51,7 @@ public class BattleController : MonoBehaviour
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
-    private enum UnitSelectPurpose { Rescue, TakeOver, ProxyDropCarrier, Board }
+    private enum UnitSelectPurpose { Rescue, TakeOver, ProxyDropCarrier, Board, Heal }
     private enum TileSelectPurpose { Drop, ProxyDrop }
     private enum CargoSelectPurpose { Drop, TakeOver, ProxyDrop }
     private UnitSelectPurpose unitSelectPurpose;
@@ -219,6 +219,7 @@ public class BattleController : MonoBehaviour
                             EnterProxyDropCargoSelect();
                             break;
                         case UnitSelectPurpose.Board: ExecuteBoard(clickedUnit); break;
+                        case UnitSelectPurpose.Heal: ExecuteHeal(clickedUnit); break;
                     }
                 }
                 break;
@@ -333,11 +334,20 @@ public class BattleController : MonoBehaviour
             grid.AddHighlight(c, HighlightKind.MoveRange);
 
         // 攻撃可能マス（2026-07-18 作者要望）: 立てるマスから武器で届くマスを赤で示す。
-        // 救出・引き受けの後は攻撃コマンド自体が出ない（BuildCommands と同じ条件）ので表示しない
+        // 救出・引き受けの後は攻撃・杖コマンド自体が出ない（BuildCommands と同じ条件）ので表示しない。
+        // 杖ユニットは攻撃できないので、攻撃フリンジの代わりに「杖が届くマス」を緑で示す（Phase 25・排他）
         if (!context.usedRescue && !context.usedTakeOver)
         {
-            foreach (Vector2Int c in ComputeAttackCells(unit, reachableCells))
-                grid.AddHighlight(c, HighlightKind.AttackRange);
+            if (StaffRules.HasStaffEquipped(unit))
+            {
+                foreach (Vector2Int c in ComputeHealCells(unit, reachableCells))
+                    grid.AddHighlight(c, HighlightKind.HealRange);
+            }
+            else
+            {
+                foreach (Vector2Int c in ComputeAttackCells(unit, reachableCells))
+                    grid.AddHighlight(c, HighlightKind.AttackRange);
+            }
         }
 
         state = State.MoveSelect;
@@ -424,6 +434,17 @@ public class BattleController : MonoBehaviour
             commands.Add(new ActionMenu.Entry("被ダメ確認", EnterDamageCheck));
         }
 
+        // 杖（Phase 25）：杖を装備していて、回復できる相手が射程内にいるとき。攻撃と同じ位置に出す
+        //（杖ユニットは攻撃できない＝上の攻撃ブロックは出ないので、実質「攻撃」の代わりになる）。
+        // 回復対象は緑ハイライトで選び、クリックで（魔力＋威力）回復して行動終了（合意(b)）
+        if (StaffRules.HasStaffEquipped(unit))
+        {
+            List<Unit> healTargets = StaffRules.FindHealTargets(unit);
+            if (healTargets.Count > 0)
+                commands.Add(new ActionMenu.Entry("杖",
+                    () => EnterUnitTargetSelect(UnitSelectPurpose.Heal, healTargets, HighlightKind.HealRange)));
+        }
+
         // 飛翔：飛行兵が非飛翔中ならいつでも使える（移動前でも移動後でも。作者仕様変更 2026-07-12）。
         // 行動は消費せず、残り移動力ぶんの飛行移動ができる
         //（攻撃→行動終了の流れがあるので、戦闘後の飛翔は起こらない）
@@ -506,15 +527,19 @@ public class BattleController : MonoBehaviour
         Debug.Log($"被ダメ確認（{attackTargets.Count} 体）。右クリック/ESCでメニューへ戻る。");
     }
 
-    /// <summary>救出・引き受け・代わりに降ろすの相手ユニットを赤表示して、クリックを待つ。</summary>
-    private void EnterUnitTargetSelect(UnitSelectPurpose purpose, List<Unit> candidates)
+    /// <summary>
+    /// 救出・引き受け・代わりに降ろす・杖の相手ユニットを選ぶ。候補をハイライトしてクリックを待つ。
+    /// ハイライト色は用途で変える（救出系＝赤の TargetChoice、杖＝緑の HealRange。既定は赤）。
+    /// </summary>
+    private void EnterUnitTargetSelect(UnitSelectPurpose purpose, List<Unit> candidates,
+                                       HighlightKind highlight = HighlightKind.TargetChoice)
     {
         menu.Hide();
         unitSelectPurpose = purpose;
         unitCandidates = candidates;
 
         foreach (Unit u in candidates)
-            grid.AddHighlight(u.GridPosition, HighlightKind.TargetChoice);
+            grid.AddHighlight(u.GridPosition, highlight);
 
         state = State.UnitTargetSelect;
         Debug.Log($"相手を選択（{candidates.Count} 体）。右クリック/ESCでメニューへ戻る。");
@@ -673,6 +698,26 @@ public class BattleController : MonoBehaviour
         Debug.Log($"{unit.Data.unitName} は {transporter.Data.unitName} に乗り込んだ" +
                   $"（積載 {transporter.Carried.Count}/{transporter.CarryCapacity}）");
         FinishAction(); // 乗り込んだら自分の行動は終了（仕様）
+    }
+
+    // ===== 杖（回復。Phase 25）=====
+
+    /// <summary>
+    /// 杖で回復を実行：対象のHPを（使用者の魔力＋杖の威力）回復し、行動を終える。
+    /// 道具（傷薬）と同じく「使うと行動終了」（合意(b)）。対象は FindHealTargets で
+    /// 満タン未満に絞ってあるので、ここでは実際の回復量を確かめてログに出すだけでよい。
+    /// </summary>
+    private void ExecuteHeal(Unit target)
+    {
+        Unit unit = context.unit;
+        int amount = StaffRules.HealAmount(unit);
+        int before = target.CurrentHP;
+        target.Heal(amount);
+        int healed = target.CurrentHP - before;
+
+        Debug.Log($"{unit.Data.unitName} は {target.Data.unitName} を杖で回復した" +
+                  $"（HP{healed}回復 → {target.CurrentHP}／{target.MaxHP}）");
+        FinishAction();
     }
 
     // ===== 飛翔（Phase 14）=====
@@ -952,6 +997,44 @@ public class BattleController : MonoBehaviour
         }
 
         // 立てるマスは移動範囲（青）として見せたいので、赤にするのは「移動の外側」だけ
+        result.ExceptWith(reachable);
+        result.Remove(unit.GridPosition);
+        return result;
+    }
+
+    /// <summary>
+    /// 杖が届くマス（緑表示）の集合を作る（Phase 25・ComputeAttackCells の杖版）。
+    /// 「立てるマス（現在地＋移動できるマス）」それぞれから杖の射程で届くマスを集め、
+    /// 立てるマス自体は除く（そこは青で見せる）。杖は攻撃と違い、移動しても射程は縮まない。
+    /// 表示用の下見なので、そこに回復対象がいるか・飛翔の高さの相性までは見ない。
+    /// 誰も立ち入れない壁マスは塗らない。杖を装備していなければ空を返す。
+    /// </summary>
+    private HashSet<Vector2Int> ComputeHealCells(Unit unit, HashSet<Vector2Int> reachable)
+    {
+        var result = new HashSet<Vector2Int>();
+        if (!StaffRules.TryGetStaffRange(unit, out int min, out int max)) return result;
+
+        var stands = new List<Vector2Int>(reachable) { unit.GridPosition };
+        foreach (Vector2Int stand in stands)
+        {
+            // stand を中心に、マンハッタン距離 min〜max のひし形の輪を集める
+            for (int dx = -max; dx <= max; dx++)
+            {
+                int rest = max - Mathf.Abs(dx);
+                for (int dy = -rest; dy <= rest; dy++)
+                {
+                    if (Mathf.Abs(dx) + Mathf.Abs(dy) < min) continue; // 内側（射程未満）は届かない
+
+                    var cell = new Vector2Int(stand.x + dx, stand.y + dy);
+                    TileData tile = grid.GetTile(cell);
+                    if (tile == null) continue;                         // 盤外
+                    if (!tile.IsWalkable && !tile.CanFlyOver) continue; // 壁（誰も立てない）
+                    result.Add(cell);
+                }
+            }
+        }
+
+        // 立てるマスは移動範囲（青）として見せたいので、緑にするのは「移動の外側」だけ
         result.ExceptWith(reachable);
         result.Remove(unit.GridPosition);
         return result;

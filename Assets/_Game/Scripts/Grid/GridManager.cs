@@ -3,7 +3,7 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// マスのハイライトの「種類」。1マスに複数の種類を重ねられ（多層管理）、
-/// 表示は優先度の高い順（Selection > TargetChoice > AttackRange > MoveRange > 基本色）。
+/// 表示は優先度の高い順（Selection > TargetChoice > AttackRange > HealRange > MoveRange > 基本色）。
 /// ある種類だけを消すと、下に重なっていた種類の色が現れる。
 /// </summary>
 [System.Flags]
@@ -14,6 +14,7 @@ public enum HighlightKind
     AttackRange = 1 << 1,  // 攻撃が届くマス（橙。将来の射程表示用）
     TargetChoice = 1 << 2, // 攻撃対象の候補（赤）
     Selection = 1 << 3,    // 選択中ユニットのマス（黄）
+    HealRange = 1 << 4,    // 杖が届くマス・回復対象のマス（緑・Phase 25）
 }
 
 /// <summary>
@@ -54,6 +55,8 @@ public class GridManager : MonoBehaviour
     public Color attackRangeColor = new Color(1f, 0.5f, 0.5f);    // 赤
     [Tooltip("移動できるマス")]
     public Color moveRangeColor = new Color(0.5f, 0.8f, 1f);      // 水色
+    [Tooltip("杖が届くマス・回復対象のマス（Phase 25）")]
+    public Color healRangeColor = new Color(0.5f, 0.9f, 0.5f);    // 緑
 
     // ── 内部データ ──
     private TileData[,] tiles;                 // 各マスの論理データ
@@ -310,6 +313,7 @@ public class GridManager : MonoBehaviour
         if ((kinds & HighlightKind.Selection) != 0) highlightColor = selectionColor;
         else if ((kinds & HighlightKind.TargetChoice) != 0) highlightColor = targetChoiceColor;
         else if ((kinds & HighlightKind.AttackRange) != 0) highlightColor = attackRangeColor;
+        else if ((kinds & HighlightKind.HealRange) != 0) highlightColor = healRangeColor;
         else if ((kinds & HighlightKind.MoveRange) != 0) highlightColor = moveRangeColor;
         else return baseColor;
 

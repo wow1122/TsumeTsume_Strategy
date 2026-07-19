@@ -158,9 +158,9 @@ public static class ThreatMap
         Faction opponentFaction = self.Faction == Faction.Player ? Faction.Enemy : Faction.Player;
         foreach (Unit p in UnitRegistry.GetUnits(opponentFaction))
         {
-            // 空中の相手を攻撃できるユニットか（後衛武器 or 飛翔中。武装無しは攻撃できない）
-            if (p.Weapon == null) continue;
-            if (p.Weapon.category != WeaponCategory.Ranged && !p.IsFlying) continue;
+            // 空中の相手を攻撃できるユニットか（対空できる後衛の攻撃武器 or 飛翔中。
+            // 杖・武装無しは対空できない。判定は CombatRules.IsAntiAirCapable に一元化。Phase 25）
+            if (!CombatRules.IsAntiAirCapable(p) && !p.IsFlying) continue;
 
             // 静止して撃つ（武器の上限射程まで届く）
             AddAttackRing(result, grid, p, p.GridPosition, hasMoved: false);

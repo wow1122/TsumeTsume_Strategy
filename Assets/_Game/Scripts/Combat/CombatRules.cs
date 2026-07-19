@@ -11,7 +11,8 @@ using UnityEngine;
 ///  ・三すくみ   … 前衛武器の攻撃のみ。補正量は 技・速さ の差から計算（最低2）
 ///  ・挟撃の資格 … 前衛武器の装備者だけが挟撃に参加できる
 ///  ・挟撃の無効化（ガード）… 防御側の隣に「前衛武器の歩兵」の味方がいれば挟撃されない
-///  ・飛翔（Phase 14）… 飛翔中の相手と戦えるのは「飛翔中のユニット」か「後衛武器」だけ。
+///  ・飛翔（Phase 14）… 飛翔中の相手と戦えるのは「飛翔中のユニット」か「対空武器
+///    （弓・魔導書・光魔法。杖は攻撃できないので不可）」だけ（Phase 25・IsAntiAirCapable）。
 ///    飛翔中のユニットは地上の相手を攻撃できない（CanEngage）。挟撃・ガードも同じ制限に従う
 /// </summary>
 public static class CombatRules
@@ -99,17 +100,29 @@ public static class CombatRules
 
     /// <summary>
     /// 飛翔を考慮して「そもそも戦闘が成立する組み合わせか」（Phase 14）。
-    ///   防御側が飛翔中 → 攻撃側も飛翔中か、後衛武器（弓・魔法の対空）のみ可
+    ///   防御側が飛翔中 → 攻撃側も飛翔中か、対空できる相手（弓・魔導書・光魔法）のみ可
     ///   攻撃側だけ飛翔中 → 地上の相手とは戦闘できない
     ///   どちらも地上（または着地後） → 制限なし
     /// </summary>
     public static bool CanEngage(Unit attacker, Unit defender)
     {
         if (defender.IsFlying)
-            return attacker.IsFlying
-                || (attacker.Weapon != null && attacker.Weapon.category == WeaponCategory.Ranged);
+            return attacker.IsFlying || IsAntiAirCapable(attacker);
 
         return !attacker.IsFlying; // 攻撃側だけ飛翔中なら不成立
+    }
+
+    /// <summary>
+    /// 地上から空中の相手を攻撃できる「対空」ユニットか（Phase 25）。
+    /// ＝後衛の攻撃武器（弓・魔導書・光魔法）を装備している。
+    /// 杖は後衛だが攻撃できない武器なので対空ではない（修道士は敵飛行兵の頭上を塞がず、
+    /// AIの対空圏回避の対象にもならない）。武装無しも対空ではない。
+    /// すり抜け判定（MovementCalculator）・対空圏（ThreatMap）とも判定を共有する。
+    /// </summary>
+    public static bool IsAntiAirCapable(Unit unit)
+    {
+        WeaponData w = unit.Weapon;
+        return w != null && w.category == WeaponCategory.Ranged && w.type != WeaponType.Staff;
     }
 
     // ===== 三すくみ =====
