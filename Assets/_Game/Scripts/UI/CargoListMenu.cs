@@ -25,16 +25,23 @@ public class CargoListMenu : MonoBehaviour
 
     private List<Unit> cargoes;
     private System.Action<Unit> onSelect;
+    private System.Action<Unit> onHover; // 行にマウスが乗ったときの通知（省略可）
     private Vector3 anchorWorld;   // 基準となるユニットのワールド座標
     private float cellWorldSize;   // 1マスのワールド上の大きさ（右隣へのずらし量に使う）
 
-    /// <summary>貨物リストを表示する。選ばれたら onSelect(貨物) が呼ばれる。</summary>
-    public void Show(Vector3 anchorWorld, float cellWorldSize, List<Unit> cargoes, System.Action<Unit> onSelect)
+    /// <summary>
+    /// 貨物リストを表示する。選ばれたら onSelect(貨物) が呼ばれる。
+    /// onHover を渡すと、行にマウスを重ねたときにその貨物を通知する（2026-07-26。
+    /// BattleController がユニット情報パネルの表示切り替えに使う）。
+    /// </summary>
+    public void Show(Vector3 anchorWorld, float cellWorldSize, List<Unit> cargoes,
+                     System.Action<Unit> onSelect, System.Action<Unit> onHover = null)
     {
         this.anchorWorld = anchorWorld;
         this.cellWorldSize = cellWorldSize;
         this.cargoes = cargoes;
         this.onSelect = onSelect;
+        this.onHover = onHover;
         IsVisible = true;
     }
 
@@ -44,6 +51,7 @@ public class CargoListMenu : MonoBehaviour
         IsVisible = false;
         cargoes = null;
         onSelect = null;
+        onHover = null;
     }
 
     void OnGUI()
@@ -73,7 +81,9 @@ public class CargoListMenu : MonoBehaviour
         var style = new GUIStyle(GUI.skin.button) { fontSize = fontSize };
 
         // ボタンの処理はループの外で呼ぶ（処理の中で Hide されても安全なように）
+        Vector2 mouse = Event.current.mousePosition;
         Unit selected = null;
+        Unit hovered = null;
         for (int i = 0; i < cargoes.Count; i++)
         {
             var rect = new Rect(menuX + padding, menuY + padding + i * buttonHeight,
@@ -81,7 +91,11 @@ public class CargoListMenu : MonoBehaviour
             string label = $"{cargoes[i].Data.unitName}（HP {cargoes[i].CurrentHP}）";
             if (GUI.Button(rect, label, style))
                 selected = cargoes[i];
+            if (rect.Contains(mouse)) hovered = cargoes[i];
         }
+        // ホバーの通知（持ち物リストと同じく、リストから離れても最後の行の内容を保つ＝
+        // 重なっている行が無ければ何も通知しない）
+        if (hovered != null) onHover?.Invoke(hovered);
         if (selected != null) onSelect?.Invoke(selected);
     }
 }

@@ -16,7 +16,8 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  「降ろす」→ 隣の空きマスを選択【TileSelect】→ 再配置 → 残り移動力で再移動 → 待機
 ///  「引き受け」→ 隣の救出中の味方を選択 → 貨物をもらう → 降ろす/待機のみ
 ///  （引き受けた行動中に降ろせるのは、引き受けを実行したマスの上にいるときだけ）
-///  「代わりに降ろす」→ 救出中の味方を選択 → その隣の空きマスを選択 → 行動終了（歩兵専用）
+///  「代わりに降ろす」→ 救出中の味方を選択 → その隣の空きマスを選択 → 行動終了
+///  （歩兵専用。運び手は輸送隊のみ＝2026-07-26 の仕様変更）
 ///  救出・引き受けを実行すると「取り消し不能」になり、以後は選択解除できない
 ///  （選択解除できると移動力を使い直せてしまうため）。
 ///
@@ -78,6 +79,7 @@ public class BattleController : MonoBehaviour
     private CargoListMenu cargoMenu;            // 貨物リストメニュー（IMGUI・Phase 12）
     private ItemListMenu itemMenu;              // 所持品リストメニュー（IMGUI・フェーズ23）
     private BattleForecast forecast;            // 戦闘予測パネル（IMGUI・Phase 15）
+    private UnitInfoPanel unitInfo;             // 対象選択中の相手情報パネル（IMGUI・2026-07-26）
     private Unit previewedEnemy;                // 行動範囲を下見表示中の敵（Idle のときだけ使う）
 
     void Awake()
@@ -91,6 +93,8 @@ public class BattleController : MonoBehaviour
         if (itemMenu == null) itemMenu = gameObject.AddComponent<ItemListMenu>();
         forecast = GetComponent<BattleForecast>();
         if (forecast == null) forecast = gameObject.AddComponent<BattleForecast>();
+        unitInfo = GetComponent<UnitInfoPanel>();
+        if (unitInfo == null) unitInfo = gameObject.AddComponent<UnitInfoPanel>();
 
         // デバッグ用のユニット情報パネル（クリックで能力値・状態を表示）。
         // 自分でクリックを読む独立部品なので、生成するだけでよい（呼び出しは不要）
@@ -340,6 +344,7 @@ public class BattleController : MonoBehaviour
     private void ShowMoveRange()
     {
         Unit unit = context.unit;
+        unitInfo.Hide(); // 相手選択から移動選択へ移る（救出の直後など）ときは相手情報を消す
         reachableCells = MovementCalculator.GetReachableCells(grid, unit, context.RemainingMove, moveCosts);
 
         grid.ResetAllHighlights();
@@ -401,6 +406,7 @@ public class BattleController : MonoBehaviour
     {
         Unit unit = context.unit;
         forecast.Hide(); // 対象選択から戻ったときは戦闘予測を消す（Phase 15）
+        unitInfo.Hide(); // 相手選択から戻ったときは相手情報も消す（2026-07-26）
 
         // 移動範囲・対象候補の表示を消し、選択マークだけ現在位置に付け直す
         grid.ResetAllHighlights();
@@ -507,7 +513,9 @@ public class BattleController : MonoBehaviour
         if (RescueRules.FindTakeOverCarriers(unit, grid).Count > 0)
             commands.Add(new ActionMenu.Entry("引き受け", EnterTakeOverCarrierSelect));
 
-        // 代わりに降ろす：歩兵が、隣接する救出中の味方の貨物を降ろしてあげる
+        // 代わりに降ろす：歩兵が、隣接する輸送隊の貨物を降ろしてあげる
+        // （2026-07-26 の仕様変更で運び手は輸送隊のみ。通常の騎乗ユニットの貨物は騎乗ユニットの
+        //   「引き受け」でしか動かせない）
         List<Unit> proxyCarriers = RescueRules.FindProxyDropCarriers(unit, grid);
         if (proxyCarriers.Count > 0)
             commands.Add(new ActionMenu.Entry("代わりに降ろす", EnterProxyCarrierSelect));
@@ -569,8 +577,26 @@ public class BattleController : MonoBehaviour
         foreach (Unit u in candidates)
             grid.AddHighlight(u.GridPosition, highlight);
 
+        // 相手の能力値・装備武器・持ち物・状態を画面右下に出す（2026-07-26 作者要望）。
+        // 最初の候補から表示し、他の候補にマウスを重ねると切り替わる
+        unitInfo.Show(candidates, UnitInfoTitle(purpose), grid);
+
         state = State.UnitTargetSelect;
         Debug.Log($"相手を選択（{candidates.Count} 体）。右クリック/ESCでメニューへ戻る。");
+    }
+
+    /// <summary>相手情報パネルの見出し（どのコマンドの相手を選んでいるかを出す）。</summary>
+    private static string UnitInfoTitle(UnitSelectPurpose purpose)
+    {
+        switch (purpose)
+        {
+            case UnitSelectPurpose.Rescue: return "救出する相手";
+            case UnitSelectPurpose.TakeOver: return "引き受ける相手（運び手）";
+            case UnitSelectPurpose.ProxyDropCarrier: return "代わりに降ろす相手（運び手）";
+            case UnitSelectPurpose.Board: return "乗り込む先";
+            case UnitSelectPurpose.Heal: return "杖の対象";
+            default: return "相手の情報";
+        }
     }
 
     /// <summary>「代わりに降ろす」の最初の段階：どの運び手の貨物を降ろすかを選ぶ。</summary>
@@ -641,7 +667,13 @@ public class BattleController : MonoBehaviour
                       cargo => { cargoMenu.Hide(); selectedCargo = cargo; EnterProxyDropTileSelect(); });
     }
 
-    /// <summary>貨物リストメニューを開いて CargoSelect 状態に入る（共通処理）。</summary>
+    /// <summary>貨物リストの情報パネルの見出し（降ろす・引き受け・代わりに降ろすで共通）。</summary>
+    private const string CargoInfoTitle = "貨物の情報";
+
+    /// <summary>
+    /// 貨物リストメニューを開いて CargoSelect 状態に入る（共通処理）。
+    /// cargoes は1体以上（呼び出し側が「2体以上のときだけ」リストを開く）。
+    /// </summary>
     private void ShowCargoList(CargoSelectPurpose purpose, Unit anchor, List<Unit> cargoes,
                                System.Action<Unit> onSelect)
     {
@@ -653,7 +685,12 @@ public class BattleController : MonoBehaviour
         if (anchor != context.unit)
             grid.AddHighlight(anchor.GridPosition, HighlightKind.TargetChoice);
 
-        cargoMenu.Show(grid.CellToWorld(anchor.GridPosition), grid.cellSize, cargoes, onSelect);
+        // 貨物の情報を右下に出す（2026-07-26 作者要望）。リストが出るのは貨物が2体以上のときだけで、
+        // 先頭の貨物から表示し、行にマウスを重ねるとその貨物へ切り替わる
+        unitInfo.Show(cargoes[0], CargoInfoTitle);
+
+        cargoMenu.Show(grid.CellToWorld(anchor.GridPosition), grid.cellSize, cargoes, onSelect,
+                       cargo => unitInfo.Show(cargo, CargoInfoTitle));
         state = State.CargoSelect;
         Debug.Log($"貨物を選択（{cargoes.Count} 体）。右クリック/ESCで戻る。");
     }
@@ -662,6 +699,7 @@ public class BattleController : MonoBehaviour
     private void EnterDropTileSelect()
     {
         menu.Hide();
+        unitInfo.Hide(); // マス選択へ移るので相手情報は消す（貨物1体で自動選択のときもここを通る）
         tileSelectPurpose = TileSelectPurpose.Drop;
         tileCandidates = RescueRules.GetDropCells(context.unit, selectedCargo, grid);
 
@@ -675,6 +713,7 @@ public class BattleController : MonoBehaviour
     /// <summary>「代わりに降ろす」の2段階目：運び手の隣で、選んだ貨物を置けるマスを選ぶ。</summary>
     private void EnterProxyDropTileSelect()
     {
+        unitInfo.Hide(); // マス選択へ移るので相手情報は消す（貨物1体で自動選択のときもここを通る）
         tileSelectPurpose = TileSelectPurpose.ProxyDrop;
         tileCandidates = RescueRules.GetDropCellsAround(proxyCarrier.GridPosition, selectedCargo, grid);
 
@@ -1052,6 +1091,7 @@ public class BattleController : MonoBehaviour
         cargoMenu.Hide();
         itemMenu.Hide();
         forecast.Hide();
+        unitInfo.Hide();
         grid.ResetAllHighlights();
         previewedEnemy = null;
         context = null;

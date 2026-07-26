@@ -79,19 +79,14 @@ public class DebugUnitPanel : MonoBehaviour
         }
     }
 
-    /// <summary>表示する行のリストを組み立てる（行数はユニットの状態で変わる）。</summary>
+    /// <summary>
+    /// 表示する行のリストを組み立てる（行数はユニットの状態で変わる）。
+    /// 基本の行（能力値・武器・持ち物・状態）は対象選択中のパネルと共通の UnitInfoLines を使い、
+    /// ここではデバッグ専用の行（敵AI・挟撃まわり）だけを足す。
+    /// </summary>
     private List<string> BuildLines()
     {
-        var lines = new List<string>();
-
-        string side = unit.Faction == Faction.Player ? "自軍" : "敵軍";
-        lines.Add($"{unit.Data.unitName}（{side}・{ClassName(unit)}）({unit.GridPosition.x},{unit.GridPosition.y})");
-        lines.Add($"HP {unit.CurrentHP}／{unit.MaxHP}");
-        lines.Add($"力{unit.Strength}　魔力{unit.Magic}　技{unit.Skill}　速さ{unit.Speed}");
-        lines.Add($"守備{unit.Defense}　魔防{unit.Resistance}　移動{unit.Move}");
-        lines.Add(BuildWeaponLine());
-        AddItemLines(lines);
-        lines.Add(BuildStateLine());
+        List<string> lines = UnitInfoLines.BuildBasic(unit);
 
         if (unit.Faction == Faction.Enemy)
             lines.Add(BuildAILine());
@@ -105,69 +100,11 @@ public class DebugUnitPanel : MonoBehaviour
         return lines;
     }
 
-    /// <summary>武器の行。「武器: 槍（前衛・威力5・射程1）」のような形式。</summary>
-    private string BuildWeaponLine()
-    {
-        WeaponData w = unit.Weapon;
-        if (w == null) return "武器: なし（攻撃不可）";
-
-        string cat = w.category == WeaponCategory.Melee ? "前衛" : "後衛";
-        string range = w.minRange == w.maxRange ? $"{w.maxRange}" : $"{w.minRange}〜{w.maxRange}";
-        return $"武器: {w.weaponName}（{cat}・威力{w.might}・射程{range}）";
-    }
-
-    /// <summary>持ち物の行を追加する（フェーズ22）。装備中の武器は「装備中」、道具は残り回数を添える。</summary>
-    private void AddItemLines(List<string> lines)
-    {
-        if (unit.Items.Count == 0)
-        {
-            lines.Add("持ち物: なし");
-            return;
-        }
-
-        lines.Add($"持ち物（{unit.Items.Count}／{UnitData.InventoryCapacity}）:");
-        foreach (ItemSlot slot in unit.Items)
-        {
-            string note = "";
-            if (slot.Item is ToolData) note = $"（残り{slot.UsesLeft}回）";
-            else if (slot.Item == unit.Weapon) note = "（装備中）";
-            lines.Add($"・{slot.Item.DisplayName}{note}");
-        }
-    }
-
-    /// <summary>
-    /// 状態の行。行動済みかどうかに、飛翔・救出・格納の状態を「・」でつなげる。
-    /// 飛翔中か地上かは全ユニットで必ず出す（2026-07-26 作者要望。飛べない兵種は常に「地上」）。
-    /// </summary>
-    private string BuildStateLine()
-    {
-        var parts = new List<string> { unit.HasActed ? "行動済み" : "未行動" };
-
-        if (unit.IsFlying) parts.Add($"飛翔中（残り{unit.FlightTurnsLeft}ターン）");
-        else parts.Add("地上");
-        if (unit.IsRescuing)
-        {
-            var names = new List<string>();
-            foreach (Unit cargo in unit.Carried) names.Add(cargo.Data.unitName);
-            parts.Add($"救出中: {string.Join("、", names)}");
-        }
-        if (unit.IsCarried) parts.Add("格納中（盤上にいない）");
-
-        return "状態: " + string.Join("・", parts);
-    }
-
     /// <summary>敵AIの行。性格と、待ち伏せ型なら挑発されたかどうかも出す。</summary>
     private string BuildAILine()
     {
         if (unit.AIProfile == EnemyAIProfile.Ambush)
             return unit.IsProvoked ? "AI: 待ち伏せ型（挑発済み＝突撃化）" : "AI: 待ち伏せ型（未挑発）";
         return "AI: 突撃型";
-    }
-
-    /// <summary>兵種の表示名。兵種データがあればその名前（例：剣闘士）、無ければ移動タイプ名。</summary>
-    private static string ClassName(Unit u)
-    {
-        if (u.Data.classData != null) return u.Data.classData.className;
-        return u.Class.DisplayName();
     }
 }
