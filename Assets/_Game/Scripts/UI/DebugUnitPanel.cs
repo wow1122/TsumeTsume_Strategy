@@ -58,7 +58,8 @@ public class DebugUnitPanel : MonoBehaviour
         List<string> lines = BuildLines();
 
         // 画面右上に描く（左上のターン表示・左下の地形情報・右下の戦闘予測と重ならない位置）
-        float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f; // +1 は見出しの行
+        // 文字行の下にマナ・気勢のゲージバー2本ぶんの高さを足す（フェーズ28）
+        float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f + GaugeBars.TotalHeight; // +1 は見出しの行
         var rect = new Rect(Screen.width - panelWidth - 12f, 10f, panelWidth, panelHeight);
 
         var boxStyle = new GUIStyle(GUI.skin.box)
@@ -77,6 +78,12 @@ public class DebugUnitPanel : MonoBehaviour
                                panelWidth - padding * 2f, lineHeight),
                       lines[i], lineStyle);
         }
+
+        // 文字行の下にマナ・気勢のゲージバーを描く（フェーズ28）
+        GaugeBars.Draw(new Rect(rect.x + padding,
+                                rect.y + padding + (lines.Count + 1) * lineHeight,
+                                panelWidth - padding * 2f, GaugeBars.TotalHeight),
+                       unit, fontSize);
     }
 
     /// <summary>

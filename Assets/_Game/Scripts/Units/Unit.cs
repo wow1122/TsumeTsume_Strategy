@@ -188,6 +188,62 @@ public class Unit : MonoBehaviour
         }
     }
 
+    // ── マナゲージ・気勢ゲージ（フェーズ28）──
+    // 技と速さが三すくみ補正でしか使われていなかったので、この2つに独自の役割を与えるための仕組み。
+    //  ・マナ … マップ開始時に「技」ぶん貯まっており、自陣営のフェイズ開始ごとに「魔力」に応じて増える。
+    //           1本（30）で必殺技（フェーズ29）。
+    //  ・気勢 … 敵を連続撃破すると、倒した側の全ユニットに「速さ÷2」ずつ配られる。
+    //           1本（100）で再行動（フェーズ30）。
+    // 蓄積量・可否のルール本体は Combat/GaugeRules に集約してある（CombatRules と同じ方針）。
+    //
+    // 【警告】飛翔と同じ理由で、ここは「純粋な状態変更」に保つこと。
+    // ログ・演出・行動消費は呼び出し側（TurnManager / BattleController）に置く。
+
+    /// <summary>マナゲージ（必殺技用）。Initialize で構築される。</summary>
+    public GaugeState Mana { get; private set; }
+
+    /// <summary>気勢ゲージ（再行動用）。Initialize で構築される。</summary>
+    public GaugeState Momentum { get; private set; }
+
+    /// <summary>このターンすでに再行動を使ったか（1ターン1回まで。フェーズ30）。</summary>
+    public bool UsedRefreshThisTurn { get; private set; }
+
+    /// <summary>マナを増やす（フェイズ開始時の自然増加）。</summary>
+    public void AddMana(int amount)
+    {
+        Mana?.Add(amount);
+    }
+
+    /// <summary>マナを1本使う。使えたら true。</summary>
+    public bool SpendMana()
+    {
+        return Mana != null && Mana.SpendStock();
+    }
+
+    /// <summary>気勢を増やす（連続撃破の配分）。</summary>
+    public void AddMomentum(int amount)
+    {
+        Momentum?.Add(amount);
+    }
+
+    /// <summary>気勢を1本使う。使えたら true。</summary>
+    public bool SpendMomentum()
+    {
+        return Momentum != null && Momentum.SpendStock();
+    }
+
+    /// <summary>再行動を使った印をつける（同じターンに2回は使えない）。</summary>
+    public void MarkRefreshUsed()
+    {
+        UsedRefreshThisTurn = true;
+    }
+
+    /// <summary>再行動の「1ターン1回」の印を戻す（自陣営のフェイズ開始時）。</summary>
+    public void ResetRefresh()
+    {
+        UsedRefreshThisTurn = false;
+    }
+
     // ── 敵AIの性格（Phase 17）──
     // StageData の配置ごとに指定され、BattleSetup が SetAIProfile で書き込む（敵のみ）。
     // 待ち伏せ型（Ambush）は IsProvoked が立つまで一切動かない。挑発の判定と
@@ -235,6 +291,13 @@ public class Unit : MonoBehaviour
         Resistance = data.resistance;
         Move = data.EffectiveMove;   // 移動力は兵種データ優先（無ければ旧 move）
         CurrentHP = MaxHP;
+
+        // ゲージを用意する（フェーズ28）。マナの初期値は技の値そのもので、
+        // 30 に達した分は GaugeState 側で1本に変換される（技31 → 1本＋1）
+        Mana = new GaugeState(GaugeRules.MaxMana, GaugeRules.MaxManaStock);
+        Momentum = new GaugeState(GaugeRules.MaxMomentum, GaugeRules.MaxMomentumStock);
+        Mana.Add(GaugeRules.InitialMana(this));
+        UsedRefreshThisTurn = false;
 
         // 所持品をコピーし（ランタイム状態）、一番上の武器を初期装備にする（フェーズ22）
         Items.Clear();

@@ -94,7 +94,8 @@ public class UnitInfoPanel : MonoBehaviour
 
         // 画面右下に描く（左上のターン表示・左下の地形情報と重ならない位置。
         // 行数は持ち物の数で変わるので、下端を固定して上へ伸ばす）
-        float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f; // +1 は見出しの行
+        // 文字行の下にマナ・気勢のゲージバー2本ぶんの高さを足す（フェーズ28）
+        float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f + GaugeBars.TotalHeight; // +1 は見出しの行
         var rect = new Rect(Screen.width - panelWidth - 12f,
                             Screen.height - panelHeight - 12f,
                             panelWidth, panelHeight);
@@ -115,5 +116,11 @@ public class UnitInfoPanel : MonoBehaviour
                                panelWidth - padding * 2f, lineHeight),
                       lines[i], lineStyle);
         }
+
+        // 文字行の下にマナ・気勢のゲージバーを描く（フェーズ28。デバッグ用パネルと同じ部品）
+        GaugeBars.Draw(new Rect(rect.x + padding,
+                                rect.y + padding + (lines.Count + 1) * lineHeight,
+                                panelWidth - padding * 2f, GaugeBars.TotalHeight),
+                       current, fontSize);
     }
 }

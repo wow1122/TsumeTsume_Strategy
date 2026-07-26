@@ -8,6 +8,8 @@ using UnityEngine;
 ///  ・挟撃（はさみ撃ち）：成立・無効化の判定は CombatRules に一元化してある
 ///  ・PredictTotalDamage は「この攻撃で合計何ダメージ入るか」の予測窓口。
 ///    敵AIの行動評価と、将来の戦闘予測UIが同じ数字を見る。
+///  ・気勢ゲージ（フェーズ28）：戦闘1回ごとに「相手を倒したか」を GaugeRules へ知らせる。
+///    連続撃破が続くと、倒した側の全ユニットに気勢が配られる。
 /// </summary>
 public static class CombatSystem
 {
@@ -32,6 +34,12 @@ public static class CombatSystem
 
         // 3) 挟撃（はさみ撃ち）
         TryPincer(attacker, defender, grid);
+
+        // 4) 気勢ゲージ（フェーズ28）：この戦闘で相手を倒したかを連鎖の判定へ渡す。
+        //    挟撃のとどめもこの戦闘の結果に含める（誰がとどめを刺したかは問わない＝作者合意）。
+        //    倒れた直後の defender は Destroy 済みで「== null」が true になるので、そこも撃破として扱う
+        bool killed = defender == null || !defender.IsAlive;
+        GaugeRules.NotifyBattleResult(attacker.Faction, killed);
     }
 
     /// <summary>
