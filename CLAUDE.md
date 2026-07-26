@@ -55,6 +55,15 @@ ClassData（ScriptableObject）38種（下級14職・上級24職。「兵種デ�
 行動は消費しないが1個でも動かすと取り消し不能になる。アセットの追加・変更は無し
 （既存の持ち物付きユニットと Stage_01 だけで確認できた）。
 
+続けて同日（2026-07-26）、**マナゲージ・気勢ゲージのロードマップ（フェーズ28〜30）を完走**
+（「マナゲージ・気勢ゲージの合意仕様」の節）。技と速さが三すくみ補正の1か所でしか使われて
+おらず個性として働いていなかったので、この2つに独自の役割を与えた:
+フェーズ28（ゲージの土台＝蓄積と表示・検証用アセット）→ 29（必殺技＝マナ1本でダメージ2倍）→
+30（再行動＝気勢1本で行動済みを解除）。いずれも Play 確認済み・コミット済み。
+**注意: 原案の閾値（技31以上・魔力20/30・気勢の最大100）は作者の指示でそのまま実装したため、
+現行の能力値（技1〜6・速さ1〜7・魔力0〜6）では Stage_01 で発動しない**。
+動作確認は専用の検証ステージ Stage_GaugeTest で行う。
+
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
 敵AI強化（Phase 16〜21）は `/home/wawo/.claude/plans/tsumetsume-strategy-ai-ai-ai-robust-quasar.md`、
@@ -86,6 +95,9 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - 座標は左下(0,0)、X右+、Y上+。グリッドは見た目(コード生成の四角)と論理データ(TileData[,])の二層
 - 仮素材（色付き四角＋IMGUI）で進行中。本番素材への差し替えは後
 - 能力値は7種（HP・力・魔力・技・速さ・守備・魔防）。物理=力vs守備、魔法=魔力vs魔防（地形防御は両方に加算）
+- マナゲージ（技→必殺技）・気勢ゲージ（速さ→再行動）: ユニットごとに2本のゲージを持つ。
+  蓄積量・使用可否・調整用の数値は Combat/GaugeRules に一元化
+  （「マナゲージ・気勢ゲージの合意仕様」の節。フェーズ28〜30）
 - 兵種の階層: 歩兵／騎乗兵（騎兵・飛行兵）。輸送隊は騎兵の一種（2026-07-11 合意）。
   騎兵向けルールは UnitClass.IsCavalry()（騎兵+輸送隊）、騎乗全体は IsMounted() を使う。
   兵種データ導入後（2026-07-18）、UnitClass は「移動タイプ」の分類として使われる
@@ -492,6 +504,64 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   貨物との交換・まとめ選択。判定を ExchangeRules に、UIを「2つの持ち物を並べて品を移すだけ」に
   保っているので、相手が「預かり枠」や「店の在庫」に変わっても同じ画面を使い回せる
 
+### マナゲージ・気勢ゲージの合意仕様（フェーズ28〜30・2026-07-26 作者合意）
+
+- **目的**: 技と速さは三すくみ補正（CombatRules.GetTriangleModifier）の1か所でしか使われておらず、
+  命中・回避・追撃・行動順が無いためキャラクターの個性としてほとんど働いていなかった。
+  **技＝マナゲージ→必殺技／速さ＝気勢ゲージ→再行動**という独自の役割をこの2つに与える
+- **数値の扱い（重要）**: 原案の閾値（技31以上・魔力20/30・気勢の最大100）は、
+  現行ユニットの能力値（技1〜6・速さ1〜7・魔力0〜6）だと一度も発動しない。
+  作者の判断で**原案の数値をそのまま実装し、検証は専用ステージ Stage_GaugeTest で行う**
+  （Stage_01 のバランスには手を触れない）。Stage_01 で遊べるようにするには、
+  ユニットの能力値を上げるか GaugeRules の定数を下げる調整が別途必要
+- **調整用の数値は Combat/GaugeRules.cs 先頭の1ブロックに集約**（敵AIの点数定数と同じ流儀）。
+  ScriptableObject 化は必要になってから
+
+**マナゲージ（技 → 必殺技）**
+
+- ゲージ値は 0〜30、貯まったゲージ（ストック）は **2本まで**保持できる
+- **初期値＝技の値**をマップ開始時にそのまま入れる（Unit.Initialize）。30 に達した分は
+  1本に変換され超過分が残る（技31 → 1本＋1／技30 → 1本＋0）
+- **上昇は自陣営のフェイズ開始時**（飛翔の Tick と同じ場所）。魔力30以上→+3、20以上→+2、それ未満→+1。
+  **ターン1は初期値のまま**（BattleSetup と TurnManager のどちらの Start が先に走るかを
+  Unity が保証しないため、「ターン2以降に増える」と明示的に決めている）
+- 30 に達したらストック+1、超過分は次のゲージへ繰り越す。**ストックが2本のときは30で頭打ち**（あふれた分は捨てる）
+- **必殺技**＝行動メニューの「攻撃」の直後に出る（攻撃できる相手がいて、かつマナが1本以上のとき）。
+  対象選択の流れは攻撃と同じで、**その一撃の最終ダメージが2.0倍**になる（GaugeRules.CriticalMultiplier）。
+  **行動を消費する**（攻撃と同じ）。**マナが減るのは対象を確定した瞬間**なので、対象選択で
+  右クリックして戻ってもマナは失われない
+- **倍率がかかるのは本人の一撃だけ。挟撃の追撃は等倍**。杖ユニットには出ない（攻撃対象がいないため）
+
+**気勢ゲージ（速さ → 再行動）**
+
+- ゲージ値は 0〜100、ストックは **2本まで**。初期値は全員 0
+- **連続撃破で貯まる**。戦闘1回（CombatSystem.ResolveAttack 1回。挟撃のとどめも含む）で
+  相手を倒したら連鎖+1、倒せなかったら連鎖リセット。フェイズの切り替わりでもリセット
+- **2連続目以降、撃破1回につき1回分**を配る（1体目では貯まらない）。
+  結果として貯まるのは「**連続で撃破した数 − 1**」回分（2体で1回分、3体で2回分…）。
+  ※初版は「2連続目に2回分さかのぼる」だったが、Play 確認後に作者が上記へ変更
+- 配る相手は**倒した側の陣営の全生存ユニット**（**格納中の貨物にも入る**ので
+  UnitRegistry.All を使う。GetUnits は盤上のユニットしか返さない）。1回分＝**各自の 速さ ÷ 2（切り捨て）**
+- **再行動**＝Idle で**行動済みの味方をクリック**すると「再行動」1項目のメニューが出る
+  （気勢が1本以上のとき）。攻撃の結果を見てから使うか決められるように、
+  行動を終えた後の入口にしてある（行動前に宣言する方式は作者が不採用）
+- 実行すると気勢1本を消費して行動済みを解除し、通常の移動選択に戻る。**ActionContext が
+  作り直されるので移動力は全回復**し、救出済み・飛翔済みなどの制限も引きずらない＝まっさらな1行動
+- **1ユニットにつき1ターン1回まで**（Unit.UsedRefreshThisTurn。自陣営フェイズ開始でリセット）
+- **味方全員が行動済みでも、再行動できる味方がいる間はターンが自動終了しない**
+  （TurnManager.NotifyUnitActed）。最後の1体が行動した瞬間に終わると使う隙が無くなるため。
+  終えるときは「ターン終了」ボタンを押す
+
+**共通**
+
+- **敵もゲージは貯まる**（蓄積のコードは陣営を区別しない）が、**敵AIは当面使わない**
+  （「敵は救出系／所持品／交換を使わない」と同じ前例。EnemyAI は無変更）。表示は敵味方どちらにも出す
+- ゲージの増減APIは**「純粋な状態変更」に保つ**（Unit.cs の飛翔まわりの警告コメントと同じ理由。
+  ログ・演出・行動消費は呼び出し側に置く）
+- UI: ユニット情報の文字行の下に、マナ（明るい緑）→ 気勢（明るい青）の順で2本のバー。
+  値10ごとに黒い縦線、右に「n本 値／最大」。右上のデバッグパネルと右下のユニット情報パネルの
+  **両方**に同じ部品（UI/GaugeBars）で描く
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -504,14 +574,18 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 ## コード構成（Assets/_Game/Scripts/）
 
-- Core/ … BattleController(操作の司令塔・11状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect。
+- Core/ … BattleController(操作の司令塔・12状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect/RefreshMenu。
   飛翔・着陸コマンドと飛翔の段階取り消しCancelFlightAndReturn・攻撃可能マス表示ComputeAttackCells・
   持ち物コマンド（2段階サブメニュー: 装備/外す/道具使用/捨てる・ホバー詳細は右下固定）・杖コマンド（回復対象選択→ExecuteHeal・杖が届くマス表示ComputeHealCells）・
   交換コマンド（相手選択→2列の交換画面。左右共用のBuildExchangeColumn/TransferItem・列見出しBuildExchangeHeader・行動は消費せず1個目でCommit）・
-  敵の行動範囲プレビューShowEnemyPreview・被ダメ確認の閲覧状態もここ),
+  敵の行動範囲プレビューShowEnemyPreview・被ダメ確認の閲覧状態もここ・
+  必殺技コマンド※フェーズ29〔攻撃と共通のEnterTargetSelectCore(critical)・マナ消費は対象確定の瞬間・criticalPending〕・
+  再行動コマンド※フェーズ30〔Idleで行動済みの味方をクリック→EnterRefreshMenu／ExecuteRefreshで気勢1本消費→SetActed(false)→EnterMoveSelect〕),
   ActionContext(1行動の文脈・移動取り消し・再移動予算・取り消し不能点Commit※引数keepHasMovedで移動済みを引き継ぐ〔交換用〕＋飛翔の中間点も引き上げる・飛翔の中間点MarkFlight),
   TurnManager(フェイズ・勝敗・ターン制限判定・簡易UI・フェイズ開始時の飛翔Tick・
-  敵AI思考ログの切替enemyAILog・敵フェイズ内の敵HasActed管理※フェイズ終了時に戻す),
+  敵AI思考ログの切替enemyAILog・敵フェイズ内の敵HasActed管理※フェイズ終了時に戻す・
+  フェイズ開始時のマナ加算/再行動フラグ戻し/連鎖リセット※ターン1は初期値のまま・
+  再行動できる味方がいる間は自動でターンを終えない※フェーズ30),
   BattleSetup(StageDataを読んで初期配置・開始時飛翔の適用・配置マスの兵種チェック)
 - Grid/ … GridManager(盤面・可変サイズApplyStageSize・カメラ自動フィットFitCamera・座標変換・
   多層ハイライト・地形適用ApplyTerrain・地形情報の画面下表示※騎乗差分も表示),
@@ -525,16 +599,24 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   ItemListMenu(持ち物リスト＋行動サブメニューの2列同時表示・選んだ品の性能を画面右下に固定表示・enabled で押せない行を灰色無効化・BattleControllerが自動生成。
   交換用の2列モードShowExchangeも持つ※両列とも持ち物リスト＋列見出し〔名前/HP・数/装備〕・ホバー詳細は両列有効・左右の回り込みは2列ぶんの幅で判定),
   BattleForecast(戦闘予測パネル・右下。対象選択に入った瞬間に即表示・三すくみ専用行・
-  被ダメ確認の逆向き予測ShowIncomingもここ・BattleControllerが自動生成),
+  被ダメ確認の逆向き予測ShowIncomingもここ・必殺技モード※フェーズ29〔倍率込みの数字・見出し「戦闘予測（必殺技）」〕・
+  BattleControllerが自動生成),
   DebugUnitPanel(デバッグ用ユニット情報パネル・右上。クリックしたユニットの能力値・武器・状態を表示。
   panelEnabledでOFF可・ゲーム状態は変えない・行の組み立てはUnitInfoLines共通＋敵AI/挟撃の行を追加),
   UnitInfoPanel(対象選択・貨物リストのユニット情報パネル・右下。盤面モード＝候補をホバーで切替／
   単体モード＝指定1体を表示※格納中の貨物用・BattleControllerが自動生成。2026-07-26),
-  UnitInfoLines(ユニット情報の表示行を組み立てる共通処理。名前/兵種/HP/能力値/装備武器/持ち物/状態)
+  UnitInfoLines(ユニット情報の表示行を組み立てる共通処理。名前/兵種/HP/能力値/装備武器/持ち物/状態),
+  GaugeBars(マナ・気勢のゲージバーを描く共通部品※フェーズ28。MonoBehaviourではない静的クラスで
+  UnitInfoLinesと同じ位置づけ。デバッグパネルとユニット情報パネルの両方が文字行の下で呼ぶ。
+  緑＝マナ/青＝気勢・値10ごとに黒い目盛り・右に「n本 値／最大」・塗りはTexture2D.whiteTextureに色を掛ける)
 - Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried・飛翔IsFlying/FlightTurnsLeft・
   AI性格AIProfile/挑発済みIsProvoked※永続・所持品Items/装備EquippedWeapon※Weapon窓口・Equip/Unequip/破棄DiscardItem・
   受け渡しTransferItemTo※ItemSlotごと移すので残り回数を引き継ぐ・装備中なら自動で武装解除・
-  回復Heal※最大HPクランプ・道具使用UseTool),
+  回復Heal※最大HPクランプ・道具使用UseTool・
+  マナ/気勢ゲージMana/Momentum※フェーズ28〔AddMana/SpendMana/AddMomentum/SpendMomentum・
+  Initializeで技ぶんの初期マナ〕・再行動の1ターン1回UsedRefreshThisTurn/MarkRefreshUsed/ResetRefresh※フェーズ30),
+  GaugeState(ゲージ1本ぶんのランタイム状態: 値Value + 本数Stock + 上限Max/MaxStock。
+  満タンでストックへ繰り上げ・超過分は繰り越し・ストック上限では頭打ち。ItemSlotと同じ素のC#クラス),
   ItemSlot(所持品1つのランタイム状態: item + 残り回数UsesLeft),
   UnitClass(移動タイプenum+IsMounted/IsCavalry/DisplayName),
   ClassTier(階級enum: 下級/上級), ClassTag(特攻タグ[Flags]: 騎馬/天馬/竜),
@@ -543,12 +625,20 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   ExchangeRules(交換の可否判定一元化※フェーズ26。隣接の相手探しFindExchangePartners・
   双方向の可否CanExchange・片方向CanGive・空きCanReceive・相手として成立するかIsExchangeablePair※同陣営/盤上/飛翔状態一致),
   UnitRegistry(全ユニットの名簿・輸送隊死亡フラグPlayerTransporterLost), Faction(陣営enum)
-- Combat/ … CombatSystem(攻撃解決・挟撃・ガード・反撃フック・PredictTotalDamage),
+- Combat/ … CombatSystem(攻撃解決・挟撃・ガード・反撃フック・PredictTotalDamage・
+  必殺技の倍率適用※フェーズ29〔引数critical・本体の一撃だけ倍率で挟撃は等倍〕・
+  戦闘1回ごとの撃破通知→GaugeRules※フェーズ28〔挟撃のとどめも含む〕),
+  GaugeRules(マナ・気勢の数値と可否の一元判定※フェーズ28〜30。調整用の定数は先頭1ブロックに集約
+  〔マナ最大30・2本/魔力20で+2・30で+3/必殺技の倍率2.0/気勢最大100・2本/2連続目から/速さ÷2〕。
+  InitialMana/ManaGainPerTurn/TickMana/MomentumGain/NotifyBattleResult※連鎖の管理/ResetChain/
+  CanUseCritical/CanRefresh/AnyoneCanRefresh。staticはRuntimeInitializeOnLoadMethodでリセット),
   CombatRules(射程・三すくみ・挟撃可否・飛翔の戦闘制限CanEngageの一元判定・対空判定IsAntiAirCapable※杖除外・Phase 25・
   攻撃できる立ち位置一覧GetAttackFromCells・挟撃の反対側マスGetPincerOppositeCell・
   仮定位置ガード判定WouldGuardAt・ガード役かどうかIsGuardingSomeone※Phase 18),
   StaffRules(杖の可否・回復対象・回復量の一元判定※Phase 25。HasStaffEquipped/TryGetStaffRange/FindHealTargets/HealAmount),
-  DamageCalculator(物理/魔法分岐・DamageBreakdown内訳・飛翔中は地形防御なし),
+  DamageCalculator(物理/魔法分岐・DamageBreakdown内訳・飛翔中は地形防御なし・
+  ダメージ倍率multiplier※フェーズ29〔BaseTotal＝倍率前/Total＝倍率後・切り捨て。
+  structの既定値0は等倍として扱う。引数は既定1なので既存の呼び出しは挙動不変〕),
   WeaponType(7種+魔法ダメージ判定IsMagicDamage+日本語種類名DisplayName), WeaponCategory(前衛/後衛)
 - Data/ … UnitData(7能力値+兵種データclassData+所持品items※上限InventoryCapacity=7。移動タイプ/移動力は
   EffectiveClass/EffectiveMove、初期所持品/装備は GetInitialItems/GetInitialWeapon で解決・武器不一致はOnValidateで警告),
@@ -585,7 +675,14 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   W_Sword, W_Axe, W_Lance, W_Bow, W_Tome, W_Live（杖・ライブ。Phase 25）,
   Tool_Vulnerary（傷薬。道具・Phase 24）, Stage_Test, Stage_01, Stage_AITest_Path,
   Stage_AITest_Ambush, Stage_AITest_Pincer, Stage_AITest_Guard, Stage_AITest_Flight,
-  Stage_AITest_Focus, TerrainTable。
+  Stage_AITest_Focus, TerrainTable,
+  ゲージ検証用（フェーズ28。すべて兵種＝剣闘士・武器＝剣）:
+  Unit_Test_Mana31（検証・技31＝開始時1本＋1）, Unit_Test_Mana_Mag20（毎ターン+2）,
+  Unit_Test_Mana_Mag30（毎ターン+3）, Unit_Test_Speed50（撃破1回分ごとに+25・力20で弱敵を一撃）,
+  Unit_Test_Enemy_Weak（HP1・守備0＝連続撃破を作る）,
+  Unit_Test_Enemy_Tough（HP99・力0・守備5・待ち伏せ型＝倒せないので連鎖リセットと必殺技の確認用）,
+  Stage_GaugeTest（12×10・全平地・ターン制限なし。y6に硬敵/弱敵6体/硬敵、y5にその真下へ味方7体。
+  弱敵を5体連続撃破すると気勢がちょうど1本＝100 貯まる）。
   Classes/ サブフォルダに兵種 ClassData 38種: Class_Tactician（軍師）〜Class_MaligKnight（魔竜騎兵）。
   ※Unit_Player_AxeCavalry / Unit_Enemy_AxeCavalry はファイル名こそ旧名だが中身は槍騎兵（兵種データ導入時に持ち替え））
 シーン: Assets/_Game/Scenes/BattleScene.unity
@@ -600,9 +697,19 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 **所持品（インベントリ）ロードマップ（Phase 22〜25）も完走**（2026-07-19）。
 さらに 2026-07-26 に、ユニット情報パネル・救出系の仕様変更2点と、
 持ち越し候補だった**交換（フェーズ26〜27）を完了**（「交換の合意仕様」の節）。
+同日、**マナゲージ・気勢ゲージのロードマップ（フェーズ28〜30）も完走**
+（「マナゲージ・気勢ゲージの合意仕様」の節）。
 
 **現在アクティブなロードマップは無い。次は作者と次期ロードマップの優先度を相談してから着手する**
 （下の「持ち越し候補」から作者が選ぶ。フェーズ着手は明示の合図をもらってから）。
+
+**ゲージまわりの宿題（作者と相談すること）**:
+- Stage_01 では両ゲージとも発動しない（原案の閾値のまま実装したため）。
+  遊べるようにするなら、ユニットの能力値を上げるか GaugeRules の定数を下げる調整が要る
+- 必殺技は現状「全兵種共通のダメージ2倍」。兵種ごとに違う必殺技にするなら
+  ClassData に効果データを持たせる段階へ進む
+- 検証が終わったら BattleScene の Stage を Stage_01 に戻して Ctrl+S
+  （テスト中のシーン差し替えはコミットしない運用）
 
 ### 所持品（インベントリ）ロードマップ（Phase 22〜25・2026-07-19 キックオフ〜完走）
 
@@ -649,6 +756,12 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 ### 持ち越し候補（次期ロードマップの相談用。優先度は作者が決める）
 
 過去の合意で先送りになった項目のメモ:
+- **兵種ごとの必殺技**（フェーズ29 は全兵種共通のダメージ2倍。ClassData に効果データを足して
+  兵種の個性を出す段階。効果の型を数種類作って Stage_01 に出る兵種へ割り当てる案が有力）
+- **能力値スケールの見直し**（マナ・気勢の閾値が現行の能力値では届かない。育成要素を入れて
+  能力値が20〜30まで伸びれば自然に解決するが、それまでは Stage_01 で発動しない）
+- **敵AIのゲージ使用**（蓄積は陣営を区別せず動いているので、EnemyAI に評価を足せば使える。
+  「敵は救出系／所持品／交換を使わない」と同じ前例で当面は不使用）
 - 特効ダメージ＋特効武器（所持品の持ち替えが活きる。兵種の特攻タグ〔騎馬/天馬/竜〕が前提として導入済み）
 - 輸送隊への預かり（部隊倉庫。交換は 2026-07-26 に実装済み＝「交換の合意仕様」の節。
   相手を「盤上の1体」から「部隊共有の置き場」に差し替えれば同じ交換画面を使い回せる）
