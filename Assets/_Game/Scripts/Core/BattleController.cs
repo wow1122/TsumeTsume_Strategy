@@ -40,9 +40,10 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  攻撃の対象選択中、対象にマウスを重ねると戦闘予測（BattleForecast）が画面右下に出る。
 ///  「降ろす」系の対象・マスは貨物の兵種で判定する（騎乗の貨物は山に降ろせない等）。
 ///
-/// フェーズ26（交換）で追加された流れ：
-///  「交換」→ 隣接する同陣営のユニットを選択【UnitTargetSelect】→ 交換画面【ExchangeSelect】で
-///  持ち物をクリックして1個ずつ相手へ渡す → 右クリック/ESC で交換を終えて行動メニューへ。
+/// フェーズ26〜27（交換）で追加された流れ：
+///  「交換」→ 隣接する同陣営のユニットを選択【UnitTargetSelect】→ 交換画面【ExchangeSelect】。
+///  交換画面は2列（左＝自分の持ち物・右＝相手の持ち物）で、どちらの行もクリックで反対側へ移る
+///  （双方向・1回の交換で何個でも）→ 右クリック/ESC で交換を終えて行動メニューへ。
 ///  行動は消費しない（持ち物の操作と同じ）ので、そのまま攻撃・持ち物・待機を選べる。
 ///  ただし1個でも動かすと取り消し不能になる（救出・引き受けと同じ。相手の状態を
 ///  変えてしまうため巻き戻せない）。1個も動かさずに閉じたときは何も起きていない扱い。
@@ -544,13 +545,13 @@ public class BattleController : MonoBehaviour
         if (unit.Items.Count > 0)
             commands.Add(new ActionMenu.Entry("持ち物", EnterItemSelect));
 
-        // 交換：隣接する同陣営のユニットと持ち物をやり取りする（フェーズ26）。
+        // 交換：隣接する同陣営のユニットと持ち物をやり取りする（フェーズ26〜27）。
         // 行動は消費しない（合意(a)＝持ち物の操作と同じ）が、1個でも動かすと
         // その行動は取り消せなくなる（合意(c)＝救出・引き受けと同じ理屈）。
         // 救出・引き受け・降ろすの後は上で別メニューに分岐済みなのでここには来ない＝既存の制限を保つ。
-        // ※フェーズ26の交換画面は「渡す」専用なので候補も渡せる相手だけに絞る
-        //   （フェーズ27で双方向にしたら ExchangeRules.FindExchangePartners へ差し替える）
-        List<Unit> exchangeTargets = ExchangeRules.FindGiveTargets(unit, grid);
+        // 候補は双方向で判定する（フェーズ27）＝「渡せる」か「もらえる」かのどちらかができれば出す。
+        // 持ち物が7個でいっぱいの相手や、持ち物0個の自分（輸送隊など）でも交換を開ける
+        List<Unit> exchangeTargets = ExchangeRules.FindExchangePartners(unit, grid);
         if (exchangeTargets.Count > 0)
             commands.Add(new ActionMenu.Entry("交換",
                 () => EnterUnitTargetSelect(UnitSelectPurpose.Exchange, exchangeTargets)));
@@ -1083,18 +1084,19 @@ public class BattleController : MonoBehaviour
         return lines;
     }
 
-    // ===== 交換（隣接する味方との持ち物の受け渡し・フェーズ26）=====
+    // ===== 交換（隣接する味方との持ち物の受け渡し・フェーズ26〜27）=====
     // 「交換」→ 相手を選ぶ（UnitTargetSelect。右下に相手の情報が出る）→ 交換画面（ExchangeSelect）。
+    // 交換画面は2列：左＝自分の持ち物、右＝相手の持ち物。どちらの行もクリックで反対側へ移る
+    // （双方向・1回の交換で何個でも。合意(b)）。受け側がいっぱい（7個）の行は灰色で押せない。
     // 行動は消費しないので、閉じたあとも同じ行動で攻撃・持ち物・待機ができる（合意(a)）。
     // ただし1個でも動かしたら取り消し不能点を打つ（合意(c)）＝以後、移動の取り消しは
     // 交換したマスまでしか戻らず、選択解除もできない（相手の状態を変えたので巻き戻せない）。
-    // フェーズ26は自分の持ち物1列の「渡す」専用。フェーズ27で相手の列を足して双方向にする。
 
     /// <summary>
-    /// 交換の相手が決まった：自分の持ち物リストを開き、クリックで1個ずつ相手へ渡す。
-    /// 相手の能力値・持ち物・状態は画面右下に出したままにする（単体モードのユニット情報パネル）。
-    /// 相手の持ち物が渡すたびに増えていくのが右下で確認できるので、フェーズ26では
-    /// 品の性能詳細（同じ右下を使う）は付けない＝表示の取り合いを避ける。
+    /// 交換の相手が決まった：2列の交換画面を開く。
+    /// 相手の能力値は列の見出し（名前・HP・持ち物の数・装備武器）で見せるので、
+    /// 画面右下は品の性能詳細（ホバー表示）に譲る＝ユニット情報パネルは消す
+    /// （降ろすマスの選択に移るときと同じ作法）。
     /// </summary>
     private void EnterExchange(Unit partner)
     {
@@ -1105,34 +1107,56 @@ public class BattleController : MonoBehaviour
         grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
         grid.AddHighlight(partner.GridPosition, HighlightKind.TargetChoice);
 
-        unitInfo.Show(partner, UnitInfoTitle(UnitSelectPurpose.Exchange));
-
+        unitInfo.Hide();
         itemMenu.Hide(); // 直前のホバー詳細が右下に残らないように、いったん片付けてから開く
-        itemMenu.Show(grid.CellToWorld(context.unit.GridPosition), grid.cellSize, BuildExchangeEntries());
-        state = State.ExchangeSelect;
+        ShowExchangeColumns();
 
         Debug.Log($"{context.unit.Data.unitName} は {partner.Data.unitName} と持ち物を交換する" +
-                  $"（相手 {partner.Items.Count}／{UnitData.InventoryCapacity}。右クリック/ESCで終了）");
+                  $"（自分 {context.unit.Items.Count}／{UnitData.InventoryCapacity}・" +
+                  $"相手 {partner.Items.Count}／{UnitData.InventoryCapacity}。右クリック/ESCで終了）");
     }
 
     /// <summary>
-    /// 交換画面の行を作る（フェーズ26＝自分の持ち物＝渡せる品の一覧）。
-    /// ラベルの補足（装備中／装備不可／残りN）は持ち物リストと同じ書き方に揃える。
-    /// 相手がいっぱい（7個）のときは全部の行を灰色の無効行にする。
+    /// 交換の2列を（作り）直して表示する。品を1つ動かすたびに呼ぶので、
+    /// 持ち物の数・装備の表示・押せるかどうか（受け側の空き）がその場で更新される。
     /// </summary>
-    private List<ItemListMenu.Entry> BuildExchangeEntries()
+    private void ShowExchangeColumns()
+    {
+        Unit unit = context.unit;
+
+        itemMenu.ShowExchange(
+            grid.CellToWorld(unit.GridPosition), grid.cellSize,
+            BuildExchangeColumn(unit, exchangePartner), BuildExchangeHeader(unit),
+            BuildExchangeColumn(exchangePartner, unit), BuildExchangeHeader(exchangePartner));
+
+        state = State.ExchangeSelect;
+    }
+
+    /// <summary>
+    /// 交換の1列を作る：from の持ち物を並べ、クリックすると to へ移る。
+    /// ラベルの補足（装備中／装備不可／残りN）は持ち物リストと同じ書き方に揃える
+    /// （装備できるかは、その列の持ち主 from の兵種で判定する）。
+    /// to がいっぱい（7個）なら全部の行を灰色の無効行にする。
+    /// 持ち物が無い列は「（持ち物なし）」の無効行1つにする（列が空だと何も描かれず分からないため）。
+    /// </summary>
+    private List<ItemListMenu.Entry> BuildExchangeColumn(Unit from, Unit to)
     {
         var entries = new List<ItemListMenu.Entry>();
-        Unit unit = context.unit;
-        bool canGive = ExchangeRules.CanReceive(exchangePartner);
 
-        foreach (ItemSlot slot in unit.Items)
+        if (from.Items.Count == 0)
+        {
+            entries.Add(new ItemListMenu.Entry("（持ち物なし）", false, null));
+            return entries;
+        }
+
+        bool canMove = ExchangeRules.CanReceive(to);
+        foreach (ItemSlot slot in from.Items)
         {
             string label = slot.Item.DisplayName;
             if (slot.Item is WeaponData weapon)
             {
-                if (weapon == unit.EquippedWeapon) label += "（装備中）";
-                else if (!CanEquip(unit, weapon)) label += "（装備不可）";
+                if (weapon == from.EquippedWeapon) label += "（装備中）";
+                else if (!CanEquip(from, weapon)) label += "（装備不可）";
             }
             else if (slot.Item is ToolData)
             {
@@ -1140,25 +1164,47 @@ public class BattleController : MonoBehaviour
             }
 
             ItemSlot s = slot; // ラムダが最後の値を掴まないようローカルに退避
-            entries.Add(new ItemListMenu.Entry(label, canGive, () => GiveItemToPartner(s)));
+            Unit f = from, t = to;
+            entries.Add(new ItemListMenu.Entry(label, canMove, () => TransferItem(s, f, t),
+                                               BuildItemDetail(slot)));
         }
 
         return entries;
     }
 
     /// <summary>
-    /// 品を1つ相手へ渡す。行動は消費しないが、最初の1個で取り消し不能点を打つ。
-    /// 装備中の武器を渡した場合は Unit 側で自動的に武装解除される。
+    /// 交換の列の見出し（名前／HPと持ち物の数／装備武器／いっぱいの注記）。
+    /// 装備の行があるので「武器を全部渡して武装無しになった」ことがその場で分かる。
+    /// </summary>
+    private List<string> BuildExchangeHeader(Unit unit)
+    {
+        var lines = new List<string>
+        {
+            unit.Data.unitName,
+            $"HP {unit.CurrentHP}／{unit.MaxHP}　持ち物 {unit.Items.Count}／{UnitData.InventoryCapacity}",
+            $"装備: {(unit.EquippedWeapon != null ? unit.EquippedWeapon.DisplayName : "なし")}",
+        };
+
+        // いっぱいのときだけ注記を足す（灰色で押せない理由がその場で分かるように）
+        if (!ExchangeRules.CanReceive(unit)) lines.Add("※いっぱい（受け取れない）");
+
+        return lines;
+    }
+
+    /// <summary>
+    /// 品を1つ、from から to へ移す（渡す・もらうの両方向で共通）。
+    /// 行動は消費しないが、最初の1個で取り消し不能点を打つ。
+    /// 装備中の武器なら Unit 側で自動的に武装解除される。
     /// 残り使用回数は ItemSlot ごと移るので引き継がれる（満タンに戻らない）。
     /// </summary>
-    private void GiveItemToPartner(ItemSlot slot)
+    private void TransferItem(ItemSlot slot, Unit from, Unit to)
     {
-        Unit unit = context.unit;
+        Unit self = context.unit;
         string name = slot.Item.DisplayName;
         string uses = slot.Item is ToolData ? $"（残り{slot.UsesLeft}）" : "";
-        bool wasEquipped = slot.Item == unit.EquippedWeapon;
+        bool wasEquipped = slot.Item == from.EquippedWeapon;
 
-        unit.TransferItemTo(slot, exchangePartner);
+        from.TransferItemTo(slot, to);
 
         // 最初の1個を動かした時点で「戻れる限界」を作る（救出・引き受けと同じ）。
         // 交換は行動を消費せず、この後そのまま攻撃できるので、移動済みは引き継ぐ
@@ -1166,21 +1212,16 @@ public class BattleController : MonoBehaviour
         if (exchangedCount == 0) context.Commit(keepHasMoved: true);
         exchangedCount++;
 
-        Debug.Log($"{unit.Data.unitName} は {exchangePartner.Data.unitName} に {name}{uses} を渡した" +
-                  $"（自分 {unit.Items.Count}／{UnitData.InventoryCapacity} → " +
-                  $"相手 {exchangePartner.Items.Count}／{UnitData.InventoryCapacity}）" +
-                  (wasEquipped ? "（装備していたので武装解除された）" : ""));
+        int cap = UnitData.InventoryCapacity;
+        string action = (from == self)
+            ? $"{self.Data.unitName} は {exchangePartner.Data.unitName} に {name}{uses} を渡した"
+            : $"{self.Data.unitName} は {exchangePartner.Data.unitName} から {name}{uses} を受け取った";
 
-        // 渡す品が無くなったら交換画面を閉じる（フェーズ26は「渡す」専用のため）。
-        // 残っていればリストを作り直す＝相手がいっぱいになった瞬間に灰色へ変わる
-        if (unit.Items.Count == 0)
-        {
-            Debug.Log($"{unit.Data.unitName} の持ち物が無くなった");
-            EndExchange();
-            return;
-        }
+        Debug.Log(action +
+                  $"（自分 {self.Items.Count}／{cap}・相手 {exchangePartner.Items.Count}／{cap}）" +
+                  (wasEquipped ? $"（{from.Data.unitName} の装備だったので武装解除された）" : ""));
 
-        itemMenu.Show(grid.CellToWorld(unit.GridPosition), grid.cellSize, BuildExchangeEntries());
+        ShowExchangeColumns(); // 両列を作り直す＝数・装備・押せるかどうかが即座に変わる
     }
 
     /// <summary>

@@ -42,22 +42,6 @@ public static class ExchangeRules
     }
 
     /// <summary>
-    /// user が「渡す」ことだけはできる隣接ユニットの一覧（フェーズ26の暫定）。
-    /// フェーズ26の交換画面は自分の持ち物1列（渡す専用）なので、
-    /// 「もらうことしかできない相手」を選んでも何もできず行き止まりになる。それを防ぐための絞り込み。
-    /// フェーズ27で2列（双方向）にしたら FindExchangePartners に差し替えて、この関数は削除する。
-    /// </summary>
-    public static List<Unit> FindGiveTargets(Unit user, GridManager grid)
-    {
-        var result = new List<Unit>();
-        foreach (Unit neighbor in GetAdjacentUnits(user.GridPosition, grid))
-        {
-            if (IsExchangeablePair(user, neighbor) && CanGive(user, neighbor)) result.Add(neighbor);
-        }
-        return result;
-    }
-
-    /// <summary>
     /// user と partner の間で、どちらかの向きに1個でも動かせるか（＝「交換」コマンドを出すか）。
     /// </summary>
     public static bool CanExchange(Unit user, Unit partner)
