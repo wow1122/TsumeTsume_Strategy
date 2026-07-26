@@ -13,8 +13,9 @@ using UnityEngine.InputSystem; // 新 Input System
 ///
 /// Phase 11（救出）で追加された流れ：
 ///  「救出」  → 対象の味方を選択【UnitTargetSelect】→ 格納 → 残り移動力で再移動 → 待機
-///  「降ろす」→ 隣の空きマスを選択【TileSelect】→ 再配置して行動終了
+///  「降ろす」→ 隣の空きマスを選択【TileSelect】→ 再配置 → 残り移動力で再移動 → 待機
 ///  「引き受け」→ 隣の救出中の味方を選択 → 貨物をもらう → 降ろす/待機のみ
+///  （引き受けた行動中に降ろせるのは、引き受けを実行したマスの上にいるときだけ）
 ///  「代わりに降ろす」→ 救出中の味方を選択 → その隣の空きマスを選択 → 行動終了（歩兵専用）
 ///  救出・引き受けを実行すると「取り消し不能」になり、以後は選択解除できない
 ///  （選択解除できると移動力を使い直せてしまうため）。
@@ -37,6 +38,12 @@ using UnityEngine.InputSystem; // 新 Input System
 /// Phase 15 の追加：
 ///  攻撃の対象選択中、対象にマウスを重ねると戦闘予測（BattleForecast）が画面右下に出る。
 ///  「降ろす」系の対象・マスは貨物の兵種で判定する（騎乗の貨物は山に降ろせない等）。
+///
+/// 2026-07-26 の仕様変更（救出系の2点）：
+///  ・引き受けた行動中に「降ろす」を選べるのは、引き受けを実行したマスの上にいるときだけ
+///    （引き受け後に移動した先では降ろせない。引き受けたマスへ戻れば また選べる）。
+///  ・「降ろす」の後も、使っていない移動力が残っていればその範囲で再移動できる
+///    （降ろした時点では行動終了にならず、待機で確定する。「代わりに降ろす」は従来どおり即終了）。
 /// </summary>
 public class BattleController : MonoBehaviour
 {
@@ -341,9 +348,9 @@ public class BattleController : MonoBehaviour
             grid.AddHighlight(c, HighlightKind.MoveRange);
 
         // 攻撃可能マス（2026-07-18 作者要望）: 立てるマスから武器で届くマスを赤で示す。
-        // 救出・引き受けの後は攻撃・杖コマンド自体が出ない（BuildCommands と同じ条件）ので表示しない。
+        // 救出・引き受け・降ろすの後は攻撃・杖コマンド自体が出ない（BuildCommands と同じ条件）ので表示しない。
         // 杖ユニットは攻撃できないので、攻撃フリンジの代わりに「杖が届くマス」を緑で示す（Phase 25・排他）
-        if (!context.usedRescue && !context.usedTakeOver)
+        if (!context.usedRescue && !context.usedTakeOver && !context.usedDrop)
         {
             if (StaffRules.HasStaffEquipped(unit))
             {
@@ -422,11 +429,25 @@ public class BattleController : MonoBehaviour
             return commands;
         }
 
+        // 降ろすを使った後は「再移動 → 待機」だけ（2026-07-26 作者仕様：降ろしても残りの移動力は使える）。
+        // 救出の後と同じ扱いで、飛行兵は飛翔もできる（飛翔は行動を消費しないため）。
+        // 引き受けの後に降ろした場合もここに来るので、usedTakeOver より先に判定する
+        if (context.usedDrop)
+        {
+            if (unit.Class == UnitClass.Flier && !unit.IsFlying)
+                commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
+            commands.Add(new ActionMenu.Entry("待機", FinishAction));
+            return commands;
+        }
+
         // 引き受けを使った後は「降ろす / 待機」だけ（合意(f)）。
+        // 降ろせるのは引き受けを実行したマスの上にいるときだけ（2026-07-26 作者仕様：
+        // 引き受けた後に移動した先では降ろせない。引き受けたマスへ戻れば また降ろせる）。
         // 空中（飛翔中）で引き受けた場合は降ろせないので「待機」のみ（作者仕様 2026-07-12）
         if (context.usedTakeOver)
         {
-            if (unit.IsRescuing && !unit.IsFlying && RescueRules.GetDroppableCargoes(unit, grid).Count > 0)
+            if (context.IsAtTakeOverCell && unit.IsRescuing && !unit.IsFlying
+                && RescueRules.GetDroppableCargoes(unit, grid).Count > 0)
                 commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
@@ -689,7 +710,7 @@ public class BattleController : MonoBehaviour
         Unit unit = context.unit;
         takeOverCarrier.RemoveCargo(cargo);
         unit.StoreUnit(cargo);
-        context.usedTakeOver = true;
+        context.MarkTakeOver(); // 引き受けたマスも記録（この行動で降ろせるのはこのマスの上だけ）
         context.Commit();
 
         Debug.Log($"{unit.Data.unitName} は {takeOverCarrier.Data.unitName} から {cargo.Data.unitName} を引き受けた");
@@ -773,16 +794,26 @@ public class BattleController : MonoBehaviour
         else ShowMoveRange();
     }
 
-    /// <summary>降ろすを実行：選んだ貨物を指定マスへ再配置し、行動を終える。</summary>
+    /// <summary>
+    /// 降ろすを実行：選んだ貨物を指定マスへ再配置し、残り移動力での再移動へ移る
+    /// （2026-07-26 作者仕様：降ろした後も、使っていない移動力があればその範囲で動ける）。
+    /// 救出のときと同じく、ここから先は取り消し不能（移動力の使い直しを防ぐため）。
+    /// </summary>
     private void ExecuteDrop(Vector2Int cell)
     {
         Unit unit = context.unit;
         Unit cargo = selectedCargo;
         unit.ReleaseUnitAt(cargo, grid, cell);
         cargo.SetActed(true); // 降ろされたユニットはそのターン行動済み（合意(b)）
+        context.MarkDrop();
+        context.Commit(); // ここが新しい「戻れる限界」になる
 
-        Debug.Log($"{unit.Data.unitName} は {cargo.Data.unitName} を {cell} に降ろした");
-        FinishAction(); // 降ろしたら行動終了（作者合意）
+        Debug.Log($"{unit.Data.unitName} は {cargo.Data.unitName} を {cell} に降ろした" +
+                  $"（再移動できる移動力：{context.RemainingMove}）");
+
+        ShowMoveRange();
+        if (reachableCells.Count == 0)
+            OpenCommandMenu(); // 動けるマスが無ければそのまま待機メニューへ
     }
 
     /// <summary>代わりに降ろすを実行：運び手の選んだ貨物を指定マスへ再配置し、自分の行動を終える。</summary>

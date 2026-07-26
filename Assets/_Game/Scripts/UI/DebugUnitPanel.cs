@@ -135,12 +135,16 @@ public class DebugUnitPanel : MonoBehaviour
         }
     }
 
-    /// <summary>状態の行。行動済みかどうかに、飛翔・救出・格納の状態を「・」でつなげる。</summary>
+    /// <summary>
+    /// 状態の行。行動済みかどうかに、飛翔・救出・格納の状態を「・」でつなげる。
+    /// 飛翔中か地上かは全ユニットで必ず出す（2026-07-26 作者要望。飛べない兵種は常に「地上」）。
+    /// </summary>
     private string BuildStateLine()
     {
         var parts = new List<string> { unit.HasActed ? "行動済み" : "未行動" };
 
         if (unit.IsFlying) parts.Add($"飛翔中（残り{unit.FlightTurnsLeft}ターン）");
+        else parts.Add("地上");
         if (unit.IsRescuing)
         {
             var names = new List<string>();

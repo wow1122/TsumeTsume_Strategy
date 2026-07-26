@@ -24,7 +24,34 @@ public class ActionContext
 
     // ── 救出系コマンドの「1回の行動につき1回」制限（仕様8）──
     public bool usedRescue;     // 救出を使ったか（以後この行動は再移動→待機のみ。飛行兵は飛翔も可）
-    public bool usedTakeOver;   // 引き受けを使ったか（以後は降ろす/待機のみ＝合意(f)）
+
+    /// <summary>引き受けを使ったか（以後は降ろす/待機のみ＝合意(f)）。</summary>
+    public bool usedTakeOver { get; private set; }
+
+    /// <summary>引き受けを実行したマス（usedTakeOver のときだけ意味を持つ）。</summary>
+    public Vector2Int takeOverCell { get; private set; }
+
+    /// <summary>降ろすを使ったか（以後は残り移動力での再移動→待機のみ。2026-07-26 作者仕様）。</summary>
+    public bool usedDrop { get; private set; }
+
+    /// <summary>引き受けの使用と、それを実行したマスを記録する（ExecuteTakeOver から呼ぶ）。</summary>
+    public void MarkTakeOver()
+    {
+        usedTakeOver = true;
+        takeOverCell = unit.GridPosition;
+    }
+
+    /// <summary>
+    /// 引き受けを実行したマスの上にいるか。
+    /// 引き受けた行動中に「降ろす」を選べるのはこのマスの上だけ（2026-07-26 作者仕様）。
+    /// </summary>
+    public bool IsAtTakeOverCell => unit.GridPosition == takeOverCell;
+
+    /// <summary>降ろすの使用を記録する（ExecuteDrop から呼ぶ）。</summary>
+    public void MarkDrop()
+    {
+        usedDrop = true;
+    }
 
     // ── 飛翔（Phase 14）──
     // 飛翔を使うと「その時点の位置・消費コスト・移動済みか」を柔らかい中間点として覚える。
