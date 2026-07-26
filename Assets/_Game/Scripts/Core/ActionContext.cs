@@ -92,6 +92,11 @@ public class ActionContext
     // Commit 時点の移動コスト。取り消しはこの値まで巻き戻す（0までではなく）
     private int committedCost;
 
+    // Commit 時点で「もう移動していた」か。取り消し（RevertMove）でこの値へ戻す。
+    // 救出・引き受け・降ろすは false（＝従来どおり移動済みを解除する）。
+    // 交換だけ true になりうる（下の Commit の説明を参照）。
+    private bool committedHasMoved;
+
     public ActionContext(Unit unit)
     {
         this.unit = unit;
@@ -101,15 +106,37 @@ public class ActionContext
     }
 
     /// <summary>
-    /// ここまでの移動を確定して「取り消し不能点」を作る（救出・引き受けの実行時に呼ぶ）。
+    /// ここまでの移動を確定して「取り消し不能点」を作る（救出・引き受け・降ろす・交換の実行時に呼ぶ）。
     /// 以後の RevertMove は、行動開始位置ではなく「この時点の位置」へ戻る。
+    ///
+    /// keepHasMoved（フェーズ26で追加・既定 false ＝ 従来の3か所は挙動不変）：
+    /// 通常は「この位置から再出発する」意味で移動済みを解除する。ところが交換は
+    /// 行動を消費しない＝確定した後にそのまま攻撃できるので、ここで移動済みを解除すると
+    /// 「移動した弓兵が交換すると、移動していないことになって射程が伸びる」
+    /// （後衛武器は移動後だと最小射程ちょうど）という抜け穴になる。
+    /// 交換からは keepHasMoved: true で呼び、移動済みを引き継ぐ。
+    /// 飛翔が flightHadMoved を覚えて RevertMove で戻すのと同じ考え方。
     /// </summary>
-    public void Commit()
+    public void Commit(bool keepHasMoved = false)
     {
         committed = true;
         originCell = unit.GridPosition;
         committedCost = moveCostUsed;
-        hasMoved = false;
+        committedHasMoved = keepHasMoved && hasMoved;
+        hasMoved = committedHasMoved;
+
+        // 飛翔の「柔らかい中間点」も、この位置まで引き上げる（フェーズ26で修正）。
+        // これが無いと RevertMove が中間点を優先するため、
+        // 「飛翔 → 移動 → 引き受け（または交換）→ 取り消し」で飛翔した位置まで戻ってしまい、
+        // すでに使った移動力が復活する＝取り消し不能点を作った意味が無くなる。
+        // 飛翔そのものの解除（CancelFlightAndReturn）は従来どおりできる
+        // （「取り消し不能でも飛翔の取り消しだけは起こる」という飛翔の合意仕様は変えない）。
+        if (usedFlight)
+        {
+            flightCell = unit.GridPosition;
+            flightCost = moveCostUsed;
+            flightHadMoved = committedHasMoved;
+        }
     }
 
     /// <summary>
@@ -131,7 +158,7 @@ public class ActionContext
 
         if (!hasMoved) return;
         unit.MoveTo(grid, originCell);
-        hasMoved = false;
+        hasMoved = committedHasMoved; // 通常は false。交換の後だけ「移動済み」を保つ（Commit の説明を参照）
         moveCostUsed = committedCost;
     }
 }

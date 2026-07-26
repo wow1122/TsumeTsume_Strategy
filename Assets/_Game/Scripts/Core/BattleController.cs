@@ -40,6 +40,14 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  攻撃の対象選択中、対象にマウスを重ねると戦闘予測（BattleForecast）が画面右下に出る。
 ///  「降ろす」系の対象・マスは貨物の兵種で判定する（騎乗の貨物は山に降ろせない等）。
 ///
+/// フェーズ26（交換）で追加された流れ：
+///  「交換」→ 隣接する同陣営のユニットを選択【UnitTargetSelect】→ 交換画面【ExchangeSelect】で
+///  持ち物をクリックして1個ずつ相手へ渡す → 右クリック/ESC で交換を終えて行動メニューへ。
+///  行動は消費しない（持ち物の操作と同じ）ので、そのまま攻撃・持ち物・待機を選べる。
+///  ただし1個でも動かすと取り消し不能になる（救出・引き受けと同じ。相手の状態を
+///  変えてしまうため巻き戻せない）。1個も動かさずに閉じたときは何も起きていない扱い。
+///  相手は「隣接・同陣営・盤上（貨物は不可）・飛翔状態が同じ」（判定は ExchangeRules）。
+///
 /// 2026-07-26 の仕様変更（救出系の2点）：
 ///  ・引き受けた行動中に「降ろす」を選べるのは、引き受けを実行したマスの上にいるときだけ
 ///    （引き受け後に移動した先では降ろせない。引き受けたマスへ戻れば また選べる）。
@@ -55,11 +63,11 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect }
+    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect, ExchangeSelect }
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
-    private enum UnitSelectPurpose { Rescue, TakeOver, ProxyDropCarrier, Board, Heal }
+    private enum UnitSelectPurpose { Rescue, TakeOver, ProxyDropCarrier, Board, Heal, Exchange }
     private enum TileSelectPurpose { Drop, ProxyDrop }
     private enum CargoSelectPurpose { Drop, TakeOver, ProxyDrop }
     private UnitSelectPurpose unitSelectPurpose;
@@ -75,6 +83,8 @@ public class BattleController : MonoBehaviour
     private Unit proxyCarrier;                  // 「代わりに降ろす」で選んだ運び手
     private Unit takeOverCarrier;               // 「引き受け」で選んだ運び手（貨物選択のあいだ保持）
     private Unit selectedCargo;                 // 貨物リストで選んだ（または自動選択された）貨物
+    private Unit exchangePartner;               // 「交換」で選んだ相手（交換画面のあいだ保持・フェーズ26）
+    private int exchangedCount;                 // この交換で動かした品の数（0なら「無かったこと」にする）
     private ActionMenu menu;                    // 行動メニュー（IMGUI）
     private CargoListMenu cargoMenu;            // 貨物リストメニュー（IMGUI・Phase 12）
     private ItemListMenu itemMenu;              // 所持品リストメニュー（IMGUI・フェーズ23）
@@ -128,7 +138,8 @@ public class BattleController : MonoBehaviour
         // メニュー表示中のセルクリックは無効。ボタンの処理は ActionMenu / CargoListMenu /
         // ItemListMenu（IMGUI）側が行うので、ここで盤面まで反応すると二重処理になるのを防ぐ
         if (state == State.CommandMenu || state == State.CargoSelect
-            || state == State.ItemSelect || state == State.ItemActionSelect) return;
+            || state == State.ItemSelect || state == State.ItemActionSelect
+            || state == State.ExchangeSelect) return;
 
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -232,6 +243,7 @@ public class BattleController : MonoBehaviour
                             break;
                         case UnitSelectPurpose.Board: ExecuteBoard(clickedUnit); break;
                         case UnitSelectPurpose.Heal: ExecuteHeal(clickedUnit); break;
+                        case UnitSelectPurpose.Exchange: EnterExchange(clickedUnit); break;
                     }
                 }
                 break;
@@ -292,6 +304,12 @@ public class BattleController : MonoBehaviour
                     case CargoSelectPurpose.TakeOver: EnterTakeOverCarrierSelect(); break;
                     case CargoSelectPurpose.ProxyDrop: EnterProxyCarrierSelect(); break;
                 }
+                break;
+
+            case State.ExchangeSelect:
+                // 交換を終えて行動メニューへ戻る（1段）。品を1個でも動かしていれば
+                // すでに取り消し不能点を打ってあるので、以後は選択解除できない
+                EndExchange();
                 break;
 
             case State.ItemActionSelect:
@@ -526,6 +544,17 @@ public class BattleController : MonoBehaviour
         if (unit.Items.Count > 0)
             commands.Add(new ActionMenu.Entry("持ち物", EnterItemSelect));
 
+        // 交換：隣接する同陣営のユニットと持ち物をやり取りする（フェーズ26）。
+        // 行動は消費しない（合意(a)＝持ち物の操作と同じ）が、1個でも動かすと
+        // その行動は取り消せなくなる（合意(c)＝救出・引き受けと同じ理屈）。
+        // 救出・引き受け・降ろすの後は上で別メニューに分岐済みなのでここには来ない＝既存の制限を保つ。
+        // ※フェーズ26の交換画面は「渡す」専用なので候補も渡せる相手だけに絞る
+        //   （フェーズ27で双方向にしたら ExchangeRules.FindExchangePartners へ差し替える）
+        List<Unit> exchangeTargets = ExchangeRules.FindGiveTargets(unit, grid);
+        if (exchangeTargets.Count > 0)
+            commands.Add(new ActionMenu.Entry("交換",
+                () => EnterUnitTargetSelect(UnitSelectPurpose.Exchange, exchangeTargets)));
+
         commands.Add(new ActionMenu.Entry("待機", FinishAction));
         return commands;
     }
@@ -595,6 +624,7 @@ public class BattleController : MonoBehaviour
             case UnitSelectPurpose.ProxyDropCarrier: return "代わりに降ろす相手（運び手）";
             case UnitSelectPurpose.Board: return "乗り込む先";
             case UnitSelectPurpose.Heal: return "杖の対象";
+            case UnitSelectPurpose.Exchange: return "交換する相手";
             default: return "相手の情報";
         }
     }
@@ -1053,6 +1083,126 @@ public class BattleController : MonoBehaviour
         return lines;
     }
 
+    // ===== 交換（隣接する味方との持ち物の受け渡し・フェーズ26）=====
+    // 「交換」→ 相手を選ぶ（UnitTargetSelect。右下に相手の情報が出る）→ 交換画面（ExchangeSelect）。
+    // 行動は消費しないので、閉じたあとも同じ行動で攻撃・持ち物・待機ができる（合意(a)）。
+    // ただし1個でも動かしたら取り消し不能点を打つ（合意(c)）＝以後、移動の取り消しは
+    // 交換したマスまでしか戻らず、選択解除もできない（相手の状態を変えたので巻き戻せない）。
+    // フェーズ26は自分の持ち物1列の「渡す」専用。フェーズ27で相手の列を足して双方向にする。
+
+    /// <summary>
+    /// 交換の相手が決まった：自分の持ち物リストを開き、クリックで1個ずつ相手へ渡す。
+    /// 相手の能力値・持ち物・状態は画面右下に出したままにする（単体モードのユニット情報パネル）。
+    /// 相手の持ち物が渡すたびに増えていくのが右下で確認できるので、フェーズ26では
+    /// 品の性能詳細（同じ右下を使う）は付けない＝表示の取り合いを避ける。
+    /// </summary>
+    private void EnterExchange(Unit partner)
+    {
+        exchangePartner = partner;
+        exchangedCount = 0;
+
+        grid.ResetAllHighlights();
+        grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
+        grid.AddHighlight(partner.GridPosition, HighlightKind.TargetChoice);
+
+        unitInfo.Show(partner, UnitInfoTitle(UnitSelectPurpose.Exchange));
+
+        itemMenu.Hide(); // 直前のホバー詳細が右下に残らないように、いったん片付けてから開く
+        itemMenu.Show(grid.CellToWorld(context.unit.GridPosition), grid.cellSize, BuildExchangeEntries());
+        state = State.ExchangeSelect;
+
+        Debug.Log($"{context.unit.Data.unitName} は {partner.Data.unitName} と持ち物を交換する" +
+                  $"（相手 {partner.Items.Count}／{UnitData.InventoryCapacity}。右クリック/ESCで終了）");
+    }
+
+    /// <summary>
+    /// 交換画面の行を作る（フェーズ26＝自分の持ち物＝渡せる品の一覧）。
+    /// ラベルの補足（装備中／装備不可／残りN）は持ち物リストと同じ書き方に揃える。
+    /// 相手がいっぱい（7個）のときは全部の行を灰色の無効行にする。
+    /// </summary>
+    private List<ItemListMenu.Entry> BuildExchangeEntries()
+    {
+        var entries = new List<ItemListMenu.Entry>();
+        Unit unit = context.unit;
+        bool canGive = ExchangeRules.CanReceive(exchangePartner);
+
+        foreach (ItemSlot slot in unit.Items)
+        {
+            string label = slot.Item.DisplayName;
+            if (slot.Item is WeaponData weapon)
+            {
+                if (weapon == unit.EquippedWeapon) label += "（装備中）";
+                else if (!CanEquip(unit, weapon)) label += "（装備不可）";
+            }
+            else if (slot.Item is ToolData)
+            {
+                label += $"（残り{slot.UsesLeft}）";
+            }
+
+            ItemSlot s = slot; // ラムダが最後の値を掴まないようローカルに退避
+            entries.Add(new ItemListMenu.Entry(label, canGive, () => GiveItemToPartner(s)));
+        }
+
+        return entries;
+    }
+
+    /// <summary>
+    /// 品を1つ相手へ渡す。行動は消費しないが、最初の1個で取り消し不能点を打つ。
+    /// 装備中の武器を渡した場合は Unit 側で自動的に武装解除される。
+    /// 残り使用回数は ItemSlot ごと移るので引き継がれる（満タンに戻らない）。
+    /// </summary>
+    private void GiveItemToPartner(ItemSlot slot)
+    {
+        Unit unit = context.unit;
+        string name = slot.Item.DisplayName;
+        string uses = slot.Item is ToolData ? $"（残り{slot.UsesLeft}）" : "";
+        bool wasEquipped = slot.Item == unit.EquippedWeapon;
+
+        unit.TransferItemTo(slot, exchangePartner);
+
+        // 最初の1個を動かした時点で「戻れる限界」を作る（救出・引き受けと同じ）。
+        // 交換は行動を消費せず、この後そのまま攻撃できるので、移動済みは引き継ぐ
+        // （引き継がないと「移動して交換すると後衛武器の射程が伸びる」抜け穴になる）
+        if (exchangedCount == 0) context.Commit(keepHasMoved: true);
+        exchangedCount++;
+
+        Debug.Log($"{unit.Data.unitName} は {exchangePartner.Data.unitName} に {name}{uses} を渡した" +
+                  $"（自分 {unit.Items.Count}／{UnitData.InventoryCapacity} → " +
+                  $"相手 {exchangePartner.Items.Count}／{UnitData.InventoryCapacity}）" +
+                  (wasEquipped ? "（装備していたので武装解除された）" : ""));
+
+        // 渡す品が無くなったら交換画面を閉じる（フェーズ26は「渡す」専用のため）。
+        // 残っていればリストを作り直す＝相手がいっぱいになった瞬間に灰色へ変わる
+        if (unit.Items.Count == 0)
+        {
+            Debug.Log($"{unit.Data.unitName} の持ち物が無くなった");
+            EndExchange();
+            return;
+        }
+
+        itemMenu.Show(grid.CellToWorld(unit.GridPosition), grid.cellSize, BuildExchangeEntries());
+    }
+
+    /// <summary>
+    /// 交換を終えて行動メニューへ戻る（行動は消費しない）。1個も動かしていなければ
+    /// 取り消し不能点も打っていないので、開く前と完全に同じ状態に戻る（作者合意(d)）。
+    /// </summary>
+    private void EndExchange()
+    {
+        Unit unit = context.unit;
+
+        if (exchangedCount > 0)
+            Debug.Log($"{unit.Data.unitName} は {exchangePartner.Data.unitName} との交換を終えた" +
+                      $"（{exchangedCount}個やり取り。以後この行動は取り消せない）");
+        else
+            Debug.Log($"{unit.Data.unitName} は交換をやめた（やり取りなし・行動は消費しない）");
+
+        itemMenu.Hide();
+        exchangePartner = null;
+        exchangedCount = 0;
+        OpenCommandMenu(); // 相手情報パネルの片付けとハイライトの張り直しもここが行う
+    }
+
     // ===== 行動の終了・取り消し =====
 
     /// <summary>行動を確定して終える。ここまで来たら移動の取り消しはもうできない。</summary>
@@ -1102,6 +1252,8 @@ public class BattleController : MonoBehaviour
         proxyCarrier = null;
         takeOverCarrier = null;
         selectedCargo = null;
+        exchangePartner = null;
+        exchangedCount = 0;
         state = State.Idle;
     }
 

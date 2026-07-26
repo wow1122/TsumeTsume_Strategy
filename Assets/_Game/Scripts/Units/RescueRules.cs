@@ -193,7 +193,7 @@ public static class RescueRules
     /// carrier は輸送隊のみ（2026-07-26。呼び出し側の FindProxyDropCarriers で絞る）。
     /// 条件：貨物が歩兵で、貨物の移動力 ≧ user の移動力（合意(g)）。
     /// 輸送隊が複数の貨物を持っていても、条件を満たすものだけが対象になる
-    /// （輸送隊は騎乗ユニットも運べるが、代わりに降ろせるのは歩兵の貨物だけ）。
+    /// （輸送隊は騎乗ユニットも運べるが、代わりに降ろせるのは歩兵の貨物だけ）
     /// </summary>
     public static List<Unit> GetProxyDropCargoes(Unit user, Unit carrier)
     {

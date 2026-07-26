@@ -105,6 +105,22 @@ public class Unit : MonoBehaviour
         Items.Remove(slot);
     }
 
+    /// <summary>
+    /// 所持品を1つ相手へ渡す（「交換」・フェーズ26）。装備中の武器を渡したときは
+    /// 自動で武装解除する（「捨てる」と同じ扱い。持っていない武器は装備できないため）。
+    /// 【重要】ItemSlot（ランタイム状態）をそのまま移すので、道具の残り使用回数は引き継がれる。
+    /// 受け側で new ItemSlot(...) を作ると UsesLeft が maxUses に戻る＝
+    /// 「渡すと使用回数が満タンに戻る裏技」になるので、必ずこの関数を通すこと。
+    /// 受け側の空き（上限7）の確認と、行動を消費するかは呼び出し側（BattleController）が扱う
+    /// （合意：交換は行動を消費しないが、1個でも動かすとその行動は取り消せなくなる）。
+    /// </summary>
+    public void TransferItemTo(ItemSlot slot, Unit receiver)
+    {
+        if (slot.Item == EquippedWeapon) EquippedWeapon = null;
+        Items.Remove(slot);
+        receiver.Items.Add(slot);
+    }
+
     // ── 救出（Phase 11〜）──
     // 「運ぶ側」は Carried に相手を格納し、「運ばれる側」は IsCarried=true で
     // 非アクティブ化される（盤上から消え、マスの占有も明け渡す。名簿には残るので
