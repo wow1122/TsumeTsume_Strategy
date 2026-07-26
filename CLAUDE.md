@@ -49,6 +49,12 @@ ClassData（ScriptableObject）38種（下級14職・上級24職。「兵種デ�
 **「代わりに降ろす」を輸送隊の貨物限定**に変更（feat 6ccc0d8 / 3e4d93b）。
 併せて、作者の Unity 操作で失われていた魔道書アセット W_Tome を再作成し、魔道士2体の武器参照を復旧。
 
+同日（2026-07-26）、持ち越し候補だった**交換（アイテムの受け渡し）**を実装（「交換の合意仕様」の節）。
+隣接する同陣営ユニットと持ち物を双方向に何個でもやり取りできる。フェーズ26（土台と渡す・1列UI）→
+フェーズ27（双方向・2列表示）の2段階で、いずれも Play 確認済み・コミット済み。
+行動は消費しないが1個でも動かすと取り消し不能になる。アセットの追加・変更は無し
+（既存の持ち物付きユニットと Stage_01 だけで確認できた）。
+
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
 敵AI強化（Phase 16〜21）は `/home/wawo/.claude/plans/tsumetsume-strategy-ai-ai-ai-robust-quasar.md`、
@@ -435,6 +441,57 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - アセット: W_Live（ライブ）・Unit_Player_Monk（味方修道士 HP17/力1/魔力6/技5/速さ6/守備2/魔防6・初期案）。
   Stage_01 の (7,0) に修道士を配置（味方11体目・y=0 は平地の空きマス）
 
+### 交換の合意仕様（フェーズ26〜27・2026-07-26 作者合意）
+
+- 「交換」＝隣接する同陣営ユニットとの持ち物の受け渡し。行動メニューの**「持ち物」の直後・「待機」の直前**に、
+  交換できる相手が1体以上いるとき出る。可否判定は Units/ExchangeRules に一元化
+  （CombatRules / RescueRules / StaffRules と同じ方針）
+- 相手は**隣接4マス（上下左右）の同陣営・盤上のユニット**のみ。斜めは対象外。
+  **行動済みの味方も相手にできる**（救出の合意(h)と同じ理屈＝受け取る側は受け身で行動を消費しない）。
+  受け取っても相手の行動済みは変わらない
+- **格納中の貨物とは交換できない**。運び手を経由して貨物の持ち物に触ることもできない
+  （貨物は盤上から外れて隣接マスの占有者にならないので、判定上は自然に除外される）。
+  運び手（救出中のユニット）自身との交換は可
+- **飛翔状態が同じ相手同士でのみ交換できる**（空中↔空中・地上↔地上。空中↔地上は不可）。
+  「引き受けは同じ飛翔状態同士のみ」（飛翔の合意仕様）と同じ整理＝手渡しは高さが揃っている必要がある
+- **交換は行動を消費しない**（作者合意(a)。装備変更・外す・捨てると同じ扱い）。渡した後も同じ行動で
+  攻撃・被ダメ確認・杖・道具・持ち物・待機を選べる。FE系の慣例（渡すと行動終了）とは違う方針で、
+  「持ち物まわりの操作はすべて消費なしで一貫させる」を作者が選んだ結果。1ターンに何度でも交換できる
+  （強すぎると感じたら「交換後は再移動→待機のみ」に絞る余地は残してある＝救出・降ろすと同じ分岐1つ）
+- **1個でも動かしたら、その行動は取り消し不能になる**（作者合意(c)。ActionContext.Commit）。
+  移動取り消しは交換したマスまでしか戻らず、選択解除もできない（必ず攻撃・待機等で行動を終える）。
+  相手の状態を変えてしまう操作は巻き戻せない、という救出系と同じ線引き。
+  **1個も動かさずに閉じたときは何も起きていない扱い**（Commit も打たない＝誤操作の救済。合意(d)）
+- 移動後に交換できる（隣接判定は移動後の位置）。交換後も、使っていない移動力の範囲で再移動できる
+- **双方向・1回の交換で何個でも**動かせる（合意(b)）。品は1つずつクリックで反対側へ移る
+- 所持数の上限は既存の UnitData.InventoryCapacity（7）。**いっぱいの相手へは渡せない**
+  （渡す側の行が灰色の無効行になり、列の見出しに「※いっぱい（受け取れない）」が出る）。
+  相手がいっぱいでも「もらう」方向は可能なので交換画面は開ける（持ち物0個のユニットでも開ける）
+- **装備中の武器も渡せる。渡すと自動で武装解除される**（「捨てる」と同じ挙動）。
+  結果として武装無しになることも許可する（確認ダイアログは出さない＝「外す」と一貫）。
+  列の見出しの「装備: なし」でその場で気づける
+- **兵種が装備できない武器も渡せる。ただし装備はできない**（「（装備不可）」表示・サブメニューの「装備」は灰色）。
+  受け取っても自動装備はしない（装備は「持ち物」から明示的に行う＝「捨てる」で武装解除された後と同じ）
+- **道具の残り使用回数（ItemSlot.UsesLeft）はそのまま引き継ぐ**。Unit.TransferItemTo が ItemSlot ごと移す。
+  受け側で new ItemSlot を作ると回数が満タンに戻る（＝渡すと回復する裏技になる）ので禁止
+- 受け取った側は、そのターンまだ行動していなければ**すぐ使える**（傷薬・杖）。行動済みなら次のターン
+- **敵AIは当面交換を使わない**（「敵は救出系を使わない」「敵は所持品を使わない」と同じ前例。EnemyAI は無変更）
+- UI: State は ExchangeSelect（**計11状態FSM**）。相手選択は既存 UnitTargetSelect に purpose Exchange を
+  足して再利用（候補は赤・情報パネルの見出しは「交換する相手」）。交換画面は ItemListMenu の2列モード
+  （左＝自分／右＝相手。列見出しは 名前／HP・持ち物 n／7／装備武器）で、画面右下は品の性能詳細に使うため
+  ユニット情報パネルは出さない。持ち物が無い列は「（持ち物なし）」の無効行1つ。
+  キャンセルは右クリック/ESC で1段ずつ（交換画面→行動メニュー→移動取り消し）
+- **要注意（フェーズ26で入れた既存コードの修正2件）**:
+  ① ActionContext.Commit は既定で「移動済み」を解除するが、交換は行動を消費せず確定後もそのまま
+  攻撃できるため、解除すると「移動した弓兵が交換すると移動していないことになり、後衛武器の射程が
+  2マスちょうど→武器上限まで伸びる」抜け穴になる。交換からは Commit(keepHasMoved: true) で呼ぶ
+  （既存3か所＝救出・引き受け・降ろすは既定 false で挙動不変）。
+  ② Commit が飛翔の中間点も現在地へ引き上げるようにした（従来は「飛翔→移動→引き受け→取り消し」で
+  飛翔した位置まで戻り、使った移動力が復活していた）。飛翔そのものの解除は従来どおり可
+- スコープ外（将来）: 輸送隊への預かり（部隊倉庫）・武器耐久・素材・ショップ・敵AIの交換・
+  貨物との交換・まとめ選択。判定を ExchangeRules に、UIを「2つの持ち物を並べて品を移すだけ」に
+  保っているので、相手が「預かり枠」や「店の在庫」に変わっても同じ画面を使い回せる
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -447,11 +504,12 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 ## コード構成（Assets/_Game/Scripts/）
 
-- Core/ … BattleController(操作の司令塔・10状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect。
+- Core/ … BattleController(操作の司令塔・11状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect。
   飛翔・着陸コマンドと飛翔の段階取り消しCancelFlightAndReturn・攻撃可能マス表示ComputeAttackCells・
   持ち物コマンド（2段階サブメニュー: 装備/外す/道具使用/捨てる・ホバー詳細は右下固定）・杖コマンド（回復対象選択→ExecuteHeal・杖が届くマス表示ComputeHealCells）・
+  交換コマンド（相手選択→2列の交換画面。左右共用のBuildExchangeColumn/TransferItem・列見出しBuildExchangeHeader・行動は消費せず1個目でCommit）・
   敵の行動範囲プレビューShowEnemyPreview・被ダメ確認の閲覧状態もここ),
-  ActionContext(1行動の文脈・移動取り消し・再移動予算・取り消し不能点Commit・飛翔の中間点MarkFlight),
+  ActionContext(1行動の文脈・移動取り消し・再移動予算・取り消し不能点Commit※引数keepHasMovedで移動済みを引き継ぐ〔交換用〕＋飛翔の中間点も引き上げる・飛翔の中間点MarkFlight),
   TurnManager(フェイズ・勝敗・ターン制限判定・簡易UI・フェイズ開始時の飛翔Tick・
   敵AI思考ログの切替enemyAILog・敵フェイズ内の敵HasActed管理※フェイズ終了時に戻す),
   BattleSetup(StageDataを読んで初期配置・開始時飛翔の適用・配置マスの兵種チェック)
@@ -464,7 +522,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   通行判定はCanTraverseに集約・目標マス群への距離マップGetDistanceMap※敵AIの接近用)
 - UI/ … ActionMenu(IMGUI行動メニュー。Entryリスト駆動・BattleControllerが自動生成),
   CargoListMenu(貨物リスト選択。名前+HP表示・行ホバーの通知onHover※ユニット情報パネル用・BattleControllerが自動生成),
-  ItemListMenu(持ち物リスト＋行動サブメニューの2列同時表示・選んだ品の性能を画面右下に固定表示・enabled で押せない行を灰色無効化・BattleControllerが自動生成),
+  ItemListMenu(持ち物リスト＋行動サブメニューの2列同時表示・選んだ品の性能を画面右下に固定表示・enabled で押せない行を灰色無効化・BattleControllerが自動生成。
+  交換用の2列モードShowExchangeも持つ※両列とも持ち物リスト＋列見出し〔名前/HP・数/装備〕・ホバー詳細は両列有効・左右の回り込みは2列ぶんの幅で判定),
   BattleForecast(戦闘予測パネル・右下。対象選択に入った瞬間に即表示・三すくみ専用行・
   被ダメ確認の逆向き予測ShowIncomingもここ・BattleControllerが自動生成),
   DebugUnitPanel(デバッグ用ユニット情報パネル・右上。クリックしたユニットの能力値・武器・状態を表示。
@@ -474,12 +533,15 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   UnitInfoLines(ユニット情報の表示行を組み立てる共通処理。名前/兵種/HP/能力値/装備武器/持ち物/状態)
 - Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried・飛翔IsFlying/FlightTurnsLeft・
   AI性格AIProfile/挑発済みIsProvoked※永続・所持品Items/装備EquippedWeapon※Weapon窓口・Equip/Unequip/破棄DiscardItem・
+  受け渡しTransferItemTo※ItemSlotごと移すので残り回数を引き継ぐ・装備中なら自動で武装解除・
   回復Heal※最大HPクランプ・道具使用UseTool),
   ItemSlot(所持品1つのランタイム状態: item + 残り回数UsesLeft),
   UnitClass(移動タイプenum+IsMounted/IsCavalry/DisplayName),
   ClassTier(階級enum: 下級/上級), ClassTag(特攻タグ[Flags]: 騎馬/天馬/竜),
   RescueRules(救出系コマンドの可否判定一元化・乗り込む判定・飛翔の制限と空中引き受け・
   貨物の兵種で判定する GetDroppableCargoes/GetDropCells・死亡時配置先探索FindReleaseCell),
+  ExchangeRules(交換の可否判定一元化※フェーズ26。隣接の相手探しFindExchangePartners・
+  双方向の可否CanExchange・片方向CanGive・空きCanReceive・相手として成立するかIsExchangeablePair※同陣営/盤上/飛翔状態一致),
   UnitRegistry(全ユニットの名簿・輸送隊死亡フラグPlayerTransporterLost), Faction(陣営enum)
 - Combat/ … CombatSystem(攻撃解決・挟撃・ガード・反撃フック・PredictTotalDamage),
   CombatRules(射程・三すくみ・挟撃可否・飛翔の戦闘制限CanEngageの一元判定・対空判定IsAntiAirCapable※杖除外・Phase 25・
@@ -536,6 +598,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 その後、兵種データ基盤（2026-07-18〜19。「兵種データの合意仕様」の節）を導入し、
 **所持品（インベントリ）ロードマップ（Phase 22〜25）も完走**（2026-07-19）。
+さらに 2026-07-26 に、ユニット情報パネル・救出系の仕様変更2点と、
+持ち越し候補だった**交換（フェーズ26〜27）を完了**（「交換の合意仕様」の節）。
 
 **現在アクティブなロードマップは無い。次は作者と次期ロードマップの優先度を相談してから着手する**
 （下の「持ち越し候補」から作者が選ぶ。フェーズ着手は明示の合図をもらってから）。
@@ -586,7 +650,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 過去の合意で先送りになった項目のメモ:
 - 特効ダメージ＋特効武器（所持品の持ち替えが活きる。兵種の特攻タグ〔騎馬/天馬/竜〕が前提として導入済み）
-- 交換・輸送隊への預かり（所持品システムの自然な延長）
+- 輸送隊への預かり（部隊倉庫。交換は 2026-07-26 に実装済み＝「交換の合意仕様」の節。
+  相手を「盤上の1体」から「部隊共有の置き場」に差し替えれば同じ交換画面を使い回せる）
 - 武器耐久（作者検討中。残り回数の仕組みは道具の ItemSlot.UsesLeft で先行導入済み）
 - 勝利条件バリエーション（拠点到達など。Phase 15 と敵AI強化キックオフで2回先送り）
 - 救出系コマンドの敵AI使用（現状は「敵は救出系を使わない」合意のまま）
