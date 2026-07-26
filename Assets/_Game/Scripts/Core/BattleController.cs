@@ -79,6 +79,7 @@ public class BattleController : MonoBehaviour
     private HashSet<Vector2Int> reachableCells; // 移動できるマス
     private Dictionary<Vector2Int, int> moveCosts = new Dictionary<Vector2Int, int>(); // 各マスまでの移動コスト（再移動の予算計算用）
     private List<Unit> attackTargets;           // いまの位置から攻撃できる敵
+    private bool criticalPending;               // 対象選択中の攻撃が必殺技かどうか（フェーズ29）
     private List<Unit> unitCandidates;          // 救出・引き受け・代わりに降ろすの相手候補
     private List<Vector2Int> tileCandidates;    // 降ろす先のマス候補
     private Unit proxyCarrier;                  // 「代わりに降ろす」で選んだ運び手
@@ -218,7 +219,15 @@ public class BattleController : MonoBehaviour
             case State.TargetSelect:
                 if (clickedUnit != null && attackTargets.Contains(clickedUnit))
                 {
-                    CombatSystem.ResolveAttack(context.unit, clickedUnit, grid);
+                    // 必殺技（フェーズ29）は対象を確定したここでマナを1本使う。
+                    // 途中でキャンセルしたときに減らないよう、消費は攻撃の直前に置いている
+                    if (criticalPending)
+                    {
+                        context.unit.SpendMana();
+                        Debug.Log($"{context.unit.Data.unitName} がマナを1本使った（残り {context.unit.Mana.Stock} 本）");
+                    }
+
+                    CombatSystem.ResolveAttack(context.unit, clickedUnit, grid, criticalPending);
                     FinishAction();
                 }
                 // 対象以外のクリックは無視（待機はメニューの「待機」から。誤クリックでの行動消費を防ぐ）
@@ -424,8 +433,9 @@ public class BattleController : MonoBehaviour
     private void OpenCommandMenu()
     {
         Unit unit = context.unit;
-        forecast.Hide(); // 対象選択から戻ったときは戦闘予測を消す（Phase 15）
-        unitInfo.Hide(); // 相手選択から戻ったときは相手情報も消す（2026-07-26）
+        forecast.Hide();        // 対象選択から戻ったときは戦闘予測を消す（Phase 15）
+        unitInfo.Hide();        // 相手選択から戻ったときは相手情報も消す（2026-07-26）
+        criticalPending = false; // 必殺技の対象選択から戻ったら通常の攻撃に戻す（フェーズ29）
 
         // 移動範囲・対象候補の表示を消し、選択マークだけ現在位置に付け直す
         grid.ResetAllHighlights();
@@ -482,6 +492,13 @@ public class BattleController : MonoBehaviour
         if (attackTargets.Count > 0)
         {
             commands.Add(new ActionMenu.Entry("攻撃", EnterTargetSelect));
+
+            // 必殺技（フェーズ29）: マナが1本以上貯まっているときだけ「攻撃」の直後に出る。
+            // 対象選択の流れは攻撃とまったく同じで、ダメージだけ倍率ぶん増える。
+            // マナは対象を確定した瞬間に1本減る（対象選択でキャンセルすれば減らない）
+            if (GaugeRules.CanUseCritical(unit))
+                commands.Add(new ActionMenu.Entry("必殺技", EnterCriticalTargetSelect));
+
             // 被ダメ確認（2026-07-18 作者要望）: 攻撃できる相手から「逆に攻撃されたら」の
             // 予測を見る。見るだけで行動は消費しない
             commands.Add(new ActionMenu.Entry("被ダメ確認", EnterDamageCheck));
@@ -563,16 +580,33 @@ public class BattleController : MonoBehaviour
     /// <summary>「攻撃」が選ばれた：対象の敵を赤表示して、クリックを待つ。</summary>
     private void EnterTargetSelect()
     {
+        EnterTargetSelectCore(false);
+    }
+
+    /// <summary>
+    /// 「必殺技」が選ばれた（フェーズ29）：対象の選び方は攻撃と同じで、
+    /// 予測パネルと実際のダメージに倍率がかかる点だけが違う。
+    /// マナを減らすのは対象を確定した瞬間なので、ここで戻ってもマナは失われない。
+    /// </summary>
+    private void EnterCriticalTargetSelect()
+    {
+        EnterTargetSelectCore(true);
+    }
+
+    /// <summary>攻撃・必殺技で共通の対象選択（critical で倍率の有無が変わるだけ）。</summary>
+    private void EnterTargetSelectCore(bool critical)
+    {
         menu.Hide();
+        criticalPending = critical;
 
         foreach (Unit enemy in attackTargets)
             grid.AddHighlight(enemy.GridPosition, HighlightKind.TargetChoice);
 
         // 対象にマウスを重ねると戦闘予測が出る（Phase 15）
-        forecast.Show(context.unit, attackTargets, grid);
+        forecast.Show(context.unit, attackTargets, grid, critical);
 
         state = State.TargetSelect;
-        Debug.Log($"攻撃対象を選択（{attackTargets.Count} 体）。右クリック/ESCでメニューへ戻る。");
+        Debug.Log($"{(critical ? "必殺技" : "攻撃")}の対象を選択（{attackTargets.Count} 体）。右クリック/ESCでメニューへ戻る。");
     }
 
     /// <summary>
@@ -1288,6 +1322,7 @@ public class BattleController : MonoBehaviour
         context = null;
         reachableCells = null;
         attackTargets = null;
+        criticalPending = false;
         unitCandidates = null;
         tileCandidates = null;
         proxyCarrier = null;

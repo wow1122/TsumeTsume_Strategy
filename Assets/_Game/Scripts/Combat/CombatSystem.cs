@@ -10,17 +10,22 @@ using UnityEngine;
 ///    敵AIの行動評価と、将来の戦闘予測UIが同じ数字を見る。
 ///  ・気勢ゲージ（フェーズ28）：戦闘1回ごとに「相手を倒したか」を GaugeRules へ知らせる。
 ///    連続撃破が続くと、倒した側の全ユニットに気勢が配られる。
+///  ・必殺技（フェーズ29）：critical = true で呼ぶと、本体の一撃だけダメージに倍率がかかる。
+///    挟撃の追撃は等倍のまま（倍率が乗るのはマナを使った本人の攻撃だけ）。
+///    マナの消費は呼び出し側（BattleController）が行う。
 /// </summary>
 public static class CombatSystem
 {
-    public static void ResolveAttack(Unit attacker, Unit defender, GridManager grid)
+    public static void ResolveAttack(Unit attacker, Unit defender, GridManager grid, bool critical = false)
     {
         if (attacker == null || defender == null) return;
 
         // 1) 攻撃側 → 防御側（内訳付きログ）
-        DamageBreakdown breakdown = DamageCalculator.CalculateBreakdown(attacker, defender, grid);
+        //    必殺技（フェーズ29）のときは、この本体の一撃にだけ倍率がかかる（挟撃は等倍のまま）
+        float multiplier = critical ? GaugeRules.CriticalMultiplier : 1f;
+        DamageBreakdown breakdown = DamageCalculator.CalculateBreakdown(attacker, defender, grid, multiplier);
         defender.TakeDamage(breakdown.Total);
-        Debug.Log($"攻撃: {attacker.Data.unitName} → {defender.Data.unitName} に {breakdown.Total} ダメージ" +
+        Debug.Log($"{(critical ? "必殺技！" : "攻撃:")} {attacker.Data.unitName} → {defender.Data.unitName} に {breakdown.Total} ダメージ" +
                   $"〔{breakdown.ToLogString()}〕" +
                   (defender.IsAlive ? $"（残りHP {defender.CurrentHP}）" : "（戦闘不能）"));
 

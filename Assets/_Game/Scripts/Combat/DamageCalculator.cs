@@ -12,17 +12,34 @@ public struct DamageBreakdown
     public int triangle;       // 三すくみ補正（有利で＋、不利で−、なしは0）
     public int guardPower;     // 守備 または 魔防
     public int terrainDefense; // 地形防御（防御側のマス）
+    public float multiplier;   // ダメージ倍率（必殺技＝フェーズ29。1.0＝等倍）
 
-    /// <summary>最終ダメージ（0未満にはならない）。</summary>
-    public int Total => Mathf.Max(0, attackPower + might + triangle - (guardPower + terrainDefense));
+    /// <summary>
+    /// 実際にかかる倍率。0 のときは等倍（1.0）とみなす。
+    /// ※struct なので「倍率を設定せずに作られた DamageBreakdown」は 0 になる。
+    ///   そのまま掛けるとダメージが必ず 0 になってしまうので、ここで受け止めている。
+    /// </summary>
+    public float Multiplier => multiplier > 0f ? multiplier : 1f;
 
-    /// <summary>ログ用の内訳文字列。例：「力6＋威力5＋相性+2 − (守備2＋地形0) = 11」</summary>
+    /// <summary>倍率をかける前のダメージ（0未満にはならない）。</summary>
+    public int BaseTotal => Mathf.Max(0, attackPower + might + triangle - (guardPower + terrainDefense));
+
+    /// <summary>最終ダメージ（倍率をかけたあと。端数は切り捨て）。</summary>
+    public int Total => Mathf.FloorToInt(BaseTotal * Multiplier);
+
+    /// <summary>
+    /// ログ用の内訳文字列。例：「力6＋威力5＋相性+2 − (守備2＋地形0) = 11」
+    /// 倍率がかかっているときは「… = 5 ×2倍 = 10」のように途中の値も見せる。
+    /// </summary>
     public string ToLogString()
     {
         string atkName = isMagic ? "魔力" : "力";
         string grdName = isMagic ? "魔防" : "守備";
         string triText = triangle == 0 ? "" : $"＋相性{(triangle > 0 ? "+" : "")}{triangle}";
-        return $"{atkName}{attackPower}＋威力{might}{triText} − ({grdName}{guardPower}＋地形{terrainDefense}) = {Total}";
+        string basePart = $"{atkName}{attackPower}＋威力{might}{triText} − ({grdName}{guardPower}＋地形{terrainDefense})";
+
+        if (Mathf.Approximately(Multiplier, 1f)) return $"{basePart} = {Total}";
+        return $"{basePart} = {BaseTotal} ×{Multiplier:0.#}倍 = {Total}";
     }
 }
 
@@ -35,8 +52,13 @@ public struct DamageBreakdown
 /// </summary>
 public static class DamageCalculator
 {
-    /// <summary>ダメージの内訳付き計算。ログや予測表示に使う。</summary>
-    public static DamageBreakdown CalculateBreakdown(Unit attacker, Unit defender, GridManager grid)
+    /// <summary>
+    /// ダメージの内訳付き計算。ログや予測表示に使う。
+    /// damageMultiplier は必殺技（フェーズ29）のような倍率。既定の 1 なら従来どおりの計算で、
+    /// 既存の呼び出しは引数を書かなくてよい＝挙動は変わらない。
+    /// </summary>
+    public static DamageBreakdown CalculateBreakdown(Unit attacker, Unit defender, GridManager grid,
+                                                     float damageMultiplier = 1f)
     {
         WeaponData weapon = attacker.Weapon;
 
@@ -55,12 +77,13 @@ public static class DamageCalculator
             guardPower = isMagic ? defender.Resistance : defender.Defense,
             // 飛翔中はタイルの効果を受けない（地形防御なし。Phase 14）
             terrainDefense = (defTile != null && !defender.IsFlying) ? defTile.DefenseBonus : 0,
+            multiplier = damageMultiplier,
         };
     }
 
     /// <summary>最終ダメージだけが欲しいときの窓口。</summary>
-    public static int Calculate(Unit attacker, Unit defender, GridManager grid)
+    public static int Calculate(Unit attacker, Unit defender, GridManager grid, float damageMultiplier = 1f)
     {
-        return CalculateBreakdown(attacker, defender, grid).Total;
+        return CalculateBreakdown(attacker, defender, grid, damageMultiplier).Total;
     }
 }

@@ -33,15 +33,20 @@ public class BattleForecast : MonoBehaviour
     private Unit incomingDefender; // 被ダメモード: 攻撃を受ける自分側（与ダメモードでは null）
     private List<Unit> targets;    // ホバー候補（与ダメ: 攻撃対象の敵 ／ 被ダメ: 攻撃してくる敵）
     private GridManager grid;
-    private Unit current; // いま予測を表示している対象（選択直後は最初の対象）
+    private Unit current;  // いま予測を表示している対象（選択直後は最初の対象）
+    private bool critical; // 必殺技モードか（フェーズ29。倍率込みの数字を出す）
 
-    /// <summary>対象選択の開始時に呼ぶ（attacker はいまの位置から targets を攻撃できる前提）。</summary>
-    public void Show(Unit attacker, List<Unit> targets, GridManager grid)
+    /// <summary>
+    /// 対象選択の開始時に呼ぶ（attacker はいまの位置から targets を攻撃できる前提）。
+    /// critical = true なら必殺技の予測（ダメージに倍率がかかった数字）を表示する。
+    /// </summary>
+    public void Show(Unit attacker, List<Unit> targets, GridManager grid, bool critical = false)
     {
         this.attacker = attacker;
         incomingDefender = null;
         this.targets = targets;
         this.grid = grid;
+        this.critical = critical;
 
         // 対象選択に入った瞬間から最初の対象で表示する（マウスを重ねるのを待たない）
         current = (targets != null && targets.Count > 0) ? targets[0] : null;
@@ -57,6 +62,7 @@ public class BattleForecast : MonoBehaviour
         incomingDefender = defender;
         targets = attackers;
         this.grid = grid;
+        critical = false;
         current = (attackers != null && attackers.Count > 0) ? attackers[0] : null;
     }
 
@@ -68,6 +74,7 @@ public class BattleForecast : MonoBehaviour
         targets = null;
         grid = null;
         current = null;
+        critical = false;
     }
 
     void OnGUI()
@@ -94,8 +101,10 @@ public class BattleForecast : MonoBehaviour
     /// <summary>defender への攻撃の予測を組み立てて描く。</summary>
     private void DrawForecast(Unit defender)
     {
-        // 本体ダメージ（実戦と同じ計算窓口。内訳つき）
-        DamageBreakdown main = DamageCalculator.CalculateBreakdown(attacker, defender, grid);
+        // 本体ダメージ（実戦と同じ計算窓口。内訳つき）。
+        // 必殺技モードでは実戦と同じ倍率を渡すので、表示された数字と実際の結果は必ず一致する
+        float multiplier = critical ? GaugeRules.CriticalMultiplier : 1f;
+        DamageBreakdown main = DamageCalculator.CalculateBreakdown(attacker, defender, grid, multiplier);
         int total = main.Total;
 
         // 挟撃の見込み：成立するか・ガードで無効化されるか・追加でいくら入るか
@@ -116,6 +125,8 @@ public class BattleForecast : MonoBehaviour
             $"与ダメージ　{main.ToLogString()}",
             BuildTriangleLine(main.triangle, "有利", "不利"),
         };
+        if (critical)
+            lines.Add($"必殺技 ×{GaugeRules.CriticalMultiplier:0.#}倍（マナを1本使う。挟撃は等倍）");
         if (ally != null)
         {
             lines.Add(guard == null
@@ -126,7 +137,7 @@ public class BattleForecast : MonoBehaviour
             ? $"相手HP {defender.CurrentHP} → 0　撃破！"
             : $"相手HP {defender.CurrentHP} → {hpAfter}");
 
-        DrawPanel(lines, "戦闘予測");
+        DrawPanel(lines, critical ? "戦闘予測（必殺技）" : "戦闘予測");
     }
 
     /// <summary>current の敵から「攻撃を受けたら」の予測を組み立てて描く（被ダメモード）。</summary>
