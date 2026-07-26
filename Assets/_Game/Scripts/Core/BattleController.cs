@@ -64,7 +64,7 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect, ExchangeSelect }
+    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect, ExchangeSelect, RefreshMenu }
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
@@ -86,6 +86,7 @@ public class BattleController : MonoBehaviour
     private Unit takeOverCarrier;               // 「引き受け」で選んだ運び手（貨物選択のあいだ保持）
     private Unit selectedCargo;                 // 貨物リストで選んだ（または自動選択された）貨物
     private Unit exchangePartner;               // 「交換」で選んだ相手（交換画面のあいだ保持・フェーズ26）
+    private Unit refreshCandidate;              // 「再行動」のメニューを出している行動済みの味方（フェーズ30）
     private int exchangedCount;                 // この交換で動かした品の数（0なら「無かったこと」にする）
     private ActionMenu menu;                    // 行動メニュー（IMGUI）
     private CargoListMenu cargoMenu;            // 貨物リストメニュー（IMGUI・Phase 12）
@@ -141,7 +142,7 @@ public class BattleController : MonoBehaviour
         // ItemListMenu（IMGUI）側が行うので、ここで盤面まで反応すると二重処理になるのを防ぐ
         if (state == State.CommandMenu || state == State.CargoSelect
             || state == State.ItemSelect || state == State.ItemActionSelect
-            || state == State.ExchangeSelect) return;
+            || state == State.ExchangeSelect || state == State.RefreshMenu) return;
 
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -171,6 +172,14 @@ public class BattleController : MonoBehaviour
                 {
                     ClearEnemyPreview();
                     EnterMoveSelect(clickedUnit);
+                }
+                // 行動済みの味方でも、気勢が1本貯まっていれば「再行動」で動き直せる（フェーズ30）。
+                // 攻撃の結果を見てから使うかどうか決められるように、行動を終えた後の入口にしてある
+                else if (clickedUnit != null && clickedUnit.Faction == Faction.Player
+                         && GaugeRules.CanRefresh(clickedUnit))
+                {
+                    ClearEnemyPreview();
+                    EnterRefreshMenu(clickedUnit);
                 }
                 // 敵をクリック → その敵の移動できるマス（青）と攻撃可能マス（赤）を下見表示（2026-07-18 作者要望）
                 else if (clickedUnit != null && clickedUnit.Faction == Faction.Enemy)
@@ -279,6 +288,14 @@ public class BattleController : MonoBehaviour
                 ClearEnemyPreview(); // 敵の範囲プレビューを消すだけ（選択は無いので他に戻るものが無い）
                 break;
 
+            case State.RefreshMenu:
+                // 再行動のメニュー → 何もせず Idle へ（気勢はまだ使っていない。フェーズ30）
+                menu.Hide();
+                refreshCandidate = null;
+                grid.ResetAllHighlights();
+                state = State.Idle;
+                break;
+
             case State.TargetSelect:
             case State.UnitTargetSelect:
             case State.DamageCheck:
@@ -363,6 +380,58 @@ public class BattleController : MonoBehaviour
         context = new ActionContext(unit);
         ShowMoveRange();
         Debug.Log($"選択: {unit.Data.unitName}（移動できるマス {reachableCells.Count} 個）");
+    }
+
+    /// <summary>
+    /// 行動済みの味方をクリックしたときに「再行動」だけのメニューを出す（フェーズ30）。
+    /// 気勢を1本使うと未行動に戻り、いつもどおり移動から選び直せる。
+    /// 攻撃の結果を見てから使うか決められるように、行動を終えた後の入口にしてある。
+    /// この時点ではまだ何も消費していないので、右クリック/ESC でそのままやめられる。
+    /// </summary>
+    private void EnterRefreshMenu(Unit unit)
+    {
+        refreshCandidate = unit;
+
+        grid.ResetAllHighlights();
+        grid.AddHighlight(unit.GridPosition, HighlightKind.Selection);
+
+        var commands = new List<ActionMenu.Entry>
+        {
+            new ActionMenu.Entry("再行動", ExecuteRefresh),
+        };
+        menu.Show(grid.CellToWorld(unit.GridPosition), grid.cellSize, commands);
+
+        state = State.RefreshMenu;
+        Debug.Log($"{unit.Data.unitName}: 再行動できる（気勢 {unit.Momentum.Stock} 本）。右クリック/ESCでやめる。");
+    }
+
+    /// <summary>
+    /// 「再行動」が選ばれた（フェーズ30）：気勢を1本使って行動済みを解除し、移動選択へ戻す。
+    /// 同じユニットは1ターンに1回しか使えない（MarkRefreshUsed）。
+    /// 移動力は新しい ActionContext ができることで全回復する（＝まっさらな1行動として扱う。
+    /// 救出済み・飛翔済みなどの制限もすべて解けるので、前の行動を引きずらない）。
+    /// </summary>
+    private void ExecuteRefresh()
+    {
+        Unit unit = refreshCandidate;
+        refreshCandidate = null;
+
+        // メニューを出してから状況が変わった場合の保険（気勢を使い切った・倒された等）
+        if (unit == null || !GaugeRules.CanRefresh(unit))
+        {
+            menu.Hide();
+            grid.ResetAllHighlights();
+            state = State.Idle;
+            return;
+        }
+
+        unit.SpendMomentum();
+        unit.MarkRefreshUsed();
+        unit.SetActed(false); // 行動済みの暗い表示も元に戻る
+        Debug.Log($"再行動！ {unit.Data.unitName} がもう一度動けるようになった" +
+                  $"（残りの気勢 {unit.Momentum.Stock} 本・このターンはもう使えない）");
+
+        EnterMoveSelect(unit);
     }
 
     /// <summary>
@@ -1330,6 +1399,7 @@ public class BattleController : MonoBehaviour
         selectedCargo = null;
         exchangePartner = null;
         exchangedCount = 0;
+        refreshCandidate = null;
         state = State.Idle;
     }
 

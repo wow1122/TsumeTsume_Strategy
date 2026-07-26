@@ -143,17 +143,28 @@ public class TurnManager : MonoBehaviour
 
     /// <summary>
     /// 味方が1体行動を終えたら呼ぶ。全員行動済みなら自動でフェイズを終える。
+    /// ただし気勢で再行動できる味方が残っているあいだは自動で終わらせない（フェーズ30）。
     /// </summary>
     public void NotifyUnitActed()
     {
         CheckGameEnd();
         if (IsGameOver) return;
 
-        if (AllActed(Faction.Player))
+        if (!AllActed(Faction.Player)) return;
+
+        // 再行動（気勢1本）は行動済みのユニットを選び直して使うので、
+        // 最後の1体が行動した瞬間に自動でターンが終わると使う隙が無くなってしまう。
+        // 使うかどうかはプレイヤーが決めることなので、ここでは終わらせず
+        // 「ターン終了」ボタンで明示的に終えてもらう
+        if (GaugeRules.AnyoneCanRefresh(Faction.Player))
         {
-            Debug.Log("全味方が行動済み → 自動でターン終了");
-            EndPlayerPhase();
+            Debug.Log("全味方が行動済み。ただし再行動できる味方がいるので、"
+                      + "ターンを終えるときは「ターン終了」ボタンを押してください");
+            return;
         }
+
+        Debug.Log("全味方が行動済み → 自動でターン終了");
+        EndPlayerPhase();
     }
 
     // ===== 勝敗判定 =====
