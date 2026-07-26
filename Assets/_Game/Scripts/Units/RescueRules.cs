@@ -13,6 +13,7 @@ using UnityEngine;
 ///  ・降ろす＝隣接する「空きで歩ける」マスに再配置
 ///  ・代わりに降ろす＝歩兵専用。隣の救出中ユニットの貨物（歩兵）を、
 ///    「貨物の移動力 ≧ 自分の移動力」のときだけ降ろせる（合意(g)、仕様どおり）
+///    ※2026-07-26 の仕様変更で、運び手は輸送隊に限定（下記）
 ///
 /// Phase 12（輸送隊）の追加合意（2026-07-11）：
 ///  ・輸送隊（容量4）は騎乗ユニットも救出・引き受けできる（対象が輸送隊のときは不可）
@@ -26,6 +27,11 @@ using UnityEngine;
 ///    空中と地上の間では乗り降りできない、という整理。
 ///  ・例外は「引き受け」：飛翔状態が同じ相手同士（地上同士・空中同士）なら受け渡しできる（改訂）
 ///  ・貨物を抱えたまま飛翔すること自体は可能で、飛翔中は降ろせない（降ろすの表示制限は BattleController 側）
+///
+/// 2026-07-26 の仕様変更（作者指示）：
+///  ・「代わりに降ろす」の運び手は輸送隊のみ。輸送隊以外の騎乗ユニットが抱えている貨物に
+///    干渉できるのは騎乗ユニットだけ（＝「引き受け」。歩兵は容量0で引き受けられないため、
+///    結果として通常の騎乗ユニットの貨物は騎乗ユニットにしか渡せない・降ろせない）
 /// </summary>
 public static class RescueRules
 {
@@ -155,6 +161,7 @@ public static class RescueRules
 
     /// <summary>
     /// 歩兵 user が「代わりに降ろす」を使える、隣接する救出中ユニットの一覧。
+    /// 運び手は輸送隊に限る（作者仕様変更 2026-07-26）。
     /// 条件：貨物が歩兵で、貨物の移動力 ≧ user の移動力、かつ降ろせる空きマスがある。
     /// （移動力の低いユニットほど多くの味方を降ろせる、という仕様の意図どおり）
     /// </summary>
@@ -166,6 +173,9 @@ public static class RescueRules
         foreach (Unit neighbor in GetAdjacentUnits(user.GridPosition, grid))
         {
             if (neighbor.Faction != user.Faction || !neighbor.IsRescuing) continue;
+            // 輸送隊の貨物だけが対象（作者仕様変更 2026-07-26）。輸送隊以外の騎乗ユニットの
+            // 貨物に手を出せるのは騎乗ユニットだけ（＝「引き受け」）、という整理
+            if (neighbor.Class != UnitClass.Transporter) continue;
             if (neighbor.IsFlying) continue; // 飛翔中の運び手からは降ろせない（Phase 14）
 
             List<Unit> cargoes = GetProxyDropCargoes(user, neighbor);
@@ -180,8 +190,10 @@ public static class RescueRules
 
     /// <summary>
     /// 歩兵 user が carrier から「代わりに降ろす」ことができる貨物の一覧。
+    /// carrier は輸送隊のみ（2026-07-26。呼び出し側の FindProxyDropCarriers で絞る）。
     /// 条件：貨物が歩兵で、貨物の移動力 ≧ user の移動力（合意(g)）。
-    /// 輸送隊が複数の貨物を持っていても、条件を満たすものだけが対象になる。
+    /// 輸送隊が複数の貨物を持っていても、条件を満たすものだけが対象になる
+    /// （輸送隊は騎乗ユニットも運べるが、代わりに降ろせるのは歩兵の貨物だけ）。
     /// </summary>
     public static List<Unit> GetProxyDropCargoes(Unit user, Unit carrier)
     {
