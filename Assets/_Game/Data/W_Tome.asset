@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 32e55d14b0762954b995b6a4a5afad15, type: 3}
   m_Name: W_Tome
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
-  weaponName: "魔道書"
+  weaponName: "\u9B54\u9053\u66F8"
   type: 4
   category: 1
   might: 5
