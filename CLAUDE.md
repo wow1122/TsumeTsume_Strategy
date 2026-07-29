@@ -3,7 +3,7 @@
 ファイアーエムブレムif暗夜をモデルにした 2D タクティクスSRPG。Unity 6 (6000.3.10f1) + URP。
 作者はプログラミングほぼ初心者。日本語で、専門用語をかみ砕いて丁寧に説明すること。絵文字は使わない。
 
-## 進捗状況（2026-07-26 時点）
+## 進捗状況（2026-07-30 時点）
 
 バーティカルスライス完成（Phase 0〜7）、Phase 8（データ基盤刷新）、
 Phase 9（前衛・後衛武器と新三すくみ、CombatRules による判定一元化）、
@@ -64,6 +64,11 @@ ClassData（ScriptableObject）38種（下級14職・上級24職。「兵種デ�
 現行の能力値（技1〜6・速さ1〜7・魔力0〜6）では Stage_01 で発動しない**。
 動作確認は専用の検証ステージ Stage_GaugeTest で行う。
 
+2026-07-30、**弓・魔法の「静止撃ち有利」**を追加（「静止撃ちの合意仕様」の節）。
+マスから動かずに撃つと三すくみ有利（+max(2, 技−速さ)）が付く。後衛武器にも三すくみと
+技・速さの意味が生まれ、「移動して撃つか、その場で狙うか」の選択が生じる。
+プレイヤー・敵AI・戦闘予測パネルの3か所を同じ判定（CombatRules）で揃えてある。**作者の Play 確認待ち**。
+
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
 敵AI強化（Phase 16〜21）は `/home/wawo/.claude/plans/tsumetsume-strategy-ai-ai-ai-robust-quasar.md`、
@@ -79,9 +84,10 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   武器種（WeaponType）は7種: 剣・槍・斧・弓・魔導書（＝魔法。同一武器）・杖・光魔法（2026-07-18 追加。光魔法は定義のみ）。
   魔法ダメージ（魔力vs魔防）の判定は WeaponType.IsMagicDamage()（魔導書・光魔法）。
   杖は攻撃できない後衛武器＝回復に使う（前衛から攻撃されると武装無し扱い。Phase 25「杖（ライブ）の合意仕様」の節）
-- 三すくみ（Phase 9 で新式へ移行済み）: 前衛武器の攻撃のみ。剣>斧>槍>剣。
+- 三すくみ（Phase 9 で新式へ移行済み）: 前衛武器の攻撃は 剣>斧>槍>剣 の相性表。
   有利側が攻撃 = +max(2, 攻撃側の技−防御側の速さ)、有利側が防御 = −max(2, 防御側の速さ−攻撃側の技)。
-  後衛武器・武装無しは前衛から攻撃されると「武装無し扱い」で不利判定。後衛側の攻撃時は三すくみなし
+  後衛武器・武装無しは前衛から攻撃されると「武装無し扱い」で不利判定。
+  後衛武器（弓・魔法）の攻撃は「静止撃ち」のときだけ三すくみ有利（2026-07-30 作者合意。下の節）
 - 後衛武器の射程: 移動後は最小射程（2マス）ちょうど、静止時（自マスクリック）は 2〜武器上限（弓3・魔道書2）
 - 反撃は基本なし。CombatSystem.CanCounter() フックが唯一の拡張点（現状常に false）
 - 挟撃: 近接攻撃時、敵を挟んだ反対側の隣マス(上下左右)に前衛武器の味方がいれば追加攻撃。
@@ -562,6 +568,39 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   値10ごとに黒い縦線、右に「n本 値／最大」。右上のデバッグパネルと右下のユニット情報パネルの
   **両方**に同じ部品（UI/GaugeBars）で描く
 
+### 静止撃ちの合意仕様（2026-07-30 作者合意）
+
+**ルール**
+
+- 後衛武器（弓・魔導書・光魔法）で**マスから動かずに**敵を攻撃すると、その攻撃に**三すくみ有利**が付く
+- 補正量は前衛の有利と**まったく同じ式** = +max(2, 攻撃側の技 − 防御側の速さ)（最低2）。
+  技・速さが後衛武器の戦闘でも意味を持つようになる
+- **相手の武器種は問わない**（前衛・後衛・杖・武装無しのどれでも有利）。後衛の攻撃が不利になるケースは無い
+- 移動してから撃つと補正なし（±0）。「移動したか」は**後衛武器の射程が縮むのと同じ判定を共有**する
+  （プレイヤー＝ActionContext.hasMoved、敵AI＝立ち位置 ≠ 元の位置）
+- したがって飛翔しただけ・交換しただけ・持ち物を操作しただけなら「動いていない」扱い（既存の hasMoved の意味そのまま）
+- 杖は攻撃できないので対象外。挟み役（必ず前衛武器）にも関係しない
+
+**実装**
+
+- 判定は `CombatRules.GetTriangleModifier(attacker, defender, attackerHasMoved)` の1か所。
+  有利の式は `AdvantageBonus()` に切り出して前衛の有利と共有（片方だけ変わらないように）
+- attackerHasMoved は DamageCalculator → CombatSystem → 呼び出し側へ通す。**既定は true**（＝補正なし側）で、
+  渡し忘れても補正が勝手に付かない向きに寄せてある
+- `CombatSystem.PredictTotalDamage` は attackerHasMoved を**必須引数**にした（fromCell から自動判定しない。
+  実行時は移動を済ませてから呼ぶこともあり「fromCell ＝ 現在地」が静止を意味しないため）
+- 敵AI: Evaluate は立ち位置ごとの hasMoved を ScoreAttack → PredictTotalDamage へ渡すので、
+  弓・魔法の敵は「その場で撃つ」を自然に高く評価する。Execute は**移動する前に** hasMoved を控えてから攻撃する
+- AIの控えめな被害見積り（EnemyAI の集中攻撃の候補評価・ThreatMap の挟撃脅威）は静止撃ち有利を数えない
+  （その敵が動くかどうかはその時点で決まっていないため。既定 true のまま）
+
+**UI（BattleForecast）**
+
+- 与ダメ: 実際に移動したかで**確定した数字**を出す。後衛武器のときは理由の1行を添える
+  （「※マスから動かずに撃つため、三すくみ有利がつく」／「※移動して撃つため、静止撃ちの三すくみ有利なし」）
+- 被ダメ確認: 敵が動くかは事前に確定できないので、相手が後衛武器のときだけ
+  「移動時／静止時」の2行＋三すくみの両方の値＋HPの両方の結果を並べる（DrawIncomingBothCases）
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -600,6 +639,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   交換用の2列モードShowExchangeも持つ※両列とも持ち物リスト＋列見出し〔名前/HP・数/装備〕・ホバー詳細は両列有効・左右の回り込みは2列ぶんの幅で判定),
   BattleForecast(戦闘予測パネル・右下。対象選択に入った瞬間に即表示・三すくみ専用行・
   被ダメ確認の逆向き予測ShowIncomingもここ・必殺技モード※フェーズ29〔倍率込みの数字・見出し「戦闘予測（必殺技）」〕・
+  静止撃ち有利の表示※2026-07-30〔与ダメは実際のhasMovedで確定した数字＋理由の1行BuildStandingShotNote／
+  被ダメは相手が後衛武器なら「移動時／静止時」の両方を並べるDrawIncomingBothCases〕・
   BattleControllerが自動生成),
   DebugUnitPanel(デバッグ用ユニット情報パネル・右上。クリックしたユニットの能力値・武器・状態を表示。
   panelEnabledでOFF可・ゲーム状態は変えない・行の組み立てはUnitInfoLines共通＋敵AI/挟撃の行を追加),
@@ -625,20 +666,24 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   ExchangeRules(交換の可否判定一元化※フェーズ26。隣接の相手探しFindExchangePartners・
   双方向の可否CanExchange・片方向CanGive・空きCanReceive・相手として成立するかIsExchangeablePair※同陣営/盤上/飛翔状態一致),
   UnitRegistry(全ユニットの名簿・輸送隊死亡フラグPlayerTransporterLost), Faction(陣営enum)
-- Combat/ … CombatSystem(攻撃解決・挟撃・ガード・反撃フック・PredictTotalDamage・
+- Combat/ … CombatSystem(攻撃解決・挟撃・ガード・反撃フック・PredictTotalDamage※引数attackerHasMovedは必須・
   必殺技の倍率適用※フェーズ29〔引数critical・本体の一撃だけ倍率で挟撃は等倍〕・
+  静止撃ち有利の受け渡し※2026-07-30〔ResolveAttackの引数attackerHasMoved。プレイヤーはcontext.hasMoved、
+  敵AIは移動前に控えた「立ち位置≠元の位置」〕・
   戦闘1回ごとの撃破通知→GaugeRules※フェーズ28〔挟撃のとどめも含む〕),
   GaugeRules(マナ・気勢の数値と可否の一元判定※フェーズ28〜30。調整用の定数は先頭1ブロックに集約
   〔マナ最大30・2本/魔力20で+2・30で+3/必殺技の倍率2.0/気勢最大100・2本/2連続目から/速さ÷2〕。
   InitialMana/ManaGainPerTurn/TickMana/MomentumGain/NotifyBattleResult※連鎖の管理/ResetChain/
   CanUseCritical/CanRefresh/AnyoneCanRefresh。staticはRuntimeInitializeOnLoadMethodでリセット),
   CombatRules(射程・三すくみ・挟撃可否・飛翔の戦闘制限CanEngageの一元判定・対空判定IsAntiAirCapable※杖除外・Phase 25・
+  後衛武器の静止撃ち有利※2026-07-30〔引数attackerHasMoved・既定true＝補正なし側・有利の式はAdvantageBonusで前衛と共有〕・
   攻撃できる立ち位置一覧GetAttackFromCells・挟撃の反対側マスGetPincerOppositeCell・
   仮定位置ガード判定WouldGuardAt・ガード役かどうかIsGuardingSomeone※Phase 18),
   StaffRules(杖の可否・回復対象・回復量の一元判定※Phase 25。HasStaffEquipped/TryGetStaffRange/FindHealTargets/HealAmount),
   DamageCalculator(物理/魔法分岐・DamageBreakdown内訳・飛翔中は地形防御なし・
   ダメージ倍率multiplier※フェーズ29〔BaseTotal＝倍率前/Total＝倍率後・切り捨て。
-  structの既定値0は等倍として扱う。引数は既定1なので既存の呼び出しは挙動不変〕),
+  structの既定値0は等倍として扱う。引数は既定1なので既存の呼び出しは挙動不変〕・
+  攻撃側が移動したかattackerHasMoved※2026-07-30〔CombatRulesへ渡すだけ。既定true〕),
   WeaponType(7種+魔法ダメージ判定IsMagicDamage+日本語種類名DisplayName), WeaponCategory(前衛/後衛)
 - Data/ … UnitData(7能力値+兵種データclassData+所持品items※上限InventoryCapacity=7。移動タイプ/移動力は
   EffectiveClass/EffectiveMove、初期所持品/装備は GetInitialItems/GetInitialWeapon で解決・武器不一致はOnValidateで警告),
@@ -654,6 +699,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   挟撃のお膳立て+2とガード役潰し+50※Phase 18・守り配置TryPlanGuard※Phase 19・
   飛翔probe評価ComputeGroundInfo/TryPlanTakeOff・巡航TryPickCruiseCell・着陸TryPlanLanding※Phase 20・
   集中攻撃※Phase 21=敵フェイズ開始のBeginEnemyPhaseで目標focusTargetを1体選定・倒れたら再選定・
+  静止撃ち有利の織り込み※2026-07-30〔ScoreAttackにhasMovedを渡す＝弓/魔法の敵はその場で撃つ手を高く評価。
+  Executeは移動前にhasMovedを控える〕・
   staticはRuntimeInitializeOnLoadMethodでリセット。
   点数定数は先頭の1ブロックに集約: KillBonus 1000／FocusBonus 200／GuardBreakKillBonus 50／
   PincerSetupBonus 2／AirThreatPenalty 1),
