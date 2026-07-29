@@ -49,16 +49,19 @@ public struct DamageBreakdown
 ///   魔法武器　　　　　　　　　： ダメージ = max(0, 魔力 + 武器威力 + 三すくみ補正 − (魔防 + 地形防御))
 /// 地形防御は物理・魔法の両方に効く（作者合意）。
 /// 三すくみ補正の中身（技・速さの差、最低2）は CombatRules.GetTriangleModifier が担当。
+/// 後衛武器（弓・魔法）は「マスから動かずに撃ったか」で三すくみ補正が変わるので、
+/// attackerHasMoved を受け取って渡している（2026-07-30 作者仕様）。
 /// </summary>
 public static class DamageCalculator
 {
     /// <summary>
     /// ダメージの内訳付き計算。ログや予測表示に使う。
-    /// damageMultiplier は必殺技（フェーズ29）のような倍率。既定の 1 なら従来どおりの計算で、
-    /// 既存の呼び出しは引数を書かなくてよい＝挙動は変わらない。
+    /// damageMultiplier は必殺技（フェーズ29）のような倍率。既定の 1 なら従来どおりの計算。
+    /// attackerHasMoved は攻撃側がこの行動で移動したか（既定 true ＝ 移動した扱い）。
+    /// 後衛武器はこれが false のときだけ三すくみ有利が付く（前衛武器では結果が変わらない）。
     /// </summary>
     public static DamageBreakdown CalculateBreakdown(Unit attacker, Unit defender, GridManager grid,
-                                                     float damageMultiplier = 1f)
+                                                     float damageMultiplier = 1f, bool attackerHasMoved = true)
     {
         WeaponData weapon = attacker.Weapon;
 
@@ -73,7 +76,7 @@ public static class DamageCalculator
             isMagic = isMagic,
             attackPower = isMagic ? attacker.Magic : attacker.Strength,
             might = weapon != null ? weapon.might : 0,
-            triangle = CombatRules.GetTriangleModifier(attacker, defender),
+            triangle = CombatRules.GetTriangleModifier(attacker, defender, attackerHasMoved),
             guardPower = isMagic ? defender.Resistance : defender.Defense,
             // 飛翔中はタイルの効果を受けない（地形防御なし。Phase 14）
             terrainDefense = (defTile != null && !defender.IsFlying) ? defTile.DefenseBonus : 0,
@@ -82,8 +85,9 @@ public static class DamageCalculator
     }
 
     /// <summary>最終ダメージだけが欲しいときの窓口。</summary>
-    public static int Calculate(Unit attacker, Unit defender, GridManager grid, float damageMultiplier = 1f)
+    public static int Calculate(Unit attacker, Unit defender, GridManager grid,
+                               float damageMultiplier = 1f, bool attackerHasMoved = true)
     {
-        return CalculateBreakdown(attacker, defender, grid, damageMultiplier).Total;
+        return CalculateBreakdown(attacker, defender, grid, damageMultiplier, attackerHasMoved).Total;
     }
 }

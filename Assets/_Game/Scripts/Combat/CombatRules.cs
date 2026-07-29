@@ -8,7 +8,8 @@ using UnityEngine;
 ///
 /// ここにあるルール：
 ///  ・攻撃射程   … 前衛=武器の射程どおり／後衛=移動後は最小射程ちょうど、静止時は武器上限まで
-///  ・三すくみ   … 前衛武器の攻撃のみ。補正量は 技・速さ の差から計算（最低2）
+///  ・三すくみ   … 前衛武器の攻撃（相性表）と、後衛武器の「マスから動かずに撃った攻撃」（常に有利）。
+///                 補正量はどちらも 技・速さ の差から計算（最低2）
 ///  ・挟撃の資格 … 前衛武器の装備者だけが挟撃に参加できる
 ///  ・挟撃の無効化（ガード）… 防御側の隣に「前衛武器の歩兵」の味方がいれば挟撃されない
 ///  ・飛翔（Phase 14）… 飛翔中の相手と戦えるのは「飛翔中のユニット」か「対空武器
@@ -129,29 +130,67 @@ public static class CombatRules
 
     /// <summary>
     /// 攻撃側から見た三すくみ補正（ダメージ式の攻撃項に加算する値）。
-    ///   攻撃側が後衛武器・武装無し → 補正なし（0）
+    ///   攻撃側が武装無し → 補正なし（0）
+    ///   攻撃側が後衛武器（弓・魔法）：
+    ///     マスから動かずに攻撃した（attackerHasMoved = false）→ 相手を問わず攻撃側有利
+    ///     移動してから攻撃した                                 → 補正なし（0）
     ///   攻撃側が前衛武器：
     ///     防御側が後衛武器・武装無し → 「武装無し扱い」で攻撃側有利
     ///     防御側も前衛武器           → 相性表（剣＞斧＞槍＞剣）で判定
     ///   有利なら +max(2, 攻撃側の技 − 防御側の速さ)
     ///   不利なら −max(2, 防御側の速さ − 攻撃側の技)
+    ///
+    /// attackerHasMoved の既定は true（＝移動した扱い＝後衛武器の有利補正なし）。
+    /// 「移動したか」を渡せない見積り（AIの控えめな被害予測など）では、補正を数えない側に寄せる。
     /// </summary>
-    public static int GetTriangleModifier(Unit attacker, Unit defender)
+    public static int GetTriangleModifier(Unit attacker, Unit defender, bool attackerHasMoved = true)
     {
         WeaponData atkWeapon = attacker.Weapon;
-        if (atkWeapon == null || atkWeapon.category != WeaponCategory.Melee)
-            return 0; // 後衛武器・武装無しの攻撃には三すくみが無い
+        if (atkWeapon == null) return 0; // 武装無しの攻撃には三すくみが無い
+
+        // 後衛武器（弓・魔法）の「静止撃ち有利」（2026-07-30 作者仕様）。
+        // マスから動かずに狙いをつけて撃つぶん、相手の武器を問わず有利になる。
+        // 補正量は前衛の有利とまったく同じ式なので、技・速さは後衛武器の戦闘でも意味を持つ。
+        if (atkWeapon.category != WeaponCategory.Melee)
+        {
+            if (attackerHasMoved || !HasStandingShotAdvantage(attacker)) return 0;
+            return AdvantageBonus(attacker, defender);
+        }
 
         WeaponData defWeapon = defender.Weapon;
         bool defenderUnarmed = defWeapon == null || defWeapon.category == WeaponCategory.Ranged;
 
         if (defenderUnarmed || Beats(atkWeapon.type, defWeapon.type))
-            return Mathf.Max(2, attacker.Skill - defender.Speed);   // 攻撃側が有利
+            return AdvantageBonus(attacker, defender);              // 攻撃側が有利
 
         if (Beats(defWeapon.type, atkWeapon.type))
             return -Mathf.Max(2, defender.Speed - attacker.Skill);  // 攻撃側が不利
 
         return 0; // 同種など、相性なし
+    }
+
+    /// <summary>
+    /// 「マスから動かずに撃つと三すくみ有利が付く」武器を装備しているか（2026-07-30 作者仕様）。
+    /// ＝後衛の攻撃武器（弓・魔導書・光魔法）。杖は攻撃できないので含まない。武装無しも含まない。
+    /// 戦闘本体（GetTriangleModifier）と戦闘予測パネルの説明表示が同じ判定を見るために公開している。
+    /// ※中身は今のところ対空判定 IsAntiAirCapable と同じ条件だが、意味は別のルールなので分けてある
+    ///   （将来どちらか片方だけ武器種が増減しても、もう一方が巻き込まれないようにする）。
+    /// </summary>
+    public static bool HasStandingShotAdvantage(Unit unit)
+    {
+        WeaponData weapon = unit != null ? unit.Weapon : null;
+        return weapon != null
+            && weapon.category == WeaponCategory.Ranged
+            && weapon.type != WeaponType.Staff;
+    }
+
+    /// <summary>
+    /// 有利側の補正量 ＝ max(2, 攻撃側の技 − 防御側の速さ)。
+    /// 前衛武器の三すくみ有利と、後衛武器の静止撃ち有利で共通の式（片方だけ変わらないように1か所へ）。
+    /// </summary>
+    private static int AdvantageBonus(Unit attacker, Unit defender)
+    {
+        return Mathf.Max(2, attacker.Skill - defender.Speed);
     }
 
     /// <summary>x が y に三すくみで勝つか（剣＞斧＞槍＞剣）。</summary>

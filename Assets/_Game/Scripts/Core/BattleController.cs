@@ -236,7 +236,8 @@ public class BattleController : MonoBehaviour
                         Debug.Log($"{context.unit.Data.unitName} がマナを1本使った（残り {context.unit.Mana.Stock} 本）");
                     }
 
-                    CombatSystem.ResolveAttack(context.unit, clickedUnit, grid, criticalPending);
+                    // 移動したかも渡す（後衛武器はマスから動かずに撃つと三すくみ有利。2026-07-30 作者仕様）
+                    CombatSystem.ResolveAttack(context.unit, clickedUnit, grid, criticalPending, context.hasMoved);
                     FinishAction();
                 }
                 // 対象以外のクリックは無視（待機はメニューの「待機」から。誤クリックでの行動消費を防ぐ）
@@ -671,8 +672,9 @@ public class BattleController : MonoBehaviour
         foreach (Unit enemy in attackTargets)
             grid.AddHighlight(enemy.GridPosition, HighlightKind.TargetChoice);
 
-        // 対象にマウスを重ねると戦闘予測が出る（Phase 15）
-        forecast.Show(context.unit, attackTargets, grid, critical);
+        // 対象にマウスを重ねると戦闘予測が出る（Phase 15）。
+        // 移動したかも渡して、後衛武器の静止撃ち有利を実戦と同じ数字で見せる（2026-07-30 作者仕様）
+        forecast.Show(context.unit, attackTargets, grid, critical, context.hasMoved);
 
         state = State.TargetSelect;
         Debug.Log($"{(critical ? "必殺技" : "攻撃")}の対象を選択（{attackTargets.Count} 体）。右クリック/ESCでメニューへ戻る。");

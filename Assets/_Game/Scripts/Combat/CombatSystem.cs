@@ -13,23 +13,32 @@ using UnityEngine;
 ///  ・必殺技（フェーズ29）：critical = true で呼ぶと、本体の一撃だけダメージに倍率がかかる。
 ///    挟撃の追撃は等倍のまま（倍率が乗るのはマナを使った本人の攻撃だけ）。
 ///    マナの消費は呼び出し側（BattleController）が行う。
+///  ・静止撃ち有利（2026-07-30 作者仕様）：後衛武器（弓・魔法）が「マスから動かずに」攻撃すると
+///    三すくみ有利が付く。攻撃側が移動したかは呼び出し側しか知らないので attackerHasMoved で受け取る。
 /// </summary>
 public static class CombatSystem
 {
-    public static void ResolveAttack(Unit attacker, Unit defender, GridManager grid, bool critical = false)
+    /// <summary>
+    /// 攻撃1回を解決する。attackerHasMoved は攻撃側がこの行動で移動したか
+    /// （プレイヤーは ActionContext.hasMoved、敵AIは「移動先 ≠ 元の位置」。既定 true ＝ 補正なし側）。
+    /// </summary>
+    public static void ResolveAttack(Unit attacker, Unit defender, GridManager grid,
+                                    bool critical = false, bool attackerHasMoved = true)
     {
         if (attacker == null || defender == null) return;
 
         // 1) 攻撃側 → 防御側（内訳付きログ）
         //    必殺技（フェーズ29）のときは、この本体の一撃にだけ倍率がかかる（挟撃は等倍のまま）
         float multiplier = critical ? GaugeRules.CriticalMultiplier : 1f;
-        DamageBreakdown breakdown = DamageCalculator.CalculateBreakdown(attacker, defender, grid, multiplier);
+        DamageBreakdown breakdown = DamageCalculator.CalculateBreakdown(attacker, defender, grid,
+                                                                       multiplier, attackerHasMoved);
         defender.TakeDamage(breakdown.Total);
         Debug.Log($"{(critical ? "必殺技！" : "攻撃:")} {attacker.Data.unitName} → {defender.Data.unitName} に {breakdown.Total} ダメージ" +
                   $"〔{breakdown.ToLogString()}〕" +
                   (defender.IsAlive ? $"（残りHP {defender.CurrentHP}）" : "（戦闘不能）"));
 
         // 2) 反撃（基本なし。フックが true のときだけ）
+        //    反撃側に静止撃ち有利を乗せるかは、反撃を実装するときに決める（今は補正なしの既定）
         if (defender.IsAlive && CanCounter(attacker, defender, grid))
         {
             int counter = DamageCalculator.Calculate(defender, attacker, grid);
@@ -69,6 +78,7 @@ public static class CombatSystem
             return;
         }
 
+        // 挟み役は必ず前衛武器（IsPincerCapable）なので、静止撃ち有利は関係しない＝既定のまま呼ぶ
         DamageBreakdown breakdown = DamageCalculator.CalculateBreakdown(ally, defender, grid);
         defender.TakeDamage(breakdown.Total);
         Debug.Log($"挟撃！ {ally.Data.unitName} も {defender.Data.unitName} に {breakdown.Total} ダメージ" +
@@ -81,10 +91,14 @@ public static class CombatSystem
     /// 本体ダメージ＋（挟撃が成立して無効化されないなら）挟撃ダメージ。
     /// 敵AIの行動評価と、将来のプレイヤー向け戦闘予測UIの共有窓口。
     /// ※fromCell を引数にしているのは「移動した場合」を仮定して評価できるようにするため。
+    /// ※attackerHasMoved は fromCell から自動で決めない（既定値も置かない）。実行時は移動を
+    ///   済ませてから呼ぶこともあり「fromCell ＝ 現在地」が静止を意味しなくなるため、
+    ///   静止かどうかは必ず呼び出し側が明示する（後衛武器の静止撃ち有利がここで効く）。
     /// </summary>
-    public static int PredictTotalDamage(Unit attacker, Vector2Int fromCell, Unit defender, GridManager grid)
+    public static int PredictTotalDamage(Unit attacker, Vector2Int fromCell, Unit defender, GridManager grid,
+                                        bool attackerHasMoved)
     {
-        int total = DamageCalculator.Calculate(attacker, defender, grid);
+        int total = DamageCalculator.Calculate(attacker, defender, grid, 1f, attackerHasMoved);
 
         Unit ally = CombatRules.FindPincerAlly(fromCell, attacker, defender, grid);
         if (ally != null && !CombatRules.IsPincerNegated(defender, grid))

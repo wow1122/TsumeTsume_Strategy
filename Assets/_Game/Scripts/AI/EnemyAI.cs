@@ -251,7 +251,9 @@ public static class EnemyAI
                 if (enemy.Weapon == null) continue;                  // 武装無しは攻撃できない
                 if (!CombatRules.CanEngage(enemy, player)) continue; // 飛翔の制限（地上の前衛は飛翔中の相手を殴れない等）
 
-                int damage = DamageCalculator.Calculate(enemy, player, grid); // 単発・挟撃なしの控えめな見積り
+                // 単発・挟撃なしの控えめな見積り（後衛武器の静止撃ち有利も数えない。
+                // その敵が動くかどうかはこの時点では決まっていないため）
+                int damage = DamageCalculator.Calculate(enemy, player, grid);
                 if (damage <= 0) continue;
 
                 if (enemy.Weapon.category == WeaponCategory.Ranged) rangedSum += damage;
@@ -347,7 +349,7 @@ public static class EnemyAI
             {
                 if (!CombatRules.CanAttack(enemy, cell, target, hasMoved)) continue; // 射程外・武装無し
 
-                int score = ScoreAttack(enemy, cell, target, grid, helpers,
+                int score = ScoreAttack(enemy, cell, target, grid, hasMoved, helpers,
                     out bool pincerSetup, out bool guardBreak, out bool focus);
                 int defense = TileDefense(enemy, cell, grid);
                 int moveDist = CombatRules.Manhattan(enemy.GridPosition, cell);
@@ -372,7 +374,9 @@ public static class EnemyAI
 
         if (bestTarget == null) return false;
 
-        int damage = CombatSystem.PredictTotalDamage(enemy, bestCell, bestTarget, grid);
+        // ログ用のダメージ再計算。ここは評価と同じ条件で呼ぶ（まだ移動していないので現在地との比較でよい）
+        int damage = CombatSystem.PredictTotalDamage(enemy, bestCell, bestTarget, grid,
+                                                    bestCell != enemy.GridPosition);
         plan = new ActionPlan
         {
             kind = ActionKind.Attack,
@@ -918,6 +922,10 @@ public static class EnemyAI
 
     private static void Execute(Unit enemy, GridManager grid, ActionPlan plan)
     {
+        // 移動する前に「動くのか」を覚えておく（後衛武器の静止撃ち有利の判定に使う。
+        // 移動した後では現在地＝立ち位置になってしまい、静止かどうかを見分けられない）
+        bool hasMoved = plan.standCell != enemy.GridPosition;
+
         // 離陸（Phase 20）：飛翔は行動を消費しないコマンド（プレイヤーと同じ）。
         // 移動より先に発動する（移動の可否評価も飛翔状態で行った）
         if (plan.kind == ActionKind.TakeOff)
@@ -928,7 +936,7 @@ public static class EnemyAI
 
         // 離陸からの空対空攻撃もここで実行される（target が入っているのは攻撃プランだけ）
         if (plan.target != null && (plan.kind == ActionKind.Attack || plan.kind == ActionKind.TakeOff))
-            CombatSystem.ResolveAttack(enemy, plan.target, grid);
+            CombatSystem.ResolveAttack(enemy, plan.target, grid, critical: false, attackerHasMoved: hasMoved);
 
         // 着陸（Phase 20）：プレイヤーの着陸コマンドと同じ「飛翔解除＋行動終了」の意味論。
         // 行動終了は、TurnManager が TakeAction の直後に SetActed(true) することで満たされる
@@ -946,10 +954,12 @@ public static class EnemyAI
     /// out の3つはログ用のしるし。
     /// </summary>
     private static int ScoreAttack(
-        Unit enemy, Vector2Int cell, Unit target, GridManager grid,
+        Unit enemy, Vector2Int cell, Unit target, GridManager grid, bool hasMoved,
         List<PincerHelper> helpers, out bool pincerSetup, out bool guardBreak, out bool focus)
     {
-        int damage = CombatSystem.PredictTotalDamage(enemy, cell, target, grid);
+        // hasMoved を渡すので、後衛武器の敵は「その場で撃つと三すくみ有利」まで点数に織り込まれる
+        // （＝弓・魔法の敵は動かずに撃てる相手をおのずと好むようになる。2026-07-30 作者仕様）
+        int damage = CombatSystem.PredictTotalDamage(enemy, cell, target, grid, hasMoved);
         bool kill = damage >= target.CurrentHP;
 
         int score = damage;
