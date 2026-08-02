@@ -545,15 +545,27 @@ public class BattleController : MonoBehaviour
             return commands;
         }
 
-        // 引き受けを使った後は「降ろす / 待機」だけ（合意(f)）。
+        // 引き受けを使った後は「降ろす / 飛翔・着陸 / 待機」だけ。
         // 降ろせるのは引き受けを実行したマスの上にいるときだけ（2026-07-26 作者仕様：
         // 引き受けた後に移動した先では降ろせない。引き受けたマスへ戻れば また降ろせる）。
-        // 空中（飛翔中）で引き受けた場合は降ろせないので「待機」のみ（作者仕様 2026-07-12）
+        // 空中（飛翔中）で引き受けた場合は降ろせない（作者仕様 2026-07-12）。
+        // 飛翔・着陸は行動を消費しないので、引き受けの後でも使える（2026-07-30 作者仕様変更。
+        // 救出後・降ろす後と同じ扱いに揃えた。貨物を抱えたまま飛翔できるのは飛翔の合意仕様どおり）
         if (context.usedTakeOver)
         {
             if (context.IsAtTakeOverCell && unit.IsRescuing && !unit.IsFlying
                 && RescueRules.GetDroppableCargoes(unit, grid).Count > 0)
                 commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
+
+            if (unit.Class == UnitClass.Flier && !unit.IsFlying)
+                commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
+
+            // 着陸を出すのはこの分岐だけでよい（救出・降ろすは飛翔中には実行できないので、
+            // その後に飛翔したなら usedFlight で着陸不可＝出しても必ず条件から外れる）。
+            // ここに来るのは「前のターンから飛翔中のまま空中で引き受けた」場合
+            if (unit.IsFlying && !context.usedFlight)
+                commands.Add(new ActionMenu.Entry("着陸", ExecuteLanding));
+
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
         }
