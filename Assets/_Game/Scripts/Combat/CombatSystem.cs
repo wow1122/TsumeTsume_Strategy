@@ -15,6 +15,9 @@ using UnityEngine;
 ///    マナの消費は呼び出し側（BattleController）が行う。
 ///  ・静止撃ち有利（2026-07-30 作者仕様）：後衛武器（弓・魔法）が「マスから動かずに」攻撃すると
 ///    三すくみ有利が付く。攻撃側が移動したかは呼び出し側しか知らないので attackerHasMoved で受け取る。
+///  ・武器の耐久（フェーズ31）：攻撃した側の武器を1回ぶん消耗させる（自軍のみ・DurabilityRules）。
+///    消耗は「この戦闘が全部終わってから」まとめて行う。途中で減らすと、耐久が尽きた瞬間に
+///    Weapon が null（装備無し扱い）へ変わり、挟撃の成立判定や気勢の配分がその一撃の中でずれる。
 /// </summary>
 public static class CombatSystem
 {
@@ -46,14 +49,19 @@ public static class CombatSystem
             Debug.Log($"反撃: {defender.Data.unitName} → {attacker.Data.unitName} に {counter} ダメージ");
         }
 
-        // 3) 挟撃（はさみ撃ち）
-        TryPincer(attacker, defender, grid);
+        // 3) 挟撃（はさみ撃ち）。追撃した味方は武器を消耗するので、誰が撃ったかを受け取る
+        Unit pincerAlly = TryPincer(attacker, defender, grid);
 
         // 4) 気勢ゲージ（フェーズ28）：この戦闘で相手を倒したかを連鎖の判定へ渡す。
         //    挟撃のとどめもこの戦闘の結果に含める（誰がとどめを刺したかは問わない＝作者合意）。
         //    倒れた直後の defender は Destroy 済みで「== null」が true になるので、そこも撃破として扱う
         bool killed = defender == null || !defender.IsAlive;
         GaugeRules.NotifyBattleResult(attacker.Faction, killed);
+
+        // 5) 武器の消耗（フェーズ31）。攻撃した側だけが減る（守った側は反撃していないので減らない）。
+        //    この戦闘の判定が全部終わってから減らす＝ダメージ・挟撃・気勢は消耗前の状態で決まる。
+        DurabilityRules.Consume(attacker);
+        DurabilityRules.Consume(pincerAlly);
     }
 
     /// <summary>
@@ -62,20 +70,22 @@ public static class CombatSystem
     /// 参加した味方は行動を消費しない（おまけの追撃）。
     /// ただし防御側の隣に「前衛武器の歩兵」の味方（ガード役）がいると無効化される。
     /// 成立条件・無効化条件の本体は CombatRules にある（AIの予測と共通）。
+    /// 戻り値は実際に追撃した味方（挟撃が起きなかった・ガードで無効化されたときは null）。
+    /// 呼び出し側はこれを使って挟み役の武器も消耗させる（作者合意：挟撃でも耐久は減る）。
     /// </summary>
-    private static void TryPincer(Unit attacker, Unit defender, GridManager grid)
+    private static Unit TryPincer(Unit attacker, Unit defender, GridManager grid)
     {
-        if (defender == null || !defender.IsAlive) return;
+        if (defender == null || !defender.IsAlive) return null;
 
         Unit ally = CombatRules.FindPincerAlly(attacker.GridPosition, attacker, defender, grid);
-        if (ally == null) return;
+        if (ally == null) return null;
 
         // 無効化（ガード）判定：防御側の隣に前衛武器の歩兵がいれば挟撃は防がれる
         Unit guard = CombatRules.FindPincerGuard(defender, grid);
         if (guard != null)
         {
             Debug.Log($"ガード！ {guard.Data.unitName} が隣にいるため、{defender.Data.unitName} への挟撃は無効化された");
-            return;
+            return null;   // 追撃していないので武器も減らない
         }
 
         // 挟み役は必ず前衛武器（IsPincerCapable）なので、静止撃ち有利は関係しない＝既定のまま呼ぶ
@@ -84,6 +94,7 @@ public static class CombatSystem
         Debug.Log($"挟撃！ {ally.Data.unitName} も {defender.Data.unitName} に {breakdown.Total} ダメージ" +
                   $"〔{breakdown.ToLogString()}〕" +
                   (defender.IsAlive ? $"（残りHP {defender.CurrentHP}）" : "（戦闘不能）"));
+        return ally;
     }
 
     /// <summary>

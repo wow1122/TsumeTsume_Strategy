@@ -30,9 +30,16 @@ public class Unit : MonoBehaviour
     /// <summary>兵種＝移動タイプ（UnitData から取得。兵種データがあればそちらが優先）。</summary>
     public UnitClass Class => Data.EffectiveClass;
 
-    /// <summary>装備中の武器。武器はこの窓口から読む（Data.weapon の直読みはしない約束。
-    /// フェーズ22からはランタイム装備 EquippedWeapon を指す）。</summary>
-    public WeaponData Weapon => EquippedWeapon;
+    /// <summary>
+    /// 戦闘に使える武器。武器はこの窓口から読む（Data.weapon の直読みはしない約束。
+    /// フェーズ22からはランタイム装備 EquippedWeapon を指す）。
+    /// 【フェーズ31】耐久が尽きた武器を装備しているときは null を返す＝「装備無し」扱い。
+    /// これ1箇所で、攻撃不可・三すくみで不利・挟撃やガードの資格を失う・対空でなくなる・
+    /// 静止撃ち有利が消える・敵AIが武装無しとして扱う、が全て自動で成立する
+    /// （CombatRules / DamageCalculator / EnemyAI は全てこの窓口だけを見ているため）。
+    /// 「何を装備しているか」を見せたいだけの表示は EquippedWeapon を読むこと。
+    /// </summary>
+    public WeaponData Weapon => IsEquippedWeaponWorn ? null : EquippedWeapon;
 
     /// <summary>このターンに行動済みか（移動・攻撃を終えたか）。</summary>
     public bool HasActed { get; private set; }
@@ -69,6 +76,56 @@ public class Unit : MonoBehaviour
     public void Unequip()
     {
         EquippedWeapon = null;
+    }
+
+    // ── 武器の耐久（フェーズ31）──
+    // 耐久値そのものは所持品のランタイム状態（ItemSlot.UsesLeft）に入っている。
+    // 攻撃1回・杖の回復1回ごとに1減り、0になると「傷んでいる」＝ Weapon が null を返すようになる。
+    // そのとき装備は外れない（持ち替えずに補給を待てる＝作者合意）。
+    // マップが変わると Initialize で所持品ごと作り直されるので、資源なしで満タンに戻る。
+    //
+    // 【警告】飛翔・ゲージと同じ理由で、ここは「純粋な状態変更」に保つこと。
+    // 「誰の武器が減るか（自軍だけ）」やログは DurabilityRules と呼び出し側の担当。
+
+    /// <summary>
+    /// 装備中の武器のランタイム状態（耐久値の置き場）。武装無しなら null。
+    /// ※同じ武器アセットを2本持っていると先頭の1本を指す（現状そういうユニットはいない）。
+    ///   2本持ちを許すなら、装備をアセット参照から ItemSlot 参照へ変える必要がある。
+    /// </summary>
+    public ItemSlot EquippedSlot
+    {
+        get
+        {
+            if (EquippedWeapon == null) return null;
+            foreach (ItemSlot slot in Items)
+                if (slot.Item == EquippedWeapon) return slot;
+            return null;
+        }
+    }
+
+    /// <summary>装備中の武器が傷んでいる（耐久が尽きた）か。耐久なしの武器なら常に false。</summary>
+    public bool IsEquippedWeaponWorn
+    {
+        get
+        {
+            ItemSlot slot = EquippedSlot;
+            return slot != null && slot.HasDurability && slot.UsesLeft <= 0;
+        }
+    }
+
+    /// <summary>
+    /// 装備中の武器の耐久を1減らす（攻撃1回・杖の回復1回ぶん）。
+    /// 【重要】UseTool と違い、0になっても所持品からは絶対に取り除かない。
+    /// 耐久0の武器も「装備はできる・攻撃だけできない」が合意仕様で、補給で復活するため。
+    /// 戻り値は減らしたあとの残り耐久。耐久なしの武器・武装無しなら -1（＝減らさなかった）。
+    /// </summary>
+    public int ConsumeWeaponUse()
+    {
+        ItemSlot slot = EquippedSlot;
+        if (slot == null || !slot.HasDurability) return -1;
+
+        if (slot.UsesLeft > 0) slot.UsesLeft--;
+        return slot.UsesLeft;
     }
 
     /// <summary>
@@ -299,7 +356,8 @@ public class Unit : MonoBehaviour
         Mana.Add(GaugeRules.InitialMana(this));
         UsedRefreshThisTurn = false;
 
-        // 所持品をコピーし（ランタイム状態）、一番上の武器を初期装備にする（フェーズ22）
+        // 所持品をコピーし（ランタイム状態）、一番上の武器を初期装備にする（フェーズ22）。
+        // 武器の耐久値も新品（上限）で入るので、マップが変わるたびに資源なしで全回復する（フェーズ31）
         Items.Clear();
         foreach (ItemData item in data.GetInitialItems())
             Items.Add(new ItemSlot(item));

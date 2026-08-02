@@ -25,16 +25,22 @@ public static class UnitInfoLines
         lines.Add($"力{unit.Strength}　魔力{unit.Magic}　技{unit.Skill}　速さ{unit.Speed}");
         lines.Add($"守備{unit.Defense}　魔防{unit.Resistance}　移動{unit.Move}");
         lines.Add(WeaponLine(unit));
+        AddDurabilityLines(unit, lines);
         AddItemLines(unit, lines);
         lines.Add(StateLine(unit));
 
         return lines;
     }
 
-    /// <summary>装備中の武器の行。「武器: 槍（前衛・威力5・射程1）」のような形式。</summary>
+    /// <summary>
+    /// 装備中の武器の行。「武器: 槍（前衛・威力5・射程1）」のような形式。
+    /// 【重要】ここは Weapon 窓口ではなく EquippedWeapon を読む。傷んだ武器も「装備している」
+    /// ことに変わりはなく、何を持っているかが消えてしまうと状況が読めなくなるため。
+    /// 耐久と「傷んでいる」の注記はこの行には足さない（下の AddDurabilityLines が別の行にする）。
+    /// </summary>
     public static string WeaponLine(Unit unit)
     {
-        WeaponData w = unit.Weapon;
+        WeaponData w = unit.EquippedWeapon;
         if (w == null) return "武器: なし（攻撃不可）";
 
         string cat = w.category == WeaponCategory.Melee ? "前衛" : "後衛";
@@ -42,7 +48,28 @@ public static class UnitInfoLines
         return $"武器: {w.weaponName}（{cat}・威力{w.might}・射程{range}）";
     }
 
-    /// <summary>持ち物の行を追加する。装備中の武器は「装備中」、道具は残り回数を添える。</summary>
+    /// <summary>
+    /// 装備中の武器の耐久の行（耐久ありの武器のときだけ足す。フェーズ31）。
+    /// 【重要】1行に詰め込まないこと。このパネルは幅340px・余白10pxで文字に使えるのは320pxしかなく、
+    /// 「武器: 魔道書（後衛・威力5・射程2）」だけでもう250px近くを使う。耐久と注記を同じ行に
+    /// 続けると右端で見切れる（2026-08-03 に実際に見切れた）。だから行を分け、
+    /// 傷んでいるときの説明はさらに次の行へ送る。
+    /// </summary>
+    public static void AddDurabilityLines(Unit unit, List<string> lines)
+    {
+        ItemSlot slot = unit.EquippedSlot;
+        if (slot == null || !slot.HasDurability) return;
+
+        bool worn = unit.IsEquippedWeaponWorn;
+        lines.Add($"耐久: {slot.UsesLeft}／{slot.MaxUses}" + (worn ? "　※傷んでいる" : ""));
+        if (worn) lines.Add("　攻撃できない（装備無し扱い）");
+    }
+
+    /// <summary>
+    /// 持ち物の行を追加する。装備中の武器は「装備中」、道具は残り回数、
+    /// 耐久のある武器は残りの耐久を添える。
+    /// 「装備中」の目印は EquippedWeapon で判定する（傷んでいても装備は外れていないため）。
+    /// </summary>
     public static void AddItemLines(Unit unit, List<string> lines)
     {
         if (unit.Items.Count == 0)
@@ -56,7 +83,11 @@ public static class UnitInfoLines
         {
             string note = "";
             if (slot.Item is ToolData) note = $"（残り{slot.UsesLeft}回）";
-            else if (slot.Item == unit.Weapon) note = "（装備中）";
+            else if (slot.Item is WeaponData)
+            {
+                if (slot.Item == unit.EquippedWeapon) note = "（装備中）";
+                if (slot.HasDurability) note += $"（耐久{slot.UsesLeft}／{slot.MaxUses}）";
+            }
             lines.Add($"・{slot.Item.DisplayName}{note}");
         }
     }

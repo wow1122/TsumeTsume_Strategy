@@ -10,13 +10,16 @@ using UnityEngine;
 ///  ・杖の射程   … 装備している杖の minRange〜maxRange（攻撃の後衛武器と違い、移動しても縮まない）
 ///  ・回復の対象 … 同陣営・生存・HPが満タン未満・射程内・高さ（飛翔）の関係が合う相手
 ///  ・回復量     … 使用者の魔力 ＋ 杖の威力（キックオフ合意(c)）
+///
+/// 【重要】武器は EquippedWeapon ではなく Weapon 窓口から読む（フェーズ31）。
+/// 耐久が尽きた杖は Weapon が null を返すので、これだけで「傷んだ杖では回復できない」が成立する。
 /// </summary>
 public static class StaffRules
 {
     /// <summary>杖を装備しているか（攻撃コマンドの代わりに「杖」コマンドを出すかの判定）。</summary>
     public static bool HasStaffEquipped(Unit unit)
     {
-        WeaponData w = unit.EquippedWeapon;
+        WeaponData w = unit.Weapon;   // 耐久が尽きていれば null＝杖コマンドは出ない
         return w != null && w.type == WeaponType.Staff;
     }
 
@@ -33,7 +36,7 @@ public static class StaffRules
             return false;
         }
 
-        WeaponData staff = unit.EquippedWeapon;
+        WeaponData staff = unit.Weapon;
         minRange = staff.minRange;
         maxRange = staff.maxRange;
         return true;
@@ -63,10 +66,11 @@ public static class StaffRules
         return targets;
     }
 
-    /// <summary>杖の回復量＝使用者の魔力＋杖の威力（合意(c)）。杖を装備していなければ0。</summary>
+    /// <summary>杖の回復量＝使用者の魔力＋杖の威力（合意(c)）。杖を装備していなければ0
+    /// （耐久が尽きた杖も装備していない扱いになる）。</summary>
     public static int HealAmount(Unit user)
     {
-        WeaponData staff = user.EquippedWeapon;
+        WeaponData staff = user.Weapon;
         if (staff == null || staff.type != WeaponType.Staff) return 0;
         return user.Magic + staff.might;
     }

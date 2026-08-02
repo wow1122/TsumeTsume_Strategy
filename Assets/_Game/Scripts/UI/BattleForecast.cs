@@ -168,7 +168,9 @@ public class BattleForecast : MonoBehaviour
         // そもそも攻撃が成立しない相手は、その理由だけを出す
         string blocked = null;
         if (enemy.Weapon == null)
-            blocked = "この相手は武装無しのため攻撃してこない";
+            blocked = enemy.IsEquippedWeaponWorn
+                ? "この相手は武器が傷んでいるため攻撃してこない（装備無し扱い）"
+                : "この相手は武装無しのため攻撃してこない";
         else if (!CombatRules.CanEngage(enemy, incomingDefender))
             blocked = "この相手からは攻撃を受けない（飛翔の制限）";
 

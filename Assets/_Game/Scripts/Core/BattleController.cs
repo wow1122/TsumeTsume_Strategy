@@ -928,6 +928,7 @@ public class BattleController : MonoBehaviour
     /// 杖で回復を実行：対象のHPを（使用者の魔力＋杖の威力）回復し、行動を終える。
     /// 道具（傷薬）と同じく「使うと行動終了」（合意(b)）。対象は FindHealTargets で
     /// 満タン未満に絞ってあるので、ここでは実際の回復量を確かめてログに出すだけでよい。
+    /// 杖も武器なので、1回使うと耐久が1減る（フェーズ31）。回復量を決めた後で減らすこと。
     /// </summary>
     private void ExecuteHeal(Unit target)
     {
@@ -939,6 +940,7 @@ public class BattleController : MonoBehaviour
 
         Debug.Log($"{unit.Data.unitName} は {target.Data.unitName} を杖で回復した" +
                   $"（HP{healed}回復 → {target.CurrentHP}／{target.MaxHP}）");
+        DurabilityRules.Consume(unit);
         FinishAction();
     }
 
@@ -1058,22 +1060,38 @@ public class BattleController : MonoBehaviour
 
         foreach (ItemSlot slot in unit.Items)
         {
-            string label = slot.Item.DisplayName;
-            if (slot.Item is WeaponData weapon)
-            {
-                if (weapon == unit.EquippedWeapon) label += "（装備中）";
-                else if (!CanEquip(unit, weapon)) label += "（装備不可）";
-            }
-            else if (slot.Item is ToolData)
-            {
-                label += $"（残り{slot.UsesLeft}）";
-            }
-
             ItemSlot s = slot; // ラムダが最後の値を掴まないようローカルに退避
-            entries.Add(new ItemListMenu.Entry(label, true, () => EnterItemActionSelect(s), BuildItemDetail(s)));
+            entries.Add(new ItemListMenu.Entry(BuildItemLabel(slot, unit), true,
+                                               () => EnterItemActionSelect(s), BuildItemDetail(s)));
         }
 
         return entries;
+    }
+
+    /// <summary>
+    /// 持ち物リストと交換の列で共通の行ラベル（名前＋装備中／装備不可／残り回数）。
+    /// 2箇所で同じ書き方に揃えるためにここへ集約している（片方だけ直して表示がずれるのを防ぐ）。
+    /// 装備できるかは、その持ち物の持ち主 owner の兵種で判定する。
+    /// 「装備中」は EquippedWeapon で見る＝耐久が尽きていても装備は外れていない（フェーズ31）。
+    /// ※武器の耐久はここには出さない。ボタン幅は「傷薬（残り3）」「剣（装備中）」に合わせた
+    ///   170px しかなく、「魔道書（装備中）（耐久6）」のような長い名前で右端が見切れるため。
+    ///   耐久は行にマウスを重ねたときの詳細パネルと、ユニット情報パネルで見る。
+    /// </summary>
+    private string BuildItemLabel(ItemSlot slot, Unit owner)
+    {
+        string label = slot.Item.DisplayName;
+
+        if (slot.Item is WeaponData weapon)
+        {
+            if (weapon == owner.EquippedWeapon) label += "（装備中）";
+            else if (!CanEquip(owner, weapon)) label += "（装備不可）";
+        }
+        else if (slot.Item is ToolData)
+        {
+            label += $"（残り{slot.UsesLeft}）";
+        }
+
+        return label;
     }
 
     /// <summary>
@@ -1186,7 +1204,7 @@ public class BattleController : MonoBehaviour
 
     /// <summary>
     /// 持ち物リストのホバーで出す詳細（1行目＝名前を見出しに、以降＝性能）。
-    /// 武器は種類・前衛/後衛・威力・射程、道具は効果・使用回数を見せる。
+    /// 武器は種類・前衛/後衛・威力・射程・耐久、道具は効果・使用回数を見せる。
     /// </summary>
     private List<string> BuildItemDetail(ItemSlot slot)
     {
@@ -1198,6 +1216,14 @@ public class BattleController : MonoBehaviour
             lines.Add(w.weaponName);
             lines.Add($"種類: {w.type.DisplayName()}　{cat}");
             lines.Add($"威力 {w.might}　射程 {range}");
+
+            // 詳細パネルは幅220px・余白6pxで文字に使えるのは208pxしかない。
+            // 長い説明を入れると右端で見切れるので、ここは短い注記だけにする（2026-08-03）
+            if (slot.HasDurability)
+            {
+                lines.Add($"耐久: 残り{slot.UsesLeft}／{slot.MaxUses}");
+                if (slot.UsesLeft <= 0) lines.Add("※傷んでいる（攻撃不可）");
+            }
         }
         else if (slot.Item is ToolData t)
         {
@@ -1276,21 +1302,10 @@ public class BattleController : MonoBehaviour
         bool canMove = ExchangeRules.CanReceive(to);
         foreach (ItemSlot slot in from.Items)
         {
-            string label = slot.Item.DisplayName;
-            if (slot.Item is WeaponData weapon)
-            {
-                if (weapon == from.EquippedWeapon) label += "（装備中）";
-                else if (!CanEquip(from, weapon)) label += "（装備不可）";
-            }
-            else if (slot.Item is ToolData)
-            {
-                label += $"（残り{slot.UsesLeft}）";
-            }
-
             ItemSlot s = slot; // ラムダが最後の値を掴まないようローカルに退避
             Unit f = from, t = to;
-            entries.Add(new ItemListMenu.Entry(label, canMove, () => TransferItem(s, f, t),
-                                               BuildItemDetail(slot)));
+            entries.Add(new ItemListMenu.Entry(BuildItemLabel(slot, from), canMove,
+                                               () => TransferItem(s, f, t), BuildItemDetail(slot)));
         }
 
         return entries;
@@ -1309,6 +1324,10 @@ public class BattleController : MonoBehaviour
             $"装備: {(unit.EquippedWeapon != null ? unit.EquippedWeapon.DisplayName : "なし")}",
         };
 
+        // 傷んでいる注記は「装備:」の行に足さず、別の行にする（列の幅が狭く、
+        // 「装備: 魔道書（傷んでいる）」だと右端で見切れるため。フェーズ31）
+        if (unit.IsEquippedWeaponWorn) lines.Add("※武器が傷んでいる");
+
         // いっぱいのときだけ注記を足す（灰色で押せない理由がその場で分かるように）
         if (!ExchangeRules.CanReceive(unit)) lines.Add("※いっぱい（受け取れない）");
 
@@ -1319,13 +1338,15 @@ public class BattleController : MonoBehaviour
     /// 品を1つ、from から to へ移す（渡す・もらうの両方向で共通）。
     /// 行動は消費しないが、最初の1個で取り消し不能点を打つ。
     /// 装備中の武器なら Unit 側で自動的に武装解除される。
-    /// 残り使用回数は ItemSlot ごと移るので引き継がれる（満タンに戻らない）。
+    /// 残り使用回数・武器の耐久は ItemSlot ごと移るので引き継がれる（満タンに戻らない）。
     /// </summary>
     private void TransferItem(ItemSlot slot, Unit from, Unit to)
     {
         Unit self = context.unit;
         string name = slot.Item.DisplayName;
-        string uses = slot.Item is ToolData ? $"（残り{slot.UsesLeft}）" : "";
+        string uses = "";
+        if (slot.HasDurability)
+            uses = slot.Item is WeaponData ? $"（耐久{slot.UsesLeft}）" : $"（残り{slot.UsesLeft}）";
         bool wasEquipped = slot.Item == from.EquippedWeapon;
 
         from.TransferItemTo(slot, to);

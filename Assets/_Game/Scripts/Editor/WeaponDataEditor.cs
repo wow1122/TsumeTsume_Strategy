@@ -25,6 +25,11 @@ public class WeaponDataEditor : Editor
         Draw("minRange", "最小射程");
         Draw("maxRange", "最大射程");
 
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("耐久", EditorStyles.boldLabel);
+        Draw("maxUses", "耐久値（0＝耐久なし）");
+        Draw("isStandardIssue", "標準装備（補給で回復）");
+
         serializedObject.ApplyModifiedProperties();
     }
 
