@@ -18,3 +18,5 @@ MonoBehaviour:
   might: 5
   minRange: 1
   maxRange: 1
+  maxUses: 6
+  isStandardIssue: 1
