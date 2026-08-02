@@ -442,6 +442,13 @@ public class BattleController : MonoBehaviour
     private void ShowMoveRange()
     {
         Unit unit = context.unit;
+
+        // 行動メニューは必ず閉じる（2026-07-30 修正）。飛翔のように「メニューの項目から
+        // そのまま移動選択へ戻る」コマンドがあり、閉じ忘れると飛翔前に作ったメニューが
+        // 残ってしまう（飛翔中は使えないはずの救出・引き受けの項目が見えるうえ、押せてしまう）。
+        // 移動選択の最中にメニューを出す場面は無いので、ここで一括して閉じる。
+        menu.Hide();
+
         unitInfo.Hide(); // 相手選択から移動選択へ移る（救出の直後など）ときは相手情報を消す
         reachableCells = MovementCalculator.GetReachableCells(grid, unit, context.RemainingMove, moveCosts);
 
