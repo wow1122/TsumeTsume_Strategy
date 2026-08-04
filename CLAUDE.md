@@ -7,7 +7,7 @@
 （プレイヤーのリスクとリターン、メリットとデメリットの評価と推奨）。
 書き方は「## 新しい仕様のレビュー（実装前に必ず出す）」の節に従う。
 
-## 進捗状況（2026-07-30 時点）
+## 進捗状況（2026-08-05 時点）
 
 バーティカルスライス完成（Phase 0〜7）、Phase 8（データ基盤刷新）、
 Phase 9（前衛・後衛武器と新三すくみ、CombatRules による判定一元化）、
@@ -83,6 +83,15 @@ ClassData（ScriptableObject）38種（下級14職・上級24職。「兵種デ�
 残り続けていた（飛翔中は使えないはずの救出・引き受けが見えるうえ、押せてしまう状態だった）。
 移動範囲表示の入口 ShowMoveRange でメニューを必ず閉じる形にして、同種の閉じ忘れが起きないようにした。
 以上3件は 2026-08-02 に作者 Play 確認済み。
+
+2026-08-03〜05、持ち越し候補だった**武器の耐久**を、**輸送隊からの補給**とセットで実装
+（「武器の耐久と補給の合意仕様」の節）。フェーズ31（耐久と摩耗: feat e99c937 / data 9050def）→
+フェーズ32（補給圏「陣中／孤立」: feat eb2b117 / data 7aeded8）の2段階で、いずれも Play 確認済み。
+武器を使うと耐久が減り、0になると「傷んでいる」＝装備したまま攻撃だけができなくなる。
+マップが変わると資源なしで満タンに戻り、マップ内では輸送隊から従者が通える範囲（陣中）にいる味方の
+武器が毎ターン1ずつ回復する。**戦闘前の武器整理は一切発生しない**（持ち越す層が無いため）。
+検証用に Stage_SupplyTest を追加。当初合意にあった「耐久0の武器を装備中は 技・速さ -5」は、
+外すだけで回避できる穴が見つかったため廃止した（同節に経緯あり）。
 
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
@@ -669,6 +678,95 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - 被ダメ確認: 敵が動くかは事前に確定できないので、相手が後衛武器のときだけ
   「移動時／静止時」の2行＋三すくみの両方の値＋HPの両方の結果を並べる（DrawIncomingBothCases）
 
+### 武器の耐久と補給の合意仕様（フェーズ31〜32・2026-08-03 作者合意）
+
+**世界観**（局地戦なので「兵站」ではなく人の往復で説明する）:
+輸送隊は部隊自身の装具一式を積んだ荷駄。従者が前線と荷駄を往復して傷んだ得物を替えている。
+だから距離が関係し、敵に道を塞がれると往復できなくなり、山や城壁は越えられない。
+用語は **陣中／孤立**、武器の状態は **傷んでいる**。
+
+**なぜこの形になったか**: 出発点は「耐久値を入れると戦闘前の武器整理が面倒」対「耐久値が無いと
+デメリット付き武器ばかりになり死に武器が出る（FE if の例）」の二律背反。検討の結果、
+**面倒さの原因は耐久値ではなくマップ間の持ち越し**であり、このプロジェクトには持ち越す層
+（ショップ・お金・育成・準備画面）がそもそも無いことが分かった。所持品は毎マップ `Unit.Initialize`
+で作り直されるので、耐久を入れても準備作業はゼロのまま。そのうえで「マップ内で完結する回復」
+として輸送隊からの補給を選んだ（作者が HOI4 の兵站に着想を得た案）。
+
+**ルール**
+
+- 耐久の上限は全武器 **6**（`WeaponData.maxUses`。0 なら耐久なし＝無限に使える）
+- 武器を1回使うと耐久が1減る。通常攻撃・必殺技・挟撃の追撃・杖の回復のどれも1
+- **摩耗するのは自軍だけ**。敵の武器は減らない（敵は補給を受けないので、減らすと際限なく弱くなる。
+  「敵は救出系／所持品／交換／ゲージを使わない」と同じ前例）
+- 耐久0＝**傷んでいる**。**装備はできるが攻撃できない**。戦闘では**武装無し扱い**になり、
+  三すくみで相手が有利になる
+- 傷んだ武器を装備していても**能力値のデバフは無い**。当初は「技・速さ -5」で合意していたが、
+  装備の付け外しは行動を消費しないため**外すだけで回避できる**（外しても武装無しで三すくみ不利は
+  同じなので、外すのが常に得）＝操作を知っている人だけが得をするメニュー操作の税になるため廃止した。
+  廃止したことで装備したままでも外しても戦闘上まったく同じになり、外す動機そのものが消えた
+- **マップが変わると資源なしで上限まで回復する**（`Initialize` が所持品ごと作り直すので追加コード無し）
+- マップ内では**輸送隊からの補給**で回復する。自軍フェイズ開始ごとに、**陣中**のユニットが持つ
+  **標準装備**（`WeaponData.isStandardIssue`）の武器の耐久が **+1**
+- 回復は装備中の1本だけでなく**所持品の中の標準装備すべて**に入る（「傷んだ方を装備し直して待つ」
+  という作業を発生させないため）
+- 運ばれている味方（Carried）は、運んでいる側が陣中なら一緒に回復する
+- 補給圏＝輸送隊から**移動コスト5以内**のマス（`SupplyRules.SupplyRange`。輸送隊の移動力に合わせてある）
+  **＋その上下左右の隣マス1周**。隣マスは地形を見ない（従者は手渡しできるので、輸送隊が入れない
+  山に立っている味方にも届く）。1周だけなので壁の向こうや敵の後ろへは漏れない
+- **輸送隊のいないステージでは補給の仕組みごと止まる**（陣中／孤立の表示も出ない。
+  `Stage_AITest_*` を従来どおり動かすため）
+- 資源（素材）システムは未実装。現行の武器はすべて標準装備なので、いまは全部が資源なしで回復する
+
+**数値の性質（作者に提示済み）**
+
+- 回復1／ターンなので、**陣中で1ターンに1回攻撃するぶんには耐久は減らない**（消費1・回復1）。
+  実際に減るのは孤立しているときと、挟撃の追撃や再行動で1ターンに2回以上使ったとき。
+  「補給が通っていれば安泰、切れると消耗戦」という狙いどおりの挙動
+- 杖（ライブ）にも耐久6を入れたので、修道士の回復は1マップ6回まで（陣中なら毎ターン1回は続けられる）
+- Stage_01 でも補給は効く: 輸送隊は (6,0)、y=8 が城壁で通れるのは (5,8)(6,8) の2マスだけなので、
+  前線が y=7 より北へ出ると輸送隊が付いていかない限り孤立する
+
+**実装の要点**
+
+- **`Unit.Weapon` が唯一の窓口**。`IsEquippedWeaponWorn ? null : EquippedWeapon` の1行で、
+  攻撃不可・三すくみで装備無し扱い・挟撃とガードの資格喪失・対空でなくなる・静止撃ち有利が消える・
+  敵AIが武装無しとして扱う、が同時に成立する（戦闘・AI・戦闘UIは全てこの窓口だけを見ているため）。
+  **「何を装備しているか」を見せるだけの表示は `EquippedWeapon` を読む**
+- 耐久0でも**所持品からは絶対に取り除かない**（`Unit.ConsumeWeaponUse`。道具の `UseTool` と違う点）
+- 消耗は**戦闘の判定が全部終わってから**行う（`CombatSystem.ResolveAttack` の最後）。途中で減らすと
+  耐久が尽きた瞬間に挟撃の成立判定や気勢の配分がその一撃の中でずれる
+- 補給圏は **`MovementCalculator.GetDistanceMap`** で作る。**`GetReachableCells` は使えない**：
+  あちらは「止まれるマス」を返す関数で誰かが立っているマスを除外するため、補給圏に使うと
+  味方の足元に穴が空く。`GetDistanceMap` は通行判定しか見ないので占有マスを含み、しかも
+  「敵のマスは通れない＝敵1体で補給線が切れる」「味方のマスは通れる＝味方が列を作っても切れない」
+  「輸送隊は騎乗扱い＝山は通れず森はコスト3」が追加コード無しで成立する。`MovementCalculator` は無改造
+- 表示は OnGUI から毎フレーム呼ばれるので、補給圏の計算は `Time.frameCount` で1フレーム1回に絞る。
+  回復の本体（`TickRepair`）はこのキャッシュを使わない（フェイズ開始の直前に敵が動いているので、
+  同じフレームの古い結果を使ってはいけない）
+- **`EquippedWeapon` を直読みしている箇所は `Weapon` 窓口に追随しない**。フェーズ31 で `StaffRules` の
+  3箇所を差し替えた（傷んだ杖で回復し続けられる穴だった）
+
+**UI**
+
+- ユニット情報パネル: 武器の行の下に `耐久: 4／6`。傷んでいるときは `耐久: 0／6　※傷んでいる` と、
+  次の行に `　攻撃できない（装備無し扱い）`。状態の行に `陣中` / `孤立`
+- 持ち物リストのボタンには耐久を出さない（幅が足りず「魔道書（装備中）（耐久6）」で見切れるため）。
+  耐久は行ホバーの詳細パネルとユニット情報パネルで見る
+- 補給圏は輸送隊を選択しているあいだ薄紫（`HighlightKind.SupplyZone`）。優先度は一番下なので
+  移動範囲・攻撃範囲などの表示を絶対に隠さない
+
+**表示幅の制約（2026-08-03 と 08-05 に実際に見切れたので必ず守る）**
+
+- ユニット情報パネル（`UnitInfoPanel` / `DebugUnitPanel`）… 幅340px・余白10px＝文字に使えるのは320px。
+  全角14pxなので **1行22文字が上限**
+- 持ち物のホバー詳細（`ItemListMenu`）… 幅220px・余白6px＝208px＝**全角14文字が上限**
+- 持ち物リストのボタン … 幅170px・文字16px＝**全角10文字が上限**
+- 交換の列の見出し … 幅170px・文字13px。注記は「装備:」の行に足さず別の行にする
+- 状態の行は部品が増えると溢れるので、`UnitInfoLines.AddStateLines` が幅に収まらなくなったら
+  自動で次の行へ送る（飛翔中の飛行兵が救出していると約400pxになり、実際に溢れていた）
+- これらのパネルは全て `AddComponent` で作られる（シーンに値は保存されていない）ので、
+  幅を変えたければコードの既定値を書き換えるだけでよい
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -692,10 +790,13 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   TurnManager(フェイズ・勝敗・ターン制限判定・簡易UI・フェイズ開始時の飛翔Tick・
   敵AI思考ログの切替enemyAILog・敵フェイズ内の敵HasActed管理※フェイズ終了時に戻す・
   フェイズ開始時のマナ加算/再行動フラグ戻し/連鎖リセット※ターン1は初期値のまま・
-  再行動できる味方がいる間は自動でターンを終えない※フェーズ30),
+  再行動できる味方がいる間は自動でターンを終えない※フェーズ30・
+  自軍フェイズ開始時の補給SupplyRules.TickRepair※フェーズ32〔敵フェイズは無改変〕),
   BattleSetup(StageDataを読んで初期配置・開始時飛翔の適用・配置マスの兵種チェック)
 - Grid/ … GridManager(盤面・可変サイズApplyStageSize・カメラ自動フィットFitCamera・座標変換・
-  多層ハイライト・地形適用ApplyTerrain・地形情報の画面下表示※騎乗差分も表示),
+  多層ハイライト※HighlightKindの優先順は Selection > TargetChoice > AttackRange > HealRange >
+  MoveRange > SupplyZone〔補給圏・薄紫・フェーズ32。一番下なので他を隠さない〕・
+  地形適用ApplyTerrain・地形情報の画面下表示※騎乗差分も表示),
   TileData(1マスの論理データ。IsWalkable/CanFlyOver/MoveCost/DefenseBonus に加え
   兵種別の IsWalkableFor/MoveCostFor),
   TerrainType(地形enum+TerrainDef定義。城壁Rampart・飛行可否canFlyOver・騎乗の mountedWalkable/mountedCost),
@@ -714,7 +815,10 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   panelEnabledでOFF可・ゲーム状態は変えない・行の組み立てはUnitInfoLines共通＋敵AI/挟撃の行を追加),
   UnitInfoPanel(対象選択・貨物リストのユニット情報パネル・右下。盤面モード＝候補をホバーで切替／
   単体モード＝指定1体を表示※格納中の貨物用・BattleControllerが自動生成。2026-07-26),
-  UnitInfoLines(ユニット情報の表示行を組み立てる共通処理。名前/兵種/HP/能力値/装備武器/持ち物/状態),
+  UnitInfoLines(ユニット情報の表示行を組み立てる共通処理。名前/兵種/HP/能力値/装備武器/耐久/持ち物/状態。
+  武器の行は EquippedWeapon を読む※傷んでいても何を装備しているかは見せる・
+  耐久と注記は AddDurabilityLines が別の行にする※1行に詰めると幅320pxで見切れる・
+  状態は AddStateLines が幅に収まらなくなったら次の行へ送る※フェーズ32〔陣中/孤立も状態の1つ〕),
   GaugeBars(マナ・気勢のゲージバーを描く共通部品※フェーズ28。MonoBehaviourではない静的クラスで
   UnitInfoLinesと同じ位置づけ。デバッグパネルとユニット情報パネルの両方が文字行の下で呼ぶ。
   緑＝マナ/青＝気勢・値10ごとに黒い目盛り・右に「n本 値／最大」・塗りはTexture2D.whiteTextureに色を掛ける)
@@ -722,11 +826,14 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   AI性格AIProfile/挑発済みIsProvoked※永続・所持品Items/装備EquippedWeapon※Weapon窓口・Equip/Unequip/破棄DiscardItem・
   受け渡しTransferItemTo※ItemSlotごと移すので残り回数を引き継ぐ・装備中なら自動で武装解除・
   回復Heal※最大HPクランプ・道具使用UseTool・
+  武器の耐久※フェーズ31〔装備中武器のランタイム状態EquippedSlot・傷んでいるかIsEquippedWeaponWorn・
+  1回ぶん消耗ConsumeWeaponUse。0でも所持品からは取り除かない＝UseToolとの違い〕・
   マナ/気勢ゲージMana/Momentum※フェーズ28〔AddMana/SpendMana/AddMomentum/SpendMomentum・
   Initializeで技ぶんの初期マナ〕・再行動の1ターン1回UsedRefreshThisTurn/MarkRefreshUsed/ResetRefresh※フェーズ30),
   GaugeState(ゲージ1本ぶんのランタイム状態: 値Value + 本数Stock + 上限Max/MaxStock。
   満タンでストックへ繰り上げ・超過分は繰り越し・ストック上限では頭打ち。ItemSlotと同じ素のC#クラス),
-  ItemSlot(所持品1つのランタイム状態: item + 残り回数UsesLeft),
+  ItemSlot(所持品1つのランタイム状態: item + 残り回数UsesLeft ＋ 新品時の回数MaxUses/回数を持つかHasDurability・
+  補給での回復Refill※上限クランプ。道具の使用回数と武器の耐久を同じ2欄で扱う※フェーズ31),
   UnitClass(移動タイプenum+IsMounted/IsCavalry/DisplayName),
   ClassTier(階級enum: 下級/上級), ClassTag(特攻タグ[Flags]: 騎馬/天馬/竜),
   RescueRules(救出系コマンドの可否判定一元化・乗り込む判定・飛翔の制限と空中引き受け・
@@ -738,7 +845,18 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   必殺技の倍率適用※フェーズ29〔引数critical・本体の一撃だけ倍率で挟撃は等倍〕・
   静止撃ち有利の受け渡し※2026-07-30〔ResolveAttackの引数attackerHasMoved。プレイヤーはcontext.hasMoved、
   敵AIは移動前に控えた「立ち位置≠元の位置」〕・
-  戦闘1回ごとの撃破通知→GaugeRules※フェーズ28〔挟撃のとどめも含む〕),
+  戦闘1回ごとの撃破通知→GaugeRules※フェーズ28〔挟撃のとどめも含む〕・
+  武器の消耗→DurabilityRules※フェーズ31〔本体の一撃と挟撃の追撃。戦闘の判定が全部終わってから
+  まとめて減らす＝途中で減らすと挟撃の成立判定や気勢の配分がその一撃の中でずれる。
+  TryPincerの戻り値は追撃した味方〕),
+  DurabilityRules(武器の摩耗の一元判定※フェーズ31。摩耗するのは自軍だけWearsOut・1回ぶん減らすConsume＋ログ。
+  耐久0の扱いはUnit.Weaponがnullを返すことだけで表す＝装備したままでも外しても戦闘上は同じ),
+  SupplyRules(補給圏「陣中／孤立」の一元判定※フェーズ32。調整用の定数は先頭に集約
+  〔補給圏SupplyRange=5＝輸送隊の移動力／回復量RepairPerTurn=1〕。
+  補給元FindSupplySource※輸送隊・補給圏GetSupplyCells※GetDistanceMap＋隣マス1周・
+  陣中判定IsSupplied・毎ターンの回復TickRepair※所持品の標準装備すべて＋運んでいる貨物も・
+  表示用GetSupplyCellsCached/IsSuppliedForDisplay/HasSupplyLine※Time.frameCountで1フレーム1回。
+  輸送隊がいなければnull＝補給の仕組みごと止まる),
   GaugeRules(マナ・気勢の数値と可否の一元判定※フェーズ28〜30。調整用の定数は先頭1ブロックに集約
   〔マナ最大30・2本/魔力20で+2・30で+3/必殺技の倍率2.0/気勢最大100・2本/2連続目から/速さ÷2〕。
   InitialMana/ManaGainPerTurn/TickMana/MomentumGain/NotifyBattleResult※連鎖の管理/ResetChain/
@@ -747,7 +865,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   後衛武器の静止撃ち有利※2026-07-30〔引数attackerHasMoved・既定true＝補正なし側・有利の式はAdvantageBonusで前衛と共有〕・
   攻撃できる立ち位置一覧GetAttackFromCells・挟撃の反対側マスGetPincerOppositeCell・
   仮定位置ガード判定WouldGuardAt・ガード役かどうかIsGuardingSomeone※Phase 18),
-  StaffRules(杖の可否・回復対象・回復量の一元判定※Phase 25。HasStaffEquipped/TryGetStaffRange/FindHealTargets/HealAmount),
+  StaffRules(杖の可否・回復対象・回復量の一元判定※Phase 25。HasStaffEquipped/TryGetStaffRange/FindHealTargets/HealAmount。
+  武器はEquippedWeaponではなくWeapon窓口から読む※フェーズ31で差し替え〔傷んだ杖では回復できない〕),
   DamageCalculator(物理/魔法分岐・DamageBreakdown内訳・飛翔中は地形防御なし・
   ダメージ倍率multiplier※フェーズ29〔BaseTotal＝倍率前/Total＝倍率後・切り捨て。
   structの既定値0は等倍として扱う。引数は既定1なので既存の呼び出しは挙動不変〕・
@@ -756,7 +875,10 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - Data/ … UnitData(7能力値+兵種データclassData+所持品items※上限InventoryCapacity=7。移動タイプ/移動力は
   EffectiveClass/EffectiveMove、初期所持品/装備は GetInitialItems/GetInitialWeapon で解決・武器不一致はOnValidateで警告),
   ClassData(兵種1種の定義: 名前・階級・移動タイプ・移動力・装備可能武器・特攻タグ・昇格先),
-  ItemData(所持品の抽象基底・DisplayName のみ), WeaponData(: ItemData), ToolData(: ItemData・道具。healAmount/maxUses),
+  ItemData(所持品の抽象基底・DisplayName のみ),
+  WeaponData(: ItemData・耐久maxUses※既定0＝耐久なしで既存アセットを壊さない/新規作成時はResetで6・
+  標準装備isStandardIssue※フェーズ32の補給を資源なしで受けられるか。既定true),
+  ToolData(: ItemData・道具。healAmount/maxUses),
   StageData(初期配置+開始時飛翔initialFlightTurns+
   AI性格aiProfile+地形マップterrainRows+盤面サイズgridWidth/gridHeight+ターン制限turnLimit),
   TerrainTable(地形定義一覧・記号引き) (ScriptableObject定義)
@@ -787,7 +909,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   Unit_Enemy_Lancer, Unit_Enemy_Archer, Unit_Enemy_Flier, Unit_Enemy_Mage, Unit_Enemy_LanceFlier,
   Unit_Enemy_AxeCavalry, Unit_Test_Dummy, Unit_Test_Dummy_Weak（弱ダミーHP12・集中攻撃の検証用）,
   Unit_Player_Monk（味方修道士・杖ユニット。Phase 25）,
-  W_Sword, W_Axe, W_Lance, W_Bow, W_Tome, W_Live（杖・ライブ。Phase 25）,
+  W_Sword, W_Axe, W_Lance, W_Bow, W_Tome, W_Live（杖・ライブ。Phase 25）
+  ※6種すべて maxUses:6・isStandardIssue:1（フェーズ31）,
   Tool_Vulnerary（傷薬。道具・Phase 24）, Stage_Test, Stage_01, Stage_AITest_Path,
   Stage_AITest_Ambush, Stage_AITest_Pincer, Stage_AITest_Guard, Stage_AITest_Flight,
   Stage_AITest_Focus, TerrainTable,
@@ -797,7 +920,13 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   Unit_Test_Enemy_Weak（HP1・守備0＝連続撃破を作る）,
   Unit_Test_Enemy_Tough（HP99・力0・守備5・待ち伏せ型＝倒せないので連鎖リセットと必殺技の確認用）,
   Stage_GaugeTest（12×10・全平地・ターン制限なし。y6に硬敵/弱敵6体/硬敵、y5にその真下へ味方7体。
-  弱敵を5体連続撃破すると気勢がちょうど1本＝100 貯まる）。
+  弱敵を5体連続撃破すると気勢がちょうど1本＝100 貯まる）,
+  Stage_SupplyTest（補給の検証用・フェーズ32。10×10・ターン制限なし。x=4,5,6 が壁の3マス幅の帯で
+  通路は y=5 の1本だけ＝(4,5)(5,5)(6,5) を必ず通るので、ここに敵が1体いるだけで補給線が切れる。
+  隘路を3マス長くしてあるのは、栓の敵が動いても切れたままになるようにするため。
+  x=1,2 の山は輸送隊〔騎乗〕が通れないので補給圏が歪む。
+  配置: 輸送隊(1,5)/味方兵(2,5)/味方騎兵(2,4)/味方兵(8,5)＝孤立側/敵兵・待ち伏せ型(5,5)＝通路の栓/
+  検証用硬敵・待ち伏せ型(2,2)(8,8)＝殴り台）。
   Classes/ サブフォルダに兵種 ClassData 38種: Class_Tactician（軍師）〜Class_MaligKnight（魔竜騎兵）。
   ※Unit_Player_AxeCavalry / Unit_Enemy_AxeCavalry はファイル名こそ旧名だが中身は槍騎兵（兵種データ導入時に持ち替え））
 シーン: Assets/_Game/Scenes/BattleScene.unity
@@ -814,9 +943,20 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 持ち越し候補だった**交換（フェーズ26〜27）を完了**（「交換の合意仕様」の節）。
 同日、**マナゲージ・気勢ゲージのロードマップ（フェーズ28〜30）も完走**
 （「マナゲージ・気勢ゲージの合意仕様」の節）。
+2026-08-03〜05 には、持ち越し候補だった**武器耐久を輸送隊からの補給とセットで完了**
+（フェーズ31〜32。「武器の耐久と補給の合意仕様」の節）。
 
 **現在アクティブなロードマップは無い。次は作者と次期ロードマップの優先度を相談してから着手する**
 （下の「持ち越し候補」から作者が選ぶ。フェーズ着手は明示の合図をもらってから）。
+
+**補給まわりの宿題（作者と相談すること）**:
+- 手触りを見てからの数値調整。回復1／ターンなので陣中では1ターン1回の攻撃と釣り合う
+  （＝陣中は実質無限）。「陣中でもじりじり減ってほしい」なら回復を2ターンに1回にするか
+  耐久上限を上げる。補給圏の広さは `SupplyRules.SupplyRange`（現在5）
+- 敵AIは補給を理解しない。輸送隊を安全な後方に置くだけで孤立が起きないので、
+  「補給線を切りに来る敵」を入れるかは別途相談（下の持ち越し候補）
+- 検証が終わったら BattleScene の Stage を Stage_01 に戻して Ctrl+S
+  （Stage_SupplyTest への差し替えはコミットしない運用）
 
 **ゲージまわりの宿題（作者と相談すること）**:
 - Stage_01 では両ゲージとも発動しない（原案の閾値のまま実装したため）。
@@ -880,7 +1020,12 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - 特効ダメージ＋特効武器（所持品の持ち替えが活きる。兵種の特攻タグ〔騎馬/天馬/竜〕が前提として導入済み）
 - 輸送隊への預かり（部隊倉庫。交換は 2026-07-26 に実装済み＝「交換の合意仕様」の節。
   相手を「盤上の1体」から「部隊共有の置き場」に差し替えれば同じ交換画面を使い回せる）
-- 武器耐久（作者検討中。残り回数の仕組みは道具の ItemSlot.UsesLeft で先行導入済み）
+- **資源（素材）システム**（フェーズ31〜32 で見送った第3の所持品。標準装備以外の武器の回復に
+  資源を要求する段階で、`WeaponData.isStandardIssue = false` と輸送隊の在庫がその入口。
+  現行の武器はすべて標準装備なので、いまは全部が資源なしで回復している）
+- **敵AIの補給線遮断**（現状 AI は補給を理解しないので、輸送隊を安全な後方に置くだけで孤立が起きない。
+  隘路や輸送隊への接近を評価に足す形。ガード〔Phase 19〕や挟撃〔Phase 18〕と同規模の1フェーズで入る）
+- **耐久・補給の数値の再調整**（上の「補給まわりの宿題」参照）
 - 勝利条件バリエーション（拠点到達など。Phase 15 と敵AI強化キックオフで2回先送り）
 - 救出系コマンドの敵AI使用（現状は「敵は救出系を使わない」合意のまま）
 - 敵の性格の追加（挑発後も動かない完全固定砲台型など。Phase 17 で先送り）
