@@ -245,6 +245,40 @@ public class Unit : MonoBehaviour
         }
     }
 
+    // ── 撃墜（2026-08-05 作者仕様）──
+    // 対空武器（弓・魔導書・光魔法）の攻撃を受けた飛翔中のユニットは、その場に着地する。
+    // 落下ダメージは無し。落ちた後は「次の自分のターンだけ飛翔できない」制限が付く
+    // （飛翔は行動を消費しないコマンドなので、制限が無いと自分のターンにタダで飛び直せてしまい、
+    //  撃墜された側の損失がほぼゼロになるため。作者合意）。
+    // 撃墜されるかどうかの判定は CombatRules.ShootsDown に一元化してある。
+
+    /// <summary>
+    /// 撃墜されて飛翔できない残りフェイズ数。撃墜の瞬間に2が入り、
+    /// 自陣営のフェイズ開始ごとに TickFlightBlock で1ずつ減る
+    /// （次の自分のフェイズのあいだは1のまま＝そのターンは飛べない。その次の開始で0＝また飛べる）。
+    /// </summary>
+    public int FlightBlockedTurns { get; private set; }
+
+    /// <summary>撃墜された直後で「飛翔」が使えない状態か。</summary>
+    public bool IsFlightBlocked => FlightBlockedTurns > 0;
+
+    /// <summary>
+    /// 対空攻撃で撃墜される。飛翔を解除し、次の自分のターンは飛翔できない状態にする。
+    /// 呼ぶのは CombatSystem.ResolveAttack だけ（ログは呼び出し側に置く）。
+    /// ※StartFlight / CancelFlight と違い、敵AIの probe からは呼ばれないので副作用を持ってよい
+    /// </summary>
+    public void ShootDown()
+    {
+        CancelFlight();
+        FlightBlockedTurns = 2;
+    }
+
+    /// <summary>自陣営フェイズ開始時に呼ぶ。撃墜による飛翔禁止の残りを1減らす。</summary>
+    public void TickFlightBlock()
+    {
+        if (FlightBlockedTurns > 0) FlightBlockedTurns--;
+    }
+
     // ── マナゲージ・気勢ゲージ（フェーズ28）──
     // 技と速さが三すくみ補正でしか使われていなかったので、この2つに独自の役割を与えるための仕組み。
     //  ・マナ … マップ開始時に「技」ぶん貯まっており、自陣営のフェイズ開始ごとに「魔力」に応じて増える。

@@ -704,6 +704,7 @@ public static class EnemyAI
     {
         plan = default;
         if (enemy.Class != UnitClass.Flier) return false; // 飛翔は飛行兵専用
+        if (enemy.IsFlightBlocked) return false;          // 撃墜された次のターンは飛べない（2026-08-05）
         if (enemy.Weapon == null) return false;           // 武装無しは攻撃目標を定義できない
 
         // 陸路の見積もり（今は地上なのでそのまま計算）。

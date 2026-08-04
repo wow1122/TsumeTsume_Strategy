@@ -21,6 +21,9 @@ using UnityEngine.InputSystem;
 /// 三すくみ有利が付く。与ダメモードでは選択中の味方が実際に移動したか（attackerHasMoved）で
 /// 確定した数字を出す。被ダメモードでは敵が動くかどうかを確定できないので、
 /// 相手が後衛武器のときだけ「移動して撃つ場合／静止して撃つ場合」の両方を並べて見せる。
+///
+/// 撃墜（2026-08-05 作者仕様）: 対空武器で飛翔中の相手を撃つと相手は着地する。
+/// 攻撃する前に分かるように、その組み合わせのときだけ注記を1行足す（BuildShootDownNote）。
 /// </summary>
 public class BattleForecast : MonoBehaviour
 {
@@ -154,6 +157,13 @@ public class BattleForecast : MonoBehaviour
             ? $"相手HP {defender.CurrentHP} → 0　撃破！"
             : $"相手HP {defender.CurrentHP} → {hpAfter}");
 
+        // 撃墜（2026-08-05 作者仕様）。倒し切るなら着地は起きないので、生き残るときだけ出す
+        if (hpAfter > 0)
+        {
+            string shootDownNote = BuildShootDownNote(attacker, defender, incoming: false);
+            if (shootDownNote != null) lines.Add(shootDownNote);
+        }
+
         DrawPanel(lines, critical ? "戦闘予測（必殺技）" : "戦闘予測");
     }
 
@@ -197,6 +207,10 @@ public class BattleForecast : MonoBehaviour
         lines.Add(hpAfter == 0
             ? $"自分のHP {incomingDefender.CurrentHP} → 0　倒される！"
             : $"自分のHP {incomingDefender.CurrentHP} → {hpAfter}");
+
+        string shootDownNote = BuildShootDownNote(enemy, incomingDefender, incoming: true);
+        if (shootDownNote != null) lines.Add(shootDownNote);
+
         lines.Add("※相手の位置どり・挟撃の追加は含まない");
 
         DrawPanel(lines, "被ダメージ予測");
@@ -225,6 +239,9 @@ public class BattleForecast : MonoBehaviour
         string hpLine = $"自分のHP {hp} → {hpMoved}（移動時）／ {hpStand}（静止時）";
         if (hpStand == 0) hpLine += hpMoved == 0 ? "　どちらでも倒される！" : "　静止して撃たれると倒される！";
         lines.Add(hpLine);
+
+        string shootDownNote = BuildShootDownNote(enemy, incomingDefender, incoming: true);
+        if (shootDownNote != null) lines.Add(shootDownNote);
 
         lines.Add("※弓・魔法はマスから動かずに撃つと三すくみ有利（静止時）");
         lines.Add("※相手の位置どり・挟撃の追加は含まない");
@@ -265,6 +282,21 @@ public class BattleForecast : MonoBehaviour
         return hasMoved
             ? "※移動して撃つため、静止撃ちの三すくみ有利なし"
             : "※マスから動かずに撃つため、三すくみ有利がつく";
+    }
+
+    /// <summary>
+    /// 撃墜の注記（2026-08-05 作者仕様）。対空武器（弓・魔導書・光魔法）の攻撃が
+    /// 飛翔中の相手に当たると、相手はその場に着地する（落下ダメージなし）。
+    /// 与ダメ・被ダメどちらのモードでも、その組み合わせのときだけ1行足す。
+    /// 判定は戦闘本体と同じ CombatRules.ShootsDown を使うので、表示と実際の結果は必ず一致する。
+    /// </summary>
+    private static string BuildShootDownNote(Unit attacker, Unit defender, bool incoming)
+    {
+        if (!CombatRules.ShootsDown(attacker, defender)) return null;
+
+        return incoming
+            ? "※当たると着地させられる（この後は近接にも狙われる）"
+            : "※当てると着地させる（飛翔が解除される）";
     }
 
     /// <summary>組み立てた行を画面右下のパネルに描く（title は見出し）。</summary>

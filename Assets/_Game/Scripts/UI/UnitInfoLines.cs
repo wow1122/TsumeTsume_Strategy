@@ -130,6 +130,7 @@ public static class UnitInfoLines
     /// <summary>
     /// 状態の部品を並べる。飛翔中か地上かは全ユニットで必ず出す
     /// （2026-07-26 作者要望。飛べない兵種は常に「地上」）。
+    /// 撃墜された飛行兵は、飛翔できない1ターンのあいだ「地上」の代わりにその旨を出す（2026-08-05）。
     /// 陣中／孤立は輸送隊のいるステージでだけ出す（フェーズ32）。
     /// </summary>
     private static List<string> BuildStateParts(Unit unit)
@@ -137,6 +138,7 @@ public static class UnitInfoLines
         var parts = new List<string> { unit.HasActed ? "行動済み" : "未行動" };
 
         if (unit.IsFlying) parts.Add($"飛翔中（残り{unit.FlightTurnsLeft}ターン）");
+        else if (unit.IsFlightBlocked) parts.Add("地上（撃墜され飛翔できない）"); // 2026-08-05
         else parts.Add("地上");
 
         // 輸送隊のいるステージでだけ出す。格納中のユニットは盤上の位置が定まらないので出さない

@@ -57,9 +57,10 @@ public class TurnManager : MonoBehaviour
 
         foreach (Unit u in UnitRegistry.GetUnits(Faction.Player))
         {
-            u.TickFlight();    // 飛翔の残りターンを1減らす（0になったら自動着地。Phase 14）
-            u.SetActed(false); // 全味方を「未行動」に戻す
-            u.ResetRefresh();  // 再行動の「1ターン1回」を戻す（フェーズ30）
+            u.TickFlight();      // 飛翔の残りターンを1減らす（0になったら自動着地。Phase 14）
+            u.TickFlightBlock(); // 撃墜による飛翔禁止の残りを1減らす（2026-08-05）
+            u.SetActed(false);   // 全味方を「未行動」に戻す
+            u.ResetRefresh();    // 再行動の「1ターン1回」を戻す（フェーズ30）
         }
 
         // マナの自然増加（フェーズ28）。ターン1は初期値のまま
@@ -86,8 +87,9 @@ public class TurnManager : MonoBehaviour
 
         foreach (Unit u in UnitRegistry.GetUnits(Faction.Enemy))
         {
-            u.TickFlight();   // 敵側の飛翔もフェイズ開始で数える（Phase 20 から敵AIも自分で離陸する）
-            u.ResetRefresh(); // 敵は再行動を使わないが、状態は味方と対称に保つ
+            u.TickFlight();      // 敵側の飛翔もフェイズ開始で数える（Phase 20 から敵AIも自分で離陸する）
+            u.TickFlightBlock(); // 撃墜による飛翔禁止も敵味方対称に数える（2026-08-05）
+            u.ResetRefresh();    // 敵は再行動を使わないが、状態は味方と対称に保つ
         }
 
         // 敵側のマナも自軍と対称に増やす（敵AIは当面使わないが、蓄積は陣営を区別しない）

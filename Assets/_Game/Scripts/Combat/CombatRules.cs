@@ -126,6 +126,21 @@ public static class CombatRules
         return w != null && w.category == WeaponCategory.Ranged && w.type != WeaponType.Staff;
     }
 
+    /// <summary>
+    /// 撃墜になる攻撃か＝この攻撃が当たると防御側の飛翔が解除されるか（2026-08-05 作者仕様）。
+    /// 条件は「防御側が飛翔中」かつ「攻撃側が対空武器を持っている」の2つだけ。
+    /// 攻撃側が地上か空中かは問わない（対空武器なら空からでも落とす）。
+    /// 挟撃の追撃は必ず前衛武器なので撃墜にならない。杖は対空ではないので回復では落ちない。
+    /// 戦闘本体（CombatSystem）と戦闘予測・被ダメ確認（BattleForecast）が同じこの関数を見る。
+    /// ※武器の耐久が0になると Unit.Weapon が null を返して対空でなくなるので、
+    ///   判定は攻撃を解決する「前」に行うこと（CombatSystem は攻撃前に控えてから適用している）
+    /// </summary>
+    public static bool ShootsDown(Unit attacker, Unit defender)
+    {
+        if (attacker == null || defender == null) return false;
+        return defender.IsFlying && IsAntiAirCapable(attacker);
+    }
+
     // ===== 三すくみ =====
 
     /// <summary>

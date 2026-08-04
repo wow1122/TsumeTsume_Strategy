@@ -18,6 +18,8 @@ using UnityEngine;
 ///  ・武器の耐久（フェーズ31）：攻撃した側の武器を1回ぶん消耗させる（自軍のみ・DurabilityRules）。
 ///    消耗は「この戦闘が全部終わってから」まとめて行う。途中で減らすと、耐久が尽きた瞬間に
 ///    Weapon が null（装備無し扱い）へ変わり、挟撃の成立判定や気勢の配分がその一撃の中でずれる。
+///  ・撃墜（2026-08-05 作者仕様）：対空武器（弓・魔導書・光魔法）で飛翔中の相手を攻撃すると、
+///    当たった相手はその場に着地する（落下ダメージなし）。判定は攻撃の前に控え、解除は最後に行う。
 /// </summary>
 public static class CombatSystem
 {
@@ -29,6 +31,11 @@ public static class CombatSystem
                                     bool critical = false, bool attackerHasMoved = true)
     {
         if (attacker == null || defender == null) return;
+
+        // 0) 撃墜になる組み合わせか（2026-08-05 作者仕様）を、攻撃を解決する「前」に控えておく。
+        //    攻撃で武器の耐久が0になると Unit.Weapon が null（装備無し扱い）に変わり、
+        //    後から見ると「対空武器ではない」へ判定がひっくり返ってしまうため（耐久と同じ罠）
+        bool shootsDown = CombatRules.ShootsDown(attacker, defender);
 
         // 1) 攻撃側 → 防御側（内訳付きログ）
         //    必殺技（フェーズ29）のときは、この本体の一撃にだけ倍率がかかる（挟撃は等倍のまま）
@@ -62,6 +69,17 @@ public static class CombatSystem
         //    この戦闘の判定が全部終わってから減らす＝ダメージ・挟撃・気勢は消耗前の状態で決まる。
         DurabilityRules.Consume(attacker);
         DurabilityRules.Consume(pincerAlly);
+
+        // 6) 撃墜（2026-08-05 作者仕様）：対空武器で撃たれた飛翔中の相手はその場に着地する。
+        //    解除するのはこの戦闘の判定が全部終わってから（耐久と同じ理由。途中で解除すると
+        //    挟撃の成立判定や地形防御の有無が、この一撃の中で変わってしまう）。
+        //    倒したときは何もしない（死亡が優先）
+        if (shootsDown && defender != null && defender.IsAlive)
+        {
+            defender.ShootDown();
+            Debug.Log($"撃墜！ {defender.Data.unitName} は対空攻撃で飛翔を解かれ、その場に着地した" +
+                      "（次の自分のターンは飛翔できない）");
+        }
     }
 
     /// <summary>

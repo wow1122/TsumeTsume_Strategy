@@ -548,7 +548,7 @@ public class BattleController : MonoBehaviour
         // ただし飛行兵は救出の後にも飛翔できる（作者仕様変更 2026-07-12）
         if (context.usedRescue)
         {
-            if (unit.Class == UnitClass.Flier && !unit.IsFlying)
+            if (CanUseFlightCommand(unit))
                 commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
@@ -559,7 +559,7 @@ public class BattleController : MonoBehaviour
         // 引き受けの後に降ろした場合もここに来るので、usedTakeOver より先に判定する
         if (context.usedDrop)
         {
-            if (unit.Class == UnitClass.Flier && !unit.IsFlying)
+            if (CanUseFlightCommand(unit))
                 commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
@@ -577,7 +577,7 @@ public class BattleController : MonoBehaviour
                 && RescueRules.GetDroppableCargoes(unit, grid).Count > 0)
                 commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
 
-            if (unit.Class == UnitClass.Flier && !unit.IsFlying)
+            if (CanUseFlightCommand(unit))
                 commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
 
             // 着陸を出すのはこの分岐だけでよい（救出・降ろすは飛翔中には実行できないので、
@@ -620,7 +620,7 @@ public class BattleController : MonoBehaviour
         // 飛翔：飛行兵が非飛翔中ならいつでも使える（移動前でも移動後でも。作者仕様変更 2026-07-12）。
         // 行動は消費せず、残り移動力ぶんの飛行移動ができる
         //（攻撃→行動終了の流れがあるので、戦闘後の飛翔は起こらない）
-        if (unit.Class == UnitClass.Flier && !unit.IsFlying)
+        if (CanUseFlightCommand(unit))
             commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
 
         // 着陸：飛翔中の飛行兵が使える。飛翔を発動したその行動（発動ターン）では使えない。
@@ -958,6 +958,18 @@ public class BattleController : MonoBehaviour
     }
 
     // ===== 飛翔（Phase 14）=====
+
+    /// <summary>
+    /// 「飛翔」コマンドを出せるか。飛行兵で・いま飛翔しておらず・撃墜による飛翔禁止も無いこと
+    /// （撃墜は 2026-08-05 作者仕様。撃墜された次の自分のターンは飛べない）。
+    /// BuildCommands の4か所（通常・救出後・降ろす後・引き受け後）が同じこの関数を見る
+    /// ＝条件を足すときに分岐を取りこぼさないため
+    /// （2026-07-30 に引き受け後の飛翔を緩めたとき、1分岐だけガードが漏れた前例がある）。
+    /// </summary>
+    private static bool CanUseFlightCommand(Unit unit)
+    {
+        return unit.Class == UnitClass.Flier && !unit.IsFlying && !unit.IsFlightBlocked;
+    }
 
     /// <summary>
     /// 飛翔を実行：飛翔状態になり、行動は消費せず「残り移動力」で移動選択へ戻る。
