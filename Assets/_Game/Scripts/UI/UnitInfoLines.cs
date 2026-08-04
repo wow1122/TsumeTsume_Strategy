@@ -27,7 +27,7 @@ public static class UnitInfoLines
         lines.Add(WeaponLine(unit));
         AddDurabilityLines(unit, lines);
         AddItemLines(unit, lines);
-        lines.Add(StateLine(unit));
+        AddStateLines(unit, lines);
 
         return lines;
     }
@@ -93,15 +93,57 @@ public static class UnitInfoLines
     }
 
     /// <summary>
-    /// 状態の行。行動済みかどうかに、飛翔・救出・格納の状態を「・」でつなげる。
-    /// 飛翔中か地上かは全ユニットで必ず出す（2026-07-26 作者要望。飛べない兵種は常に「地上」）。
+    /// 状態の行を組み立てて追加する。中身は「行動済みかどうか＋飛翔・補給・救出・格納」で、
+    /// 「・」でつないでいく。
+    /// 【重要】1行に詰め込まないこと。飛翔中の飛行兵が誰かを救出していると
+    /// 「状態: 未行動・飛翔中（残り3ターン）・陣中・救出中: 味方兵」で約400px になり、
+    /// パネルの320px を大きく超えて右端が見切れる（フェーズ32 で気づいた。陣中を足す前から
+    /// 超えていた）。状態は今後も増える可能性があるので、幅に収まらなくなったら
+    /// 自動で次の行へ送る形にしてある。
     /// </summary>
-    public static string StateLine(Unit unit)
+    public static void AddStateLines(Unit unit, List<string> lines)
+    {
+        List<string> parts = BuildStateParts(unit);
+
+        string line = "状態: ";
+        bool hasPart = false;
+
+        foreach (string part in parts)
+        {
+            string addition = hasPart ? "・" + part : part;
+
+            if (hasPart && HalfWidthLength(line + addition) > StateLineWidthLimit)
+            {
+                lines.Add(line);
+                line = "　" + part;   // 続きの行は字下げして、状態の続きだと分かるようにする
+            }
+            else
+            {
+                line += addition;
+            }
+            hasPart = true;
+        }
+
+        lines.Add(line);
+    }
+
+    /// <summary>
+    /// 状態の部品を並べる。飛翔中か地上かは全ユニットで必ず出す
+    /// （2026-07-26 作者要望。飛べない兵種は常に「地上」）。
+    /// 陣中／孤立は輸送隊のいるステージでだけ出す（フェーズ32）。
+    /// </summary>
+    private static List<string> BuildStateParts(Unit unit)
     {
         var parts = new List<string> { unit.HasActed ? "行動済み" : "未行動" };
 
         if (unit.IsFlying) parts.Add($"飛翔中（残り{unit.FlightTurnsLeft}ターン）");
         else parts.Add("地上");
+
+        // 輸送隊のいるステージでだけ出す。格納中のユニットは盤上の位置が定まらないので出さない
+        // （運んでいる側が陣中なら一緒に回復する＝下の「格納中」の表示で足りる）
+        if (SupplyRules.HasSupplyLine(unit))
+            parts.Add(SupplyRules.IsSuppliedForDisplay(unit) ? "陣中" : "孤立");
+
         if (unit.IsRescuing)
         {
             var names = new List<string>();
@@ -110,7 +152,22 @@ public static class UnitInfoLines
         }
         if (unit.IsCarried) parts.Add("格納中（盤上にいない）");
 
-        return "状態: " + string.Join("・", parts);
+        return parts;
+    }
+
+    /// <summary>
+    /// 状態の行に入れてよい長さ（半角の個数。全角は2つぶんと数える）。
+    /// 情報パネルは幅340px・余白10pxで文字に使えるのが320px、文字の大きさが14px。
+    /// 全角は約14px・半角は約7pxなので、半角44個ぶんが上限。少し余裕を見て42にしてある。
+    /// </summary>
+    private const int StateLineWidthLimit = 42;
+
+    /// <summary>文字列の長さを半角の個数で測る（全角＝2、半角＝1のざっくり計算）。</summary>
+    private static int HalfWidthLength(string text)
+    {
+        int length = 0;
+        foreach (char c in text) length += (c < 0x80) ? 1 : 2;
+        return length;
     }
 
     /// <summary>兵種の表示名。兵種データがあればその名前（例：剣闘士）、無ければ移動タイプ名。</summary>

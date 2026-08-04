@@ -453,6 +453,19 @@ public class BattleController : MonoBehaviour
         reachableCells = MovementCalculator.GetReachableCells(grid, unit, context.RemainingMove, moveCosts);
 
         grid.ResetAllHighlights();
+
+        // 輸送隊を選んでいるあいだは補給圏（陣中）も薄紫で見せる（フェーズ32）。
+        // ハイライトの優先度が一番下なので、移動できるマス・攻撃できるマスの表示は隠さない。
+        // 出すのは「いまいる位置から届く範囲」。移動先を選ぶたびに引き直すことはしない
+        // （移動を確定すると行動メニューへ移り、ハイライトはいったん消える）
+        if (SupplyRules.IsSupplySource(unit))
+        {
+            HashSet<Vector2Int> supplyCells = SupplyRules.GetSupplyCells(grid, unit.Faction);
+            if (supplyCells != null)
+                foreach (Vector2Int c in supplyCells)
+                    grid.AddHighlight(c, HighlightKind.SupplyZone);
+        }
+
         grid.AddHighlight(unit.GridPosition, HighlightKind.Selection);
         foreach (Vector2Int c in reachableCells)
             grid.AddHighlight(c, HighlightKind.MoveRange);

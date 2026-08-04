@@ -32,4 +32,18 @@ public class ItemSlot
 
         UsesLeft = MaxUses;
     }
+
+    /// <summary>
+    /// 回数を回復する（輸送隊からの補給で武器の耐久が戻る。フェーズ32）。上限は超えない。
+    /// 戻り値は実際に増えた量（0 なら満タンか、回数の概念を持たない品）。
+    /// 誰の何が回復するかの判断は SupplyRules が行う。ここは数を動かすだけ。
+    /// </summary>
+    public int Refill(int amount)
+    {
+        if (!HasDurability || amount <= 0) return 0;
+
+        int before = UsesLeft;
+        UsesLeft = System.Math.Min(MaxUses, UsesLeft + amount);
+        return UsesLeft - before;
+    }
 }
