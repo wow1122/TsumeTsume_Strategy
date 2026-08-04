@@ -93,6 +93,12 @@ ClassData（ScriptableObject）38種（下級14職・上級24職。「兵種デ�
 検証用に Stage_SupplyTest を追加。当初合意にあった「耐久0の武器を装備中は 技・速さ -5」は、
 外すだけで回避できる穴が見つかったため廃止した（同節に経緯あり）。
 
+2026-08-05、**対空攻撃で飛翔が解除される「撃墜」**を追加（作者仕様変更。「撃墜の合意仕様」の節）。
+対空武器（弓・魔導書・光魔法）が飛翔中の相手に当たると、その場に着地して地上ユニットに戻り、
+**次の自分のターンは飛翔できない**。落下ダメージは無し。スクリプト8ファイルのみでアセット変更なし、
+確認は Stage_01 だけでできた（作者 Play 確認済み）。セットで検討していた
+「対空持ちの敵を先に動かす」行動順の変更は保留（理由は同節の末尾）。
+
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
 敵AI強化（Phase 16〜21）は `/home/wawo/.claude/plans/tsumetsume-strategy-ai-ai-ai-robust-quasar.md`、
@@ -273,6 +279,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   地上ユニットは飛翔中の敵の下を通過できる。停止は誰もいないマスのみ（着地衝突は仕組み上起こらない）
 - 戦闘: 飛翔中の相手を攻撃できるのは「飛翔中のユニット」か「後衛武器（対空）」のみ。飛翔中は地上の敵を攻撃できない。
   飛翔中は地形防御を受けない。判定は CombatRules.CanEngage に一元化（UI・敵AI・挟撃が共有）
+- **対空武器の攻撃を受けると飛翔が解除される（撃墜。2026-08-05 作者仕様変更）**。
+  落ちた次の自分のターンは飛翔できない。詳細は下の「撃墜の合意仕様」の節
 - 挟撃: 飛翔中の敵を挟めるのは飛翔中の前衛味方のみ。地上の前衛歩兵ガードは飛翔中の防御側を守れない
 - 救出との関係: 飛翔中は救出系に原則関与できない（実行も対象も不可。乗り込むも不可）。
   例外は「引き受け」で、**飛翔状態が同じ相手同士**（地上同士・空中同士）なら可。
@@ -767,6 +775,62 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - これらのパネルは全て `AddComponent` で作られる（シーンに値は保存されていない）ので、
   幅を変えたければコードの既定値を書き換えるだけでよい
 
+### 撃墜（対空攻撃で飛翔解除）の合意仕様（2026-08-05 作者仕様変更）
+
+**ルール**
+
+- **対空武器（弓・魔導書・光魔法）の攻撃が飛翔中のユニットに当たると、その場に着地する**
+  （＝飛翔が解除される）。攻撃側が地上か空中かは問わない。落下ダメージは無し・落ちる先は今いるマス
+- 判定は `CombatRules.ShootsDown(attacker, defender)` の1か所
+  （防御側が飛翔中 かつ 攻撃側が `IsAntiAirCapable`）。杖は対空ではないので回復では落ちない。
+  挟撃の追撃は必ず前衛武器なので撃墜にならない。倒したときは何もしない（死亡が優先）
+- ダメージ0でも落ちる（当たれば落ちる、で統一。現行の数値では0ダメージは出ない）
+- 城壁や山の上に落ちても、既存の「飛翔切れの自動着地」と同じ扱い（翌ターン歩いて降りられる・詰みなし）。
+  飛翔中の停止は空きマス限定なので、落下先が埋まっていることは起こらない
+- 貨物を抱えたまま落ちても貨物は無事。空中で引き受けた貨物は、着地したので次のターンから降ろせる
+- **撃墜されると次の自分のターンは飛翔できない**（`Unit.FlightBlockedTurns`＝撃墜で2が入り、
+  自陣営フェイズ開始ごとに1減る。地上に釘付けになるのはちょうど1ターン）。飛翔は行動を消費しない
+  コマンドなので、制限が無いと自分のターンにタダで飛び直せてしまい、撃墜された側の損失が
+  ほぼゼロになるため（作者合意）。ユニット情報の状態行に「地上（撃墜され飛翔できない）」と出る
+- 敵味方対称。敵AIも撃墜された次のターンは離陸しない
+
+**数値（Stage_01 の実数。レビュー時に作者へ提示済み）**
+
+- 味方弓兵 → 敵槍飛行兵(HP18/守備2): 9（移動して撃つ）〜11（静止撃ち）で撃墜 →
+  続けて味方斧兵12 で、1ターンのうちに撃墜から撃破まで届く（撃墜が無い頃は対空2体で18〜22＝2発必要だった）
+- 敵弓兵・敵魔道士 → 味方飛行兵(HP20/守備2/魔防3): 8〜10 → 落ちた後に敵兵(斧)の10 で
+  **ちょうど20＝即死**。挟撃が付けばさらに +10
+- 対空は味方2体（弓兵・魔道士）／敵3体（城門の弓兵2・魔道士1。いずれも待ち伏せ型）
+
+**実装の要点**
+
+- 撃墜になる組み合わせかは**攻撃を解決する前に控える**。攻撃で武器の耐久が0になると `Unit.Weapon` が
+  null（装備無し扱い）へ変わり、後から見ると「対空武器ではない」に判定がひっくり返るため（耐久と同じ罠）
+- 解除は**戦闘の判定が全部終わってから**（耐久と同じ理由。途中で解除すると挟撃の成立判定や
+  地形防御の有無が、その一撃の中で変わってしまう）
+- `Unit.ShootDown()` は `CancelFlight()` ＋ 飛翔禁止カウンタ。`StartFlight` / `CancelFlight` 自体は
+  敵AIの probe が使うので「純粋な状態変更」のまま維持している
+- プレイヤーの「飛翔」コマンドの可否は `BattleController.CanUseFlightCommand` に集約
+  （BuildCommands の4分岐＝通常・救出後・降ろす後・引き受け後 が同じ関数を見る。
+  2026-07-30 に1分岐だけガードが漏れた前例への対処）。敵AIは `TryPlanTakeOff` の入口で見る
+- 戦闘予測・被ダメ確認に注記1行（`BattleForecast.BuildShootDownNote`。
+  「※当てると着地させる（飛翔が解除される）」／「※当たると着地させられる（この後は近接にも狙われる）」）
+
+**分かったこと（敵AIとの噛み合わせ。2026-08-05 に作者と共有済み）**
+
+- Stage_01 で敵飛行兵が離陸する理由は「空に味方の飛行兵がいる」ことだけ（離陸条件の1と4）。
+  距離の条件（2・3）は門(5,8)(6,8)が南への直線上にあるため成立しない
+  （陸路9マス＝2ターン・空路9マス＝2ターンで、着陸ぶんの+1 に負ける）。
+  撃墜で味方が地上に戻ると、その唯一の理由も消えるので敵飛行兵は歩いて近づく。
+  落とした相手は地上で殴れるので、判断としては正しい動き
+- 敵の行動順は名簿順＝ステージの配置順。Stage_01 は弓兵・魔道士が飛行兵より先に動く
+- **保留: 「対空持ちの敵を先に動かす」行動順の変更**（2026-08-05 のレビューで作者合意を得ていたが、
+  上の噛み合わせが分かったため未着手。作者の方針＝**AIの挙動に本格的に問題を感じたら改めて指示を出す**）
+
+**作者の設計意図（2026-08-05）**: 将来は「飛行兵が敵を飛び越えて、勝利条件の到達地点＝拠点
+（未計画・未実装）へひたすら進む」挙動を計画している。それを差し引いても現状の飛翔は強すぎるので、
+いまは撃墜で抑える、という判断。
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -780,7 +844,9 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 ## コード構成（Assets/_Game/Scripts/）
 
 - Core/ … BattleController(操作の司令塔・12状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect/RefreshMenu。
-  飛翔・着陸コマンドと飛翔の段階取り消しCancelFlightAndReturn・攻撃可能マス表示ComputeAttackCells・
+  飛翔・着陸コマンドと飛翔の段階取り消しCancelFlightAndReturn・
+  飛翔コマンドの可否CanUseFlightCommand※2026-08-05〔BuildCommandsの4分岐が共有＝撃墜の飛翔禁止を1か所で見る〕・
+  攻撃可能マス表示ComputeAttackCells・
   持ち物コマンド（2段階サブメニュー: 装備/外す/道具使用/捨てる・ホバー詳細は右下固定）・杖コマンド（回復対象選択→ExecuteHeal・杖が届くマス表示ComputeHealCells）・
   交換コマンド（相手選択→2列の交換画面。左右共用のBuildExchangeColumn/TransferItem・列見出しBuildExchangeHeader・行動は消費せず1個目でCommit）・
   敵の行動範囲プレビューShowEnemyPreview・被ダメ確認の閲覧状態もここ・
@@ -791,7 +857,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   敵AI思考ログの切替enemyAILog・敵フェイズ内の敵HasActed管理※フェイズ終了時に戻す・
   フェイズ開始時のマナ加算/再行動フラグ戻し/連鎖リセット※ターン1は初期値のまま・
   再行動できる味方がいる間は自動でターンを終えない※フェーズ30・
-  自軍フェイズ開始時の補給SupplyRules.TickRepair※フェーズ32〔敵フェイズは無改変〕),
+  自軍フェイズ開始時の補給SupplyRules.TickRepair※フェーズ32〔敵フェイズは無改変〕・
+  フェイズ開始時の撃墜による飛翔禁止TickFlightBlock※2026-08-05〔敵味方とも〕),
   BattleSetup(StageDataを読んで初期配置・開始時飛翔の適用・配置マスの兵種チェック)
 - Grid/ … GridManager(盤面・可変サイズApplyStageSize・カメラ自動フィットFitCamera・座標変換・
   多層ハイライト※HighlightKindの優先順は Selection > TargetChoice > AttackRange > HealRange >
@@ -810,6 +877,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   被ダメ確認の逆向き予測ShowIncomingもここ・必殺技モード※フェーズ29〔倍率込みの数字・見出し「戦闘予測（必殺技）」〕・
   静止撃ち有利の表示※2026-07-30〔与ダメは実際のhasMovedで確定した数字＋理由の1行BuildStandingShotNote／
   被ダメは相手が後衛武器なら「移動時／静止時」の両方を並べるDrawIncomingBothCases〕・
+  撃墜の注記BuildShootDownNote※2026-08-05〔与ダメ・被ダメの両モードに1行。判定はCombatRules.ShootsDown共有〕・
   BattleControllerが自動生成),
   DebugUnitPanel(デバッグ用ユニット情報パネル・右上。クリックしたユニットの能力値・武器・状態を表示。
   panelEnabledでOFF可・ゲーム状態は変えない・行の組み立てはUnitInfoLines共通＋敵AI/挟撃の行を追加),
@@ -818,11 +886,14 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   UnitInfoLines(ユニット情報の表示行を組み立てる共通処理。名前/兵種/HP/能力値/装備武器/耐久/持ち物/状態。
   武器の行は EquippedWeapon を読む※傷んでいても何を装備しているかは見せる・
   耐久と注記は AddDurabilityLines が別の行にする※1行に詰めると幅320pxで見切れる・
-  状態は AddStateLines が幅に収まらなくなったら次の行へ送る※フェーズ32〔陣中/孤立も状態の1つ〕),
+  状態は AddStateLines が幅に収まらなくなったら次の行へ送る※フェーズ32〔陣中/孤立も状態の1つ〕・
+  撃墜された飛行兵は「地上」の代わりに「地上（撃墜され飛翔できない）」※2026-08-05),
   GaugeBars(マナ・気勢のゲージバーを描く共通部品※フェーズ28。MonoBehaviourではない静的クラスで
   UnitInfoLinesと同じ位置づけ。デバッグパネルとユニット情報パネルの両方が文字行の下で呼ぶ。
   緑＝マナ/青＝気勢・値10ごとに黒い目盛り・右に「n本 値／最大」・塗りはTexture2D.whiteTextureに色を掛ける)
 - Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried・飛翔IsFlying/FlightTurnsLeft・
+  撃墜ShootDown/飛翔禁止FlightBlockedTurns・IsFlightBlocked/TickFlightBlock※2026-08-05〔CancelFlight+カウンタ2。
+  StartFlight/CancelFlight自体は敵AIのprobe用に純粋な状態変更のまま〕・
   AI性格AIProfile/挑発済みIsProvoked※永続・所持品Items/装備EquippedWeapon※Weapon窓口・Equip/Unequip/破棄DiscardItem・
   受け渡しTransferItemTo※ItemSlotごと移すので残り回数を引き継ぐ・装備中なら自動で武装解除・
   回復Heal※最大HPクランプ・道具使用UseTool・
@@ -848,7 +919,9 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   戦闘1回ごとの撃破通知→GaugeRules※フェーズ28〔挟撃のとどめも含む〕・
   武器の消耗→DurabilityRules※フェーズ31〔本体の一撃と挟撃の追撃。戦闘の判定が全部終わってから
   まとめて減らす＝途中で減らすと挟撃の成立判定や気勢の配分がその一撃の中でずれる。
-  TryPincerの戻り値は追撃した味方〕),
+  TryPincerの戻り値は追撃した味方〕・
+  撃墜※2026-08-05〔対空武器で飛翔中の相手を撃つと着地させる。判定は攻撃の前に控え〔耐久で武器がnullになる罠〕、
+  解除は全判定の後〕),
   DurabilityRules(武器の摩耗の一元判定※フェーズ31。摩耗するのは自軍だけWearsOut・1回ぶん減らすConsume＋ログ。
   耐久0の扱いはUnit.Weaponがnullを返すことだけで表す＝装備したままでも外しても戦闘上は同じ),
   SupplyRules(補給圏「陣中／孤立」の一元判定※フェーズ32。調整用の定数は先頭に集約
@@ -862,6 +935,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   InitialMana/ManaGainPerTurn/TickMana/MomentumGain/NotifyBattleResult※連鎖の管理/ResetChain/
   CanUseCritical/CanRefresh/AnyoneCanRefresh。staticはRuntimeInitializeOnLoadMethodでリセット),
   CombatRules(射程・三すくみ・挟撃可否・飛翔の戦闘制限CanEngageの一元判定・対空判定IsAntiAirCapable※杖除外・Phase 25・
+  撃墜になる組み合わせかShootsDown※2026-08-05〔戦闘本体と戦闘予測・被ダメ確認が共有〕・
   後衛武器の静止撃ち有利※2026-07-30〔引数attackerHasMoved・既定true＝補正なし側・有利の式はAdvantageBonusで前衛と共有〕・
   攻撃できる立ち位置一覧GetAttackFromCells・挟撃の反対側マスGetPincerOppositeCell・
   仮定位置ガード判定WouldGuardAt・ガード役かどうかIsGuardingSomeone※Phase 18),
@@ -887,7 +961,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   接近は距離マップの3段構え(経路→敵無視→直線距離)・日本語思考ログ・同点は地形防御の高いマス優先・
   性格ゲート※待ち伏せ型は挑発まで動かない＝挑発判定はTakeAction冒頭(被弾)と攻撃プラン成立時※離陸攻撃も含む・
   挟撃のお膳立て+2とガード役潰し+50※Phase 18・守り配置TryPlanGuard※Phase 19・
-  飛翔probe評価ComputeGroundInfo/TryPlanTakeOff・巡航TryPickCruiseCell・着陸TryPlanLanding※Phase 20・
+  飛翔probe評価ComputeGroundInfo/TryPlanTakeOff・巡航TryPickCruiseCell・着陸TryPlanLanding※Phase 20
+  〔離陸の入口で撃墜による飛翔禁止も見る※2026-08-05〕・
   集中攻撃※Phase 21=敵フェイズ開始のBeginEnemyPhaseで目標focusTargetを1体選定・倒れたら再選定・
   静止撃ち有利の織り込み※2026-07-30〔ScoreAttackにhasMovedを渡す＝弓/魔法の敵はその場で撃つ手を高く評価。
   Executeは移動前にhasMovedを控える〕・
@@ -945,6 +1020,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 （「マナゲージ・気勢ゲージの合意仕様」の節）。
 2026-08-03〜05 には、持ち越し候補だった**武器耐久を輸送隊からの補給とセットで完了**
 （フェーズ31〜32。「武器の耐久と補給の合意仕様」の節）。
+2026-08-05 には作者の仕様変更で**撃墜（対空攻撃で飛翔解除）**を追加（「撃墜の合意仕様」の節）。
+セットで合意していた「対空持ちの敵を先に動かす」行動順の変更は**保留**（同節の末尾に理由）。
 
 **現在アクティブなロードマップは無い。次は作者と次期ロードマップの優先度を相談してから着手する**
 （下の「持ち越し候補」から作者が選ぶ。フェーズ着手は明示の合図をもらってから）。
@@ -1026,7 +1103,12 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - **敵AIの補給線遮断**（現状 AI は補給を理解しないので、輸送隊を安全な後方に置くだけで孤立が起きない。
   隘路や輸送隊への接近を評価に足す形。ガード〔Phase 19〕や挟撃〔Phase 18〕と同規模の1フェーズで入る）
 - **耐久・補給の数値の再調整**（上の「補給まわりの宿題」参照）
-- 勝利条件バリエーション（拠点到達など。Phase 15 と敵AI強化キックオフで2回先送り）
+- **敵AIの行動順「対空持ちを先に動かす」**（2026-08-05 の撃墜レビューで作者合意まで進んだが保留。
+  先に撃ち落とすと敵飛行兵の離陸理由〔空にいるプレイヤー〕が消えるため。
+  作者の方針＝AIの挙動に本格的な問題を感じたら改めて指示を出す）
+- 勝利条件バリエーション（拠点到達など。Phase 15 と敵AI強化キックオフで2回先送り）。
+  **作者の計画: 拠点＝到達地点を置き、飛行兵が敵を飛び越えてそこへひたすら進む挙動を作る**
+  （2026-08-05。撃墜を入れたのは、それを差し引いても飛翔が強すぎるため）
 - 救出系コマンドの敵AI使用（現状は「敵は救出系を使わない」合意のまま）
 - 敵の性格の追加（挑発後も動かない完全固定砲台型など。Phase 17 で先送り）
 - 敵側の輸送隊・敵の装備切替/道具使用（現状はプレイヤー専用・敵は初期装備固定）
