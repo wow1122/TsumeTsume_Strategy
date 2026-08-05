@@ -47,7 +47,7 @@ public class BattleSetup : MonoBehaviour
                 && entry.unitData.EffectiveClass == UnitClass.Flier;
 
             TileData tile = grid.GetTile(entry.cell);
-            // その兵種が立てない地形には置けない（山は歩兵のみ等の兵種制限も見る。Phase 15）。
+            // その兵種が立てない地形には置けない（山は徒歩のみ等の兵種制限も見る。Phase 15）。
             // ただし開始時から飛翔する飛行兵は、飛行で入れるマス（城壁など）なら置ける
             if (tile != null && !tile.IsWalkableFor(entry.unitData.EffectiveClass) && !(flyingStart && tile.CanFlyOver))
             {

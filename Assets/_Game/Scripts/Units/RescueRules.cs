@@ -6,12 +6,12 @@ using UnityEngine;
 /// CombatRules と同じ発想で、UIとAI（将来敵が救出を使うとき）が同じ関数を呼ぶ。
 ///
 /// 作者と合意済みのルール（2026-07-11）：
-///  ・救出できるのは騎乗ユニットのみ。対象は隣接する同陣営の歩兵（騎乗・輸送隊は対象外）
+///  ・救出できるのは騎乗ユニットのみ。対象は隣接する同陣営の徒歩ユニット（騎乗・輸送隊は対象外）
 ///  ・行動済みの味方も救出できる（合意(h)）
 ///  ・救出中のペナルティなし・攻撃も可能（合意(c)(d)）
 ///  ・引き受け＝隣の救出中ユニットから貨物をもらう。空きがある騎乗ユニットのみ
 ///  ・降ろす＝隣接する「空きで歩ける」マスに再配置
-///  ・代わりに降ろす＝歩兵専用。隣の救出中ユニットの貨物（歩兵）を、
+///  ・代わりに降ろす＝徒歩専用。隣の救出中ユニットの貨物（徒歩）を、
 ///    「貨物の移動力 ≧ 自分の移動力」のときだけ降ろせる（合意(g)、仕様どおり）
 ///    ※2026-07-26 の仕様変更で、運び手は輸送隊に限定（下記）
 ///
@@ -20,7 +20,7 @@ using UnityEngine;
 ///  ・誰も輸送隊を救出できない（乗り込みでの格納も不可）
 ///  ・入れ子救出は禁止：貨物を持っているユニットは、救出・乗り込みの対象にならない
 ///  ・「乗り込む」＝隣接する輸送隊へ自分から格納される（自分は行動終了。輸送隊の行動は消費しない）
-///  ・引き受けで騎乗ユニット（輸送隊以外）が受け取れるのは歩兵の貨物のみ。輸送隊は何でも受け取れる
+///  ・引き受けで騎乗ユニット（輸送隊以外）が受け取れるのは徒歩の貨物のみ。輸送隊は何でも受け取れる
 ///
 /// Phase 14（飛翔）の追加合意（2026-07-12、同日改訂あり）：
 ///  ・飛翔中のユニットは救出系コマンドに原則関与できない（実行する側にも、される側にもならない）。
@@ -30,8 +30,12 @@ using UnityEngine;
 ///
 /// 2026-07-26 の仕様変更（作者指示）：
 ///  ・「代わりに降ろす」の運び手は輸送隊のみ。輸送隊以外の騎乗ユニットが抱えている貨物に
-///    干渉できるのは騎乗ユニットだけ（＝「引き受け」。歩兵は容量0で引き受けられないため、
+///    干渉できるのは騎乗ユニットだけ（＝「引き受け」。徒歩は容量0で引き受けられないため、
 ///    結果として通常の騎乗ユニットの貨物は騎乗ユニットにしか渡せない・降ろせない）
+///
+/// 2026-08-05 の分類変更：
+///  ・「歩兵」を条件にしていた判定はすべて徒歩（歩兵＋重装歩兵）= IsFoot() に置き換えた。
+///    重装歩兵はこれまでの歩兵と同じ扱い（救出される・引き受けられる・代わりに降ろせる）。
 /// </summary>
 public static class RescueRules
 {
@@ -56,8 +60,8 @@ public static class RescueRules
             if (neighbor.Faction != user.Faction) continue;
             if (!CanBeStored(neighbor)) continue; // 輸送隊・貨物持ちは格納不可（入れ子禁止）
 
-            // 通常の騎乗ユニットの救出対象は歩兵のみ。輸送隊は騎乗ユニットも救出できる
-            if (user.Class != UnitClass.Transporter && neighbor.Class != UnitClass.Infantry) continue;
+            // 通常の騎乗ユニットの救出対象は徒歩のみ。輸送隊は騎乗ユニットも救出できる
+            if (user.Class != UnitClass.Transporter && !neighbor.Class.IsFoot()) continue;
 
             result.Add(neighbor);
         }
@@ -109,14 +113,14 @@ public static class RescueRules
 
     /// <summary>
     /// receiver が carrier から「引き受け」できる貨物の一覧。
-    /// 輸送隊は何でも受け取れるが、通常の騎乗ユニットが受け取れるのは歩兵の貨物のみ（Phase 12）。
+    /// 輸送隊は何でも受け取れるが、通常の騎乗ユニットが受け取れるのは徒歩の貨物のみ（Phase 12）。
     /// </summary>
     public static List<Unit> GetTakeOverCargoes(Unit receiver, Unit carrier)
     {
         var result = new List<Unit>();
         foreach (Unit cargo in carrier.Carried)
         {
-            if (receiver.Class != UnitClass.Transporter && cargo.Class != UnitClass.Infantry) continue;
+            if (receiver.Class != UnitClass.Transporter && !cargo.Class.IsFoot()) continue;
             result.Add(cargo);
         }
         return result;
@@ -124,7 +128,7 @@ public static class RescueRules
 
     // ===== 降ろす =====
     // Phase 15 から、降ろせる先は「貨物の兵種が立てる地形」で判定する
-    // （騎乗の貨物は山に降ろせない等。歩兵の貨物はこれまでどおり歩けるマスなら可）。
+    // （騎乗の貨物は山に降ろせない等。徒歩の貨物はこれまでどおり歩けるマスなら可）。
 
     /// <summary>carrier の貨物のうち、いま隣に降ろせるマスがある（＝降ろす対象にできる）ものの一覧。</summary>
     public static List<Unit> GetDroppableCargoes(Unit carrier, GridManager grid)
@@ -160,15 +164,15 @@ public static class RescueRules
     // ===== 代わりに降ろす =====
 
     /// <summary>
-    /// 歩兵 user が「代わりに降ろす」を使える、隣接する救出中ユニットの一覧。
+    /// 徒歩 user が「代わりに降ろす」を使える、隣接する救出中ユニットの一覧。
     /// 運び手は輸送隊に限る（作者仕様変更 2026-07-26）。
-    /// 条件：貨物が歩兵で、貨物の移動力 ≧ user の移動力、かつ降ろせる空きマスがある。
+    /// 条件：貨物が徒歩で、貨物の移動力 ≧ user の移動力、かつ降ろせる空きマスがある。
     /// （移動力の低いユニットほど多くの味方を降ろせる、という仕様の意図どおり）
     /// </summary>
     public static List<Unit> FindProxyDropCarriers(Unit user, GridManager grid)
     {
         var result = new List<Unit>();
-        if (user.Class != UnitClass.Infantry) return result; // 歩兵専用コマンド
+        if (!user.Class.IsFoot()) return result; // 徒歩（歩兵・重装歩兵）専用コマンド
 
         foreach (Unit neighbor in GetAdjacentUnits(user.GridPosition, grid))
         {
@@ -180,7 +184,8 @@ public static class RescueRules
 
             List<Unit> cargoes = GetProxyDropCargoes(user, neighbor);
             if (cargoes.Count == 0) continue;
-            // 対象になる貨物は歩兵だけなので、降ろせるマスの有無は先頭の1体で代表して調べられる
+            // 対象になる貨物は徒歩だけで、徒歩なら地形の通行条件は同じなので、
+            // 降ろせるマスの有無は先頭の1体で代表して調べられる
             if (GetDropCellsAround(neighbor.GridPosition, cargoes[0], grid).Count == 0) continue;
 
             result.Add(neighbor);
@@ -189,18 +194,18 @@ public static class RescueRules
     }
 
     /// <summary>
-    /// 歩兵 user が carrier から「代わりに降ろす」ことができる貨物の一覧。
+    /// 徒歩 user が carrier から「代わりに降ろす」ことができる貨物の一覧。
     /// carrier は輸送隊のみ（2026-07-26。呼び出し側の FindProxyDropCarriers で絞る）。
-    /// 条件：貨物が歩兵で、貨物の移動力 ≧ user の移動力（合意(g)）。
+    /// 条件：貨物が徒歩で、貨物の移動力 ≧ user の移動力（合意(g)）。
     /// 輸送隊が複数の貨物を持っていても、条件を満たすものだけが対象になる
-    /// （輸送隊は騎乗ユニットも運べるが、代わりに降ろせるのは歩兵の貨物だけ）
+    /// （輸送隊は騎乗ユニットも運べるが、代わりに降ろせるのは徒歩の貨物だけ）
     /// </summary>
     public static List<Unit> GetProxyDropCargoes(Unit user, Unit carrier)
     {
         var result = new List<Unit>();
         foreach (Unit cargo in carrier.Carried)
         {
-            if (cargo.Class != UnitClass.Infantry) continue;   // 降ろせるのは歩兵貨物のみ
+            if (!cargo.Class.IsFoot()) continue;                // 降ろせるのは徒歩の貨物のみ
             if (cargo.Move < user.Move) continue;              // 貨物.移動力 ≧ 自分.移動力（合意(g)）
             result.Add(cargo);
         }
@@ -209,7 +214,7 @@ public static class RescueRules
 
     // ===== 補助 =====
 
-    /// <summary>あと1体でも格納できるか（歩兵は容量0なので常に false）。</summary>
+    /// <summary>あと1体でも格納できるか（徒歩は容量0なので常に false）。</summary>
     public static bool CanCarryMore(Unit unit)
     {
         return unit != null && unit.Carried.Count < unit.CarryCapacity;

@@ -11,7 +11,8 @@ using UnityEngine;
 ///  ・三すくみ   … 前衛武器の攻撃（相性表）と、後衛武器の「マスから動かずに撃った攻撃」（常に有利）。
 ///                 補正量はどちらも 技・速さ の差から計算（最低2）
 ///  ・挟撃の資格 … 前衛武器の装備者だけが挟撃に参加できる
-///  ・挟撃の無効化（ガード）… 防御側の隣に「前衛武器の歩兵」の味方がいれば挟撃されない
+///  ・挟撃の無効化（ガード）… 防御側の隣に「前衛武器の徒歩ユニット（歩兵・重装歩兵）」の
+///    味方がいれば挟撃されない
 ///  ・飛翔（Phase 14）… 飛翔中の相手と戦えるのは「飛翔中のユニット」か「対空武器
 ///    （弓・魔導書・光魔法。杖は攻撃できないので不可）」だけ（Phase 25・IsAntiAirCapable）。
 ///    飛翔中のユニットは地上の相手を攻撃できない（CanEngage）。挟撃・ガードも同じ制限に従う
@@ -242,8 +243,8 @@ public static class CombatRules
 
     /// <summary>
     /// guard が guardCell に立ったとき、defender への挟撃を無効化（ガード）できるか。
-    /// 条件：defender が飛翔中でない／同じ陣営／前衛武器を装備した歩兵／
-    ///       guardCell が defender の上下左右に隣接。
+    /// 条件：defender が飛翔中でない／同じ陣営／前衛武器を装備した徒歩ユニット
+    ///       （歩兵・重装歩兵）／guardCell が defender の上下左右に隣接。
     /// 今いる場所ではなく「仮定の位置」で判定できるのがポイント
     /// （Phase 19 の守り配置AIが「このマスへ動いたら守れるか」を試すために使う。
     ///   現在盤面のガード判定 FindPincerGuard も内部でこれを使う）。
@@ -253,7 +254,7 @@ public static class CombatRules
         if (guard == null || defender == null || guard == defender) return false;
         if (defender.IsFlying) return false; // 飛翔中はガードされない（Phase 14）
         if (guard.Faction != defender.Faction) return false;
-        if (guard.Class != UnitClass.Infantry) return false;
+        if (!guard.Class.IsFoot()) return false;
         if (!IsPincerCapable(guard)) return false;
 
         return Manhattan(guardCell, defender.GridPosition) == 1;
@@ -288,11 +289,12 @@ public static class CombatRules
 
     /// <summary>
     /// defender への挟撃を無効化してくれる「ガード役」を探す（いなければ null）。
-    /// ガード役の条件：defender の上下左右に隣接する、同じ陣営の「前衛武器を装備した歩兵」
+    /// ガード役の条件：defender の上下左右に隣接する、同じ陣営の
+    /// 「前衛武器を装備した徒歩ユニット（歩兵・重装歩兵）」
     /// （細かい判定は WouldGuardAt に一元化。Phase 18 で作り直したが挙動は従来と同じ）。
     /// ※ガード役自身が受ける挟撃は守れない（自分の隣に別のガード役が必要）。
     /// ※行動済みでも有効。敵味方どちらの陣営でも同じルール。
-    /// ※防御側が飛翔中なら不成立（空中戦に地上の歩兵は届かない。Phase 14・作者合意）。
+    /// ※防御側が飛翔中なら不成立（空中戦に地上の徒歩ユニットは届かない。Phase 14・作者合意）。
     /// </summary>
     public static Unit FindPincerGuard(Unit defender, GridManager grid)
     {

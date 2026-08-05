@@ -17,7 +17,7 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  「引き受け」→ 隣の救出中の味方を選択 → 貨物をもらう → 降ろす/待機のみ
 ///  （引き受けた行動中に降ろせるのは、引き受けを実行したマスの上にいるときだけ）
 ///  「代わりに降ろす」→ 救出中の味方を選択 → その隣の空きマスを選択 → 行動終了
-///  （歩兵専用。運び手は輸送隊のみ＝2026-07-26 の仕様変更）
+///  （徒歩ユニット専用。運び手は輸送隊のみ＝2026-07-26 の仕様変更）
 ///  救出・引き受けを実行すると「取り消し不能」になり、以後は選択解除できない
 ///  （選択解除できると移動力を使い直せてしまうため）。
 ///
@@ -628,7 +628,7 @@ public class BattleController : MonoBehaviour
         if (unit.IsFlying && !context.usedFlight)
             commands.Add(new ActionMenu.Entry("着陸", ExecuteLanding));
 
-        // 救出：騎乗ユニットが、隣接する同陣営の歩兵を格納する（救出中の攻撃は可＝合意(d)。
+        // 救出：騎乗ユニットが、隣接する同陣営の徒歩ユニットを格納する（救出中の攻撃は可＝合意(d)。
         // 輸送隊は騎乗ユニットも救出できる＝Phase 12）
         List<Unit> rescueTargets = RescueRules.FindRescueTargets(unit, grid);
         if (rescueTargets.Count > 0)
@@ -647,11 +647,11 @@ public class BattleController : MonoBehaviour
             commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
 
         // 引き受け：隣接する救出中の味方から貨物をもらう
-        // （通常の騎乗ユニットは歩兵の貨物のみ。輸送隊は何でも＝Phase 12）
+        // （通常の騎乗ユニットは徒歩の貨物のみ。輸送隊は何でも＝Phase 12）
         if (RescueRules.FindTakeOverCarriers(unit, grid).Count > 0)
             commands.Add(new ActionMenu.Entry("引き受け", EnterTakeOverCarrierSelect));
 
-        // 代わりに降ろす：歩兵が、隣接する輸送隊の貨物を降ろしてあげる
+        // 代わりに降ろす：徒歩ユニットが、隣接する輸送隊の貨物を降ろしてあげる
         // （2026-07-26 の仕様変更で運び手は輸送隊のみ。通常の騎乗ユニットの貨物は騎乗ユニットの
         //   「引き受け」でしか動かせない）
         List<Unit> proxyCarriers = RescueRules.FindProxyDropCarriers(unit, grid);

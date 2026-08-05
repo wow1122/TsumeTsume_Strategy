@@ -44,7 +44,7 @@ using UnityEngine;
 ///   相手を優先して倒す（GuardBreakKillBonus +50。撃破同士の並べ替え専用）。
 ///
 /// ガードの活用＝守り配置（Phase 19）：
-///   攻撃できる相手がいない「前衛武器の歩兵」は、次のプレイヤーフェイズに挟撃されそうな
+///   攻撃できる相手がいない「前衛武器の徒歩ユニット」は、次のプレイヤーフェイズに挟撃されそうな
 ///   味方（ThreatMap.FindPincerThreatenedAllies）の隣に立って挟撃を無効化する。
 ///   攻撃探索が先＝攻撃優先（守り位置を離れて攻撃に行くこともある。作者合意）。
 ///   防げるダメージが1以上なら接近よりガード。マスは 防止量→地形防御→移動の少なさ で選ぶ。
@@ -301,7 +301,7 @@ public static class EnemyAI
             };
         }
 
-        // 3) ガード（Phase 19）：攻撃できる相手がいない前衛歩兵は、
+        // 3) ガード（Phase 19）：攻撃できる相手がいない前衛の徒歩ユニットは、
         //    挟撃されそうな味方を守りに行く（防げるダメージが正なら接近より優先。作者合意）
         if (TryPlanGuard(enemy, grid, candidates, out ActionPlan guardPlan))
             return guardPlan;
@@ -394,7 +394,7 @@ public static class EnemyAI
     /// <summary>
     /// 挟撃されそうな味方の隣に立って、挟撃を無効化する行動を探す（Phase 19）。
     /// ここへ来るのは攻撃探索が空振りしたときだけ＝攻撃優先（作者合意）。
-    /// ガード役になれるのは「前衛武器の歩兵」のみ（WouldGuardAt と同じ条件）。
+    /// ガード役になれるのは「前衛武器の徒歩ユニット（歩兵・重装歩兵）」のみ（WouldGuardAt と同じ条件）。
     /// 防げるダメージが1以上のマスがあれば接近よりガードを選ぶ。マスの選び方は
     ///   防止量の合計 → 地形防御 → 移動の少なさ
     /// の順（1マスで複数の味方を同時に守れたら防止量は合算）。
@@ -406,9 +406,9 @@ public static class EnemyAI
     {
         plan = default;
 
-        // ガード役の資格チェック（歩兵・前衛武器・地上）。資格が無ければ計算せず素通り
+        // ガード役の資格チェック（徒歩・前衛武器・地上）。資格が無ければ計算せず素通り
         if (enemy.IsFlying) return false;
-        if (enemy.Class != UnitClass.Infantry) return false;
+        if (!enemy.Class.IsFoot()) return false;
         if (!CombatRules.IsPincerCapable(enemy)) return false;
 
         // 「挟撃されそうな味方 → 防げる最大ダメージ」を取得（自分は盤面に居ない扱いで判定）

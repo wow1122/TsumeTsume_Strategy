@@ -41,7 +41,7 @@ public class TerrainDef
     public int moveCost = 1;
 
     [Tooltip("騎乗ユニット（騎兵・輸送隊・地上の飛行兵）が通行できるか。\n" +
-             "山を歩兵専用にする等（isWalkable が false なら全員通行不可なので、ここは見ない）。Phase 15")]
+             "山を徒歩専用にする等（isWalkable が false なら全員通行不可なので、ここは見ない）。Phase 15")]
     public bool mountedWalkable = true;
 
     [Tooltip("騎乗ユニットの移動コスト（0なら moveCost と同じ。森=3 など騎乗だけ重くできる）。Phase 15")]

@@ -17,7 +17,7 @@ public class UnitData : ScriptableObject
     public string unitName = "ユニット";
     public Faction faction = Faction.Player;
 
-    [Tooltip("兵種。歩兵以外（騎兵・飛行兵・輸送隊）は騎乗ユニット扱い。※兵種データ設定時は使われない（旧式）")]
+    [Tooltip("兵種。徒歩（歩兵・重装歩兵）以外（騎兵・飛行兵・輸送隊）は騎乗ユニット扱い。※兵種データ設定時は使われない（旧式）")]
     public UnitClass unitClass = UnitClass.Infantry;
 
     [Tooltip("兵種データ。設定すると移動タイプと移動力はこちらが優先され、上の兵種と下の移動力は使われない")]

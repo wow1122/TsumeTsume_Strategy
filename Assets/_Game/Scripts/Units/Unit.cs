@@ -192,7 +192,7 @@ public class Unit : MonoBehaviour
     /// <summary>救出されて格納中か（盤上にいない）。</summary>
     public bool IsCarried { get; private set; }
 
-    /// <summary>格納できる数。輸送隊=4（Phase 12）、他の騎乗=1、歩兵=0（救出できない）。</summary>
+    /// <summary>格納できる数。輸送隊=4（Phase 12）、他の騎乗=1、徒歩=0（救出できない）。</summary>
     public int CarryCapacity =>
         Class == UnitClass.Transporter ? 4 : (Class.IsMounted() ? 1 : 0);
 

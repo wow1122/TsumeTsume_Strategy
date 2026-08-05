@@ -86,7 +86,7 @@ public static class CombatSystem
     /// 挟撃：近接攻撃のとき、防御側を挟んだ反対側の隣マスに前衛武器の味方がいれば、
     /// その味方も追加で攻撃する（上下左右の一直線のみ・斜めは対象外）。
     /// 参加した味方は行動を消費しない（おまけの追撃）。
-    /// ただし防御側の隣に「前衛武器の歩兵」の味方（ガード役）がいると無効化される。
+    /// ただし防御側の隣に「前衛武器の徒歩ユニット」の味方（ガード役）がいると無効化される。
     /// 成立条件・無効化条件の本体は CombatRules にある（AIの予測と共通）。
     /// 戻り値は実際に追撃した味方（挟撃が起きなかった・ガードで無効化されたときは null）。
     /// 呼び出し側はこれを使って挟み役の武器も消耗させる（作者合意：挟撃でも耐久は減る）。
@@ -98,7 +98,7 @@ public static class CombatSystem
         Unit ally = CombatRules.FindPincerAlly(attacker.GridPosition, attacker, defender, grid);
         if (ally == null) return null;
 
-        // 無効化（ガード）判定：防御側の隣に前衛武器の歩兵がいれば挟撃は防がれる
+        // 無効化（ガード）判定：防御側の隣に前衛武器の徒歩ユニットがいれば挟撃は防がれる
         Unit guard = CombatRules.FindPincerGuard(defender, grid);
         if (guard != null)
         {
