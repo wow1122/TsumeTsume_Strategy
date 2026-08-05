@@ -14,11 +14,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ClassData
   className: "重装兵"
   tier: 0
-  moveType: 0
+  moveType: 4
   move: 2
   usableWeapons:
   - 1
-  tags: 0
+  tags: 8
   promotions:
   - {fileID: 11400000, guid: f90817266ba74484a8702f8f78603c15, type: 2}
   - {fileID: 11400000, guid: e9d86b554eed4e2a90ceda0489ba3054, type: 2}

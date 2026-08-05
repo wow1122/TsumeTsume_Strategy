@@ -14,10 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ClassData
   className: "大楯鎧兵"
   tier: 1
-  moveType: 0
+  moveType: 4
   move: 2
   usableWeapons:
   - 1
   - 2
-  tags: 0
+  tags: 8
   promotions: []
