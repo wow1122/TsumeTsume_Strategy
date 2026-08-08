@@ -45,6 +45,18 @@ public static class ClassTagExtensions
     }
 
     /// <summary>
+    /// 武器が狙うタグを「実際に当たるタグ」へ広げる（竜を狙う武器は亜竜にも当たる）。
+    /// 上の Expand と同じ包含関係を、武器の側から見たもの。
+    /// 判定には要らない（Expand だけで足りる）が、表示で
+    /// 「この武器は何に効くのか」を並べるときに、こちらの向きが必要になる。
+    /// </summary>
+    public static ClassTag Cover(this ClassTag targetTags)
+    {
+        if ((targetTags & ClassTag.Dragon) != 0) targetTags |= ClassTag.SubDragon;
+        return targetTags;
+    }
+
+    /// <summary>
     /// ユニットのタグが、武器の狙うタグに当てはまるか（包含関係を考慮する）。
     /// unitTags はユニットの兵種が持つタグ、targetTags は武器が狙うタグ。
     /// targetTags が空（None）なら常に false ＝ 相性なし。

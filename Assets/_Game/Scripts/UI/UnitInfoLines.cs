@@ -25,6 +25,7 @@ public static class UnitInfoLines
         lines.Add($"力{unit.Strength}　魔力{unit.Magic}　技{unit.Skill}　速さ{unit.Speed}");
         lines.Add($"守備{unit.Defense}　魔防{unit.Resistance}　移動{unit.Move}");
         lines.Add(WeaponLine(unit));
+        AddWeaponEffectLines(unit, lines);
         AddDurabilityLines(unit, lines);
         AddItemLines(unit, lines);
         AddStateLines(unit, lines);
@@ -46,6 +47,19 @@ public static class UnitInfoLines
         string cat = w.category == WeaponCategory.Melee ? "前衛" : "後衛";
         string range = w.minRange == w.maxRange ? $"{w.maxRange}" : $"{w.minRange}〜{w.maxRange}";
         return $"武器: {w.weaponName}（{cat}・威力{w.might}・射程{range}）";
+    }
+
+    /// <summary>
+    /// 装備中の武器の相性の行（2026-08-06・有効と特効）。
+    /// 「特効: 竜」「有効: 騎馬・天馬」のように、この武器が何に強いかを出す。
+    /// 武器の行に足すと幅（全角22文字）を超えるので別の行にする（耐久の行と同じ理由）。
+    /// 相性を持たない武器（剣・杖など）では1行も足さない。
+    /// 耐久が尽きていても「何を装備しているか」は変わらないので、ここも EquippedWeapon を読む。
+    /// </summary>
+    public static void AddWeaponEffectLines(Unit unit, List<string> lines)
+    {
+        foreach (string line in EffectiveRules.BuildWeaponEffectLines(unit.EquippedWeapon))
+            lines.Add(line);
     }
 
     /// <summary>

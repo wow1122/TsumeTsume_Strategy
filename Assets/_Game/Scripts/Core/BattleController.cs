@@ -1242,6 +1242,10 @@ public class BattleController : MonoBehaviour
             lines.Add($"種類: {w.type.DisplayName()}　{cat}");
             lines.Add($"威力 {w.might}　射程 {range}");
 
+            // 有効・特効の行（2026-08-06）。「特効: 竜」「有効: 重装」のように短い行で足す
+            // ＝どの武器に持ち替えるかを、この詳細だけで判断できるようにする
+            lines.AddRange(EffectiveRules.BuildWeaponEffectLines(w));
+
             // 詳細パネルは幅220px・余白6pxで文字に使えるのは208pxしかない。
             // 長い説明を入れると右端で見切れるので、ここは短い注記だけにする（2026-08-03）
             if (slot.HasDurability)

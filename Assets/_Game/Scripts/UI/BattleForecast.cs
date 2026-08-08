@@ -145,6 +145,10 @@ public class BattleForecast : MonoBehaviour
         string standNote = BuildStandingShotNote(attacker, attackerHasMoved);
         if (standNote != null) lines.Add(standNote);
 
+        // 有効・特効が乗っているなら、その理由も1行で添える（2026-08-06）
+        string effectiveNote = BuildEffectiveNote(attacker, defender, incoming: false);
+        if (effectiveNote != null) lines.Add(effectiveNote);
+
         if (critical)
             lines.Add($"必殺技 ×{GaugeRules.CriticalMultiplier:0.#}倍（マナを1本使う。挟撃は等倍）");
         if (ally != null)
@@ -204,6 +208,10 @@ public class BattleForecast : MonoBehaviour
 
         lines.Add($"被ダメージ　{main.ToLogString()}");
         lines.Add(BuildTriangleLine(main.triangle, "相手が有利", "相手が不利"));
+
+        string incomingEffectiveNote = BuildEffectiveNote(enemy, incomingDefender, incoming: true);
+        if (incomingEffectiveNote != null) lines.Add(incomingEffectiveNote);
+
         lines.Add(hpAfter == 0
             ? $"自分のHP {incomingDefender.CurrentHP} → 0　倒される！"
             : $"自分のHP {incomingDefender.CurrentHP} → {hpAfter}");
@@ -235,6 +243,10 @@ public class BattleForecast : MonoBehaviour
         lines.Add($"移動時　{moved.ToLogString()}");
         lines.Add($"静止時　{stand.ToLogString()}");
         lines.Add($"三すくみ　移動時 {Signed(moved.triangle)} ／ 静止時 {Signed(stand.triangle)}（相手が有利）");
+
+        // 有効・特効は移動したかに関係なく同じだけ乗るので、両方の場合に共通の1行として出す
+        string effectiveNote = BuildEffectiveNote(enemy, incomingDefender, incoming: true);
+        if (effectiveNote != null) lines.Add(effectiveNote);
 
         string hpLine = $"自分のHP {hp} → {hpMoved}（移動時）／ {hpStand}（静止時）";
         if (hpStand == 0) hpLine += hpMoved == 0 ? "　どちらでも倒される！" : "　静止して撃たれると倒される！";
@@ -282,6 +294,26 @@ public class BattleForecast : MonoBehaviour
         return hasMoved
             ? "※移動して撃つため、静止撃ちの三すくみ有利なし"
             : "※マスから動かずに撃つため、三すくみ有利がつく";
+    }
+
+    /// <summary>
+    /// 有効・特効の注記（2026-08-06 作者仕様）。相手の兵種の特攻タグに武器が刺さっているとき、
+    /// 「なぜ威力が増えているのか」を1行で説明する（式の中には「威力5×3」としか出ないため）。
+    /// 相性が無ければ null（行を足さない）。武器が傷んでいるときは Weapon が null になるので
+    /// 自動的に注記も出ない。判定は戦闘本体と同じ EffectiveRules を使うので、
+    /// 表示とダメージが食い違うことはない。
+    /// </summary>
+    private static string BuildEffectiveNote(Unit attacker, Unit defender, bool incoming)
+    {
+        WeaponData weapon = attacker.Weapon;
+        int multiplier = EffectiveRules.GetMultiplier(weapon, defender);
+        if (multiplier <= 1) return null;
+
+        string label = EffectiveRules.GetLabel(multiplier);
+        string tags = EffectiveRules.GetMatchedTags(weapon, defender).DisplayName();
+        string who = incoming ? "相手の" : "";
+
+        return $"※{who}{label}: {tags}（武器威力{multiplier}倍）";
     }
 
     /// <summary>

@@ -1,4 +1,4 @@
-using UnityEngine;
+using System.Collections.Generic;
 
 /// <summary>
 /// 有効・特効の判定を集めた共有ルール（2026-08-06 作者仕様「有効と特効の仕様書」）。
@@ -40,26 +40,66 @@ public static class EffectiveRules
         ClassTag tags = defender.Tags;
         if (tags == ClassTag.None) return 1;
 
-        int multiplier = 1;
+        // 大きい方から順に見て、当たったところで返す＝「重なったら一番大きい1つだけ」（作者合意）
+        if (ClassTagExtensions.Matches(tags, GetSuperEffectiveTargets(weapon))) return SuperEffectiveMultiplier;
+        if (ClassTagExtensions.Matches(tags, GetEffectiveTargets(weapon))) return EffectiveMultiplier;
 
-        // 武器種そのものが持つ相性
-        if (ClassTagExtensions.Matches(tags, GetTypeEffectiveTargets(weapon.type)))
-            multiplier = Mathf.Max(multiplier, EffectiveMultiplier);
-
-        if (ClassTagExtensions.Matches(tags, GetTypeSuperEffectiveTargets(weapon.type)))
-            multiplier = Mathf.Max(multiplier, SuperEffectiveMultiplier);
-
-        // 個別の特効武器（竜殺しの剣・斬馬刀など）。武器種の相性と重なっても、大きい方だけを採る
-        if (ClassTagExtensions.Matches(tags, weapon.effectiveTags))
-            multiplier = Mathf.Max(multiplier, SuperEffectiveMultiplier);
-
-        return multiplier;
+        return 1;
     }
 
-    /// <summary>weapon が defender に対して有効・特効を持つか（表示の分岐用）。</summary>
-    public static bool IsEffective(WeaponData weapon, Unit defender)
+    /// <summary>この武器が「有効」（武器威力2倍）を持つ相手のタグ（武器種そのものの相性）。</summary>
+    public static ClassTag GetEffectiveTargets(WeaponData weapon)
     {
-        return GetMultiplier(weapon, defender) > 1;
+        return weapon != null ? GetTypeEffectiveTargets(weapon.type) : ClassTag.None;
+    }
+
+    /// <summary>
+    /// この武器が「特効」（武器威力3倍）を持つ相手のタグ。
+    /// 武器種そのものの相性（弓→天馬・魔導書→竜）と、その武器だけが持つ特効の両方を合わせたもの。
+    /// </summary>
+    public static ClassTag GetSuperEffectiveTargets(WeaponData weapon)
+    {
+        if (weapon == null) return ClassTag.None;
+        return GetTypeSuperEffectiveTargets(weapon.type) | weapon.effectiveTags;
+    }
+
+    /// <summary>
+    /// 実際に当てはまったタグ（表示用。当てはまらなければ None）。
+    /// 出るのは「武器が狙っているタグ」の側。亜竜の相手を竜狩り武器で殴ると「竜」と出るが、
+    /// これは包含関係（亜竜は竜に含まれる）どおりの正しい表示。
+    /// </summary>
+    public static ClassTag GetMatchedTags(WeaponData weapon, Unit defender)
+    {
+        int multiplier = GetMultiplier(weapon, defender);
+        if (multiplier <= 1) return ClassTag.None;
+
+        ClassTag targets = multiplier >= SuperEffectiveMultiplier
+            ? GetSuperEffectiveTargets(weapon)
+            : GetEffectiveTargets(weapon);
+
+        return defender.Tags.Expand() & targets;
+    }
+
+    /// <summary>
+    /// 武器の相性の説明（0〜3行。相手を問わない「この武器は何に強いか」の表示用）。
+    /// 例：蜻蛉切 →「特効: 天馬」「有効: 騎馬」／竜狩りの槌 →「特効: 竜」「有効: 重装」。
+    /// 特効で拾える相手は有効の行から外す（竜狩りの槌の亜竜のように、包含関係で
+    /// 特効側に含まれる相手を「有効」と書いてしまわないように Cover を通す）。
+    /// 幅の狭いパネルにも入るよう、1行にまとめず短い行に分けて返す。
+    /// </summary>
+    public static List<string> BuildWeaponEffectLines(WeaponData weapon)
+    {
+        var lines = new List<string>();
+        if (weapon == null) return lines;
+
+        ClassTag super = GetSuperEffectiveTargets(weapon);
+        ClassTag effective = GetEffectiveTargets(weapon) & ~super.Cover();
+
+        if (super != ClassTag.None) lines.Add($"特効: {super.DisplayName()}");
+        if (effective != ClassTag.None) lines.Add($"有効: {effective.DisplayName()}");
+        if (weapon.grantsAntiAir) lines.Add("対空になる");
+
+        return lines;
     }
 
     /// <summary>倍率の日本語名（1＝なし・2＝有効・3＝特効）。</summary>
