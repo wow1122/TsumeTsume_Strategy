@@ -13,6 +13,7 @@ public struct DamageBreakdown
     public int guardPower;     // 守備 または 魔防
     public int terrainDefense; // 地形防御（防御側のマス）
     public float multiplier;   // ダメージ倍率（必殺技＝フェーズ29。1.0＝等倍）
+    public int mightMultiplier; // 武器威力の倍率（有効＝2・特効＝3。2026-08-06。1＝等倍）
 
     /// <summary>
     /// 実際にかかる倍率。0 のときは等倍（1.0）とみなす。
@@ -21,8 +22,18 @@ public struct DamageBreakdown
     /// </summary>
     public float Multiplier => multiplier > 0f ? multiplier : 1f;
 
+    /// <summary>
+    /// 実際にかかる武器威力の倍率（有効＝2倍・特効＝3倍。2026-08-06）。
+    /// 上の Multiplier と同じ理由で、0 のときは等倍（1）とみなす。
+    /// ※必殺技の倍率がダメージ全体に掛かるのに対し、こちらは武器威力にだけ掛かる別の段。
+    /// </summary>
+    public int MightMultiplier => mightMultiplier > 0 ? mightMultiplier : 1;
+
+    /// <summary>有効・特効を反映した武器威力（等倍なら武器の威力そのまま）。</summary>
+    public int EffectiveMight => might * MightMultiplier;
+
     /// <summary>倍率をかける前のダメージ（0未満にはならない）。</summary>
-    public int BaseTotal => Mathf.Max(0, attackPower + might + triangle - (guardPower + terrainDefense));
+    public int BaseTotal => Mathf.Max(0, attackPower + EffectiveMight + triangle - (guardPower + terrainDefense));
 
     /// <summary>最終ダメージ（倍率をかけたあと。端数は切り捨て）。</summary>
     public int Total => Mathf.FloorToInt(BaseTotal * Multiplier);
@@ -36,7 +47,10 @@ public struct DamageBreakdown
         string atkName = isMagic ? "魔力" : "力";
         string grdName = isMagic ? "魔防" : "守備";
         string triText = triangle == 0 ? "" : $"＋相性{(triangle > 0 ? "+" : "")}{triangle}";
-        string basePart = $"{atkName}{attackPower}＋威力{might}{triText} − ({grdName}{guardPower}＋地形{terrainDefense})";
+        // 有効・特効が乗っているときは「威力5×3」と、掛け算の形をそのまま見せる
+        // （パネルの幅が430pxしかないので「＝15」までは書かない。合計は行の末尾に出る）
+        string mightText = MightMultiplier == 1 ? $"威力{might}" : $"威力{might}×{MightMultiplier}";
+        string basePart = $"{atkName}{attackPower}＋{mightText}{triText} − ({grdName}{guardPower}＋地形{terrainDefense})";
 
         if (Mathf.Approximately(Multiplier, 1f)) return $"{basePart} = {Total}";
         return $"{basePart} = {BaseTotal} ×{Multiplier:0.#}倍 = {Total}";
@@ -45,9 +59,11 @@ public struct DamageBreakdown
 
 /// <summary>
 /// ダメージ計算（決定論的・命中判定なし）。
-///   物理武器（剣・斧・槍・弓）： ダメージ = max(0, 力   + 武器威力 + 三すくみ補正 − (守備 + 地形防御))
-///   魔法武器　　　　　　　　　： ダメージ = max(0, 魔力 + 武器威力 + 三すくみ補正 − (魔防 + 地形防御))
+///   物理武器（剣・斧・槍・弓）： ダメージ = max(0, 力   + 武器威力×特効倍率 + 三すくみ補正 − (守備 + 地形防御))
+///   魔法武器　　　　　　　　　： ダメージ = max(0, 魔力 + 武器威力×特効倍率 + 三すくみ補正 − (魔防 + 地形防御))
 /// 地形防御は物理・魔法の両方に効く（作者合意）。
+/// 特効倍率（有効2倍・特効3倍）は EffectiveRules が相手の特攻タグから決める（2026-08-06）。
+/// 武器威力にだけ掛かる点に注意（必殺技の倍率はダメージ全体に掛かる別の段）。
 /// 三すくみ補正の中身（技・速さの差、最低2）は CombatRules.GetTriangleModifier が担当。
 /// 後衛武器（弓・魔法）は「マスから動かずに撃ったか」で三すくみ補正が変わるので、
 /// attackerHasMoved を受け取って渡している（2026-07-30 作者仕様）。
@@ -76,6 +92,9 @@ public static class DamageCalculator
             isMagic = isMagic,
             attackPower = isMagic ? attacker.Magic : attacker.Strength,
             might = weapon != null ? weapon.might : 0,
+            // 有効・特効（2026-08-06）。相手の兵種の特攻タグを見て武器威力を2倍・3倍にする。
+            // ここ1か所で、戦闘本体・挟撃・敵AIの見積り・戦闘予測UIの全てに同じ倍率が行き渡る
+            mightMultiplier = EffectiveRules.GetMultiplier(weapon, defender),
             triangle = CombatRules.GetTriangleModifier(attacker, defender, attackerHasMoved),
             guardPower = isMagic ? defender.Resistance : defender.Defense,
             // 飛翔中はタイルの効果を受けない（地形防御なし。Phase 14）

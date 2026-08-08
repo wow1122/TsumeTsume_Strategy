@@ -31,6 +31,12 @@ public class Unit : MonoBehaviour
     public UnitClass Class => Data.EffectiveClass;
 
     /// <summary>
+    /// 特攻タグ（このユニットが受ける有効・特効の種類。兵種データ由来）。
+    /// 判定は EffectiveRules が行う（包含関係＝亜竜は竜、は ClassTagExtensions.Matches が受け持つ）。
+    /// </summary>
+    public ClassTag Tags => Data.EffectiveTags;
+
+    /// <summary>
     /// 戦闘に使える武器。武器はこの窓口から読む（Data.weapon の直読みはしない約束。
     /// フェーズ22からはランタイム装備 EquippedWeapon を指す）。
     /// 【フェーズ31】耐久が尽きた武器を装備しているときは null を返す＝「装備無し」扱い。

@@ -68,6 +68,12 @@ public class UnitData : ScriptableObject
     public int EffectiveMove => classData != null ? classData.move : move;
 
     /// <summary>
+    /// 実効の特攻タグ（このユニットが受ける有効・特効の種類）。兵種データ由来で、
+    /// 兵種が設定されていなければタグ無し＝どんな武器からも有効・特効を受けない。
+    /// </summary>
+    public ClassTag EffectiveTags => classData != null ? classData.tags : ClassTag.None;
+
+    /// <summary>
     /// 初期所持品の一覧を返す。items があればそれ、無ければ旧 weapon 欄1つ
     /// （unitClass/move と同じ「新旧共存」パターン）。リストの空欄（None）は除いて返す。
     /// </summary>

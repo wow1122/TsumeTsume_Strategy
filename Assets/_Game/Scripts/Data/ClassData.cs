@@ -5,8 +5,8 @@ using UnityEngine;
 /// 兵種（クラス）1種類分のデータ。Project ウィンドウで右クリック →
 /// Create → TsumeTsume → Class Data から作れます。
 /// 移動タイプ・移動力・装備できる武器種は兵種で決まる（FE系の職業システム）。
-/// 昇格先（上級職）と特攻タグは現段階ではデータのみで、
-/// クラスチェンジの実行や特攻ダメージの戦闘反映は将来実装。
+/// 特攻タグは有効・特効のダメージに使われる（2026-08-06。判定は EffectiveRules）。
+/// 昇格先（上級職）は現段階ではデータのみで、クラスチェンジの実行は将来実装。
 /// Inspector の日本語表示は Editor/ClassDataEditor.cs が担当（表示だけ。動作に影響なし）。
 /// </summary>
 [CreateAssetMenu(fileName = "ClassData", menuName = "TsumeTsume/Class Data")]

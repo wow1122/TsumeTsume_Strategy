@@ -28,7 +28,7 @@ public class ClassDataEditor : Editor
         Draw("usableWeapons", "装備できる武器種");
 
         EditorGUILayout.Space();
-        EditorGUILayout.LabelField("特攻・昇格（データのみ・効果は将来）", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("特攻・昇格（昇格の実行は将来）", EditorStyles.boldLabel);
         Draw("tags", "特攻タグ");
         Draw("promotions", "昇格先");
 

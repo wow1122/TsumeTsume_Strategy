@@ -36,6 +36,19 @@ public class WeaponData : ItemData
     [Tooltip("標準装備。輸送隊からの補給を資源なしで受けられる武器（フェーズ32）。\n将来、資源が要る特別な武器を作るときだけ外す")]
     public bool isStandardIssue = true;
 
+    [Header("特効（2026-08-06）")]
+
+    // 【重要】既定値は None / false（＝何も持たない）。この欄を持たない既存アセットを読んでも
+    // 従来どおりに動く＝既存アセットを壊さない（maxUses・items と同じ「新旧共存」パターン）。
+    // 武器種そのものが持つ相性（槍→騎馬・天馬など）はアセットではなく EffectiveRules の表が持つので、
+    // ここに書くのは「その1本だけが持つ特効」（竜殺しの剣・斬馬刀など）だけ。
+
+    [Tooltip("この武器だけが持つ特効（武器威力3倍）の相手。\n武器種そのものの相性（槍→騎馬など）はここに書かない＝コード側の表が持つ")]
+    public ClassTag effectiveTags = ClassTag.None;
+
+    [Tooltip("対空状態を付与する武器か（飛翔中の相手に届き、当てると撃墜する）。\n※この欄が効き始めるのは対空状態を実装する次の段階から（今は保存されるだけ）")]
+    public bool grantsAntiAir = false;
+
     /// <summary>新しく作る武器の耐久値の既定（作者合意：上限6）。既存アセットには影響しない。</summary>
     public const int DefaultMaxUses = 6;
 
