@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
+  m_Name: Unit_Test_Sword_Effective
+  m_EditorClassIdentifier: Assembly-CSharp::UnitData
+  unitName: "試験兵（剣）"
+  faction: 0
+  unitClass: 1
+  classData: {fileID: 11400000, guid: 74787bae67984d70b61e3db4eb3c7ada, type: 2}
+  maxHP: 24
+  strength: 6
+  magic: 0
+  skill: 5
+  speed: 5
+  defense: 3
+  resistance: 0
+  move: 6
+  weapon: {fileID: 11400000, guid: 9bd17bf5451e17949960a7fc64eb7eca, type: 2}
+  items:
+  - {fileID: 11400000, guid: 9bd17bf5451e17949960a7fc64eb7eca, type: 2}
+  - {fileID: 11400000, guid: a46a5405ffcd45338e9556af3ed2b814, type: 2}
+  - {fileID: 11400000, guid: 5e8b5404589948c9953bfc87c91f4dbf, type: 2}
+  - {fileID: 11400000, guid: 9e3cbac1ceb64dee847f22f678485e29, type: 2}
+  - {fileID: 11400000, guid: f3e3a7ca2ac440719f47e2e54123236d, type: 2}
