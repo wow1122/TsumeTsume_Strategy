@@ -46,7 +46,7 @@ public class WeaponData : ItemData
     [Tooltip("この武器だけが持つ特効（武器威力3倍）の相手。\n武器種そのものの相性（槍→騎馬など）はここに書かない＝コード側の表が持つ")]
     public ClassTag effectiveTags = ClassTag.None;
 
-    [Tooltip("対空状態を付与する武器か（飛翔中の相手に届き、当てると撃墜する）。\n※この欄が効き始めるのは対空状態を実装する次の段階から（今は保存されるだけ）")]
+    [Tooltip("対空状態を付与する武器か（飛翔中の相手に届き、当てると撃墜する）。\n前衛武器では「特効の相手」にだけ対空として働くので、上の特効の相手も必ず指定すること")]
     public bool grantsAntiAir = false;
 
     /// <summary>新しく作る武器の耐久値の既定（作者合意：上限6）。既存アセットには影響しない。</summary>
@@ -78,6 +78,15 @@ public class WeaponData : ItemData
     private void OnValidate()
     {
         if (maxUses < 0) maxUses = 0;
+
+        // 前衛の対空武器は「特効の相手」にだけ対空として働く（2026-08-08 作者仕様）。
+        // 特効の相手が空のままだと、対空にチェックを入れても誰にも効かない設定になってしまう
+        if (grantsAntiAir && effectiveTags == ClassTag.None && category == WeaponCategory.Melee)
+        {
+            Debug.LogWarning(
+                $"武器「{weaponName}」({name}): 対空にチェックが入っていますが、特効の相手が空です。" +
+                "前衛武器の対空は特効が効く相手にだけ働くので、このままでは誰にも対空になりません。");
+        }
 
         if (category != DefaultCategoryFor(type))
         {

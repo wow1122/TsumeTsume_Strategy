@@ -81,10 +81,11 @@ public static class EffectiveRules
     }
 
     /// <summary>
-    /// 武器の相性の説明（0〜3行。相手を問わない「この武器は何に強いか」の表示用）。
-    /// 例：蜻蛉切 →「特効: 天馬」「有効: 騎馬」／竜狩りの槌 →「特効: 竜」「有効: 重装」。
+    /// 武器の相性の説明（0〜2行。相手を問わない「この武器は何に強いか」の表示用）。
+    /// 例：蜻蛉切 →「特効: 天馬（対空）」「有効: 騎馬」／竜狩りの槌 →「特効: 竜（対空）」「有効: 重装」。
     /// 特効で拾える相手は有効の行から外す（竜狩りの槌の亜竜のように、包含関係で
     /// 特効側に含まれる相手を「有効」と書いてしまわないように Cover を通す）。
+    /// 対空は特効の相手にだけ働く（2026-08-08）ので、独立した行にせず特効の行に添える。
     /// 幅の狭いパネルにも入るよう、1行にまとめず短い行に分けて返す。
     /// </summary>
     public static List<string> BuildWeaponEffectLines(WeaponData weapon)
@@ -95,11 +96,25 @@ public static class EffectiveRules
         ClassTag super = GetSuperEffectiveTargets(weapon);
         ClassTag effective = GetEffectiveTargets(weapon) & ~super.Cover();
 
-        if (super != ClassTag.None) lines.Add($"特効: {super.DisplayName()}");
+        if (super != ClassTag.None)
+            lines.Add($"特効: {super.DisplayName()}{(weapon.grantsAntiAir ? "（対空）" : "")}");
+
         if (effective != ClassTag.None) lines.Add($"有効: {effective.DisplayName()}");
-        if (weapon.grantsAntiAir) lines.Add("対空になる");
 
         return lines;
+    }
+
+    /// <summary>
+    /// 対空状態を付ける前衛武器（竜殺しの剣など）が、この相手に対して対空として働くか
+    /// （2026-08-08 作者仕様変更：**特効が効く相手にだけ**対空になる）。
+    /// 竜殺しの剣は飛翔中の竜には届くが、飛翔中の天馬兵には届かない、ということ。
+    /// 後衛の攻撃武器（弓・魔導書・光魔法）は相手を問わず対空なので、ここでは扱わない
+    /// （その判定は CombatRules.IsAntiAirCapable が持つ）。
+    /// </summary>
+    public static bool GrantsAntiAirAgainst(WeaponData weapon, Unit target)
+    {
+        if (weapon == null || !weapon.grantsAntiAir || target == null) return false;
+        return ClassTagExtensions.Matches(target.Tags, GetSuperEffectiveTargets(weapon));
     }
 
     /// <summary>倍率の日本語名（1＝なし・2＝有効・3＝特効）。</summary>

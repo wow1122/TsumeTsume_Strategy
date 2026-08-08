@@ -158,9 +158,11 @@ public static class ThreatMap
         Faction opponentFaction = self.Faction == Faction.Player ? Faction.Enemy : Faction.Player;
         foreach (Unit p in UnitRegistry.GetUnits(opponentFaction))
         {
-            // 空中の相手を攻撃できるユニットか（対空できる後衛の攻撃武器 or 飛翔中。
+            // self（空を飛ぼうとしている本人）を攻撃できるユニットか（対空できる相手 or 飛翔中。
             // 杖・武装無しは対空できない。判定は CombatRules.IsAntiAirCapable に一元化。Phase 25）
-            if (!CombatRules.IsAntiAirCapable(p) && !p.IsFlying) continue;
+            // ※対空は相手によって変わる（2026-08-08）。竜殺しの剣を持つ敵は、竜には対空だが
+            //   天馬兵には対空でない＝天馬兵から見た対空圏には入らない。だから self を渡す
+            if (!CombatRules.IsAntiAirCapable(p, self) && !p.IsFlying) continue;
 
             // 静止して撃つ（武器の上限射程まで届く）
             AddAttackRing(result, grid, p, p.GridPosition, hasMoved: false);

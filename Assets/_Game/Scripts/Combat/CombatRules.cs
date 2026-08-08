@@ -13,8 +13,9 @@ using UnityEngine;
 ///  ・挟撃の資格 … 前衛武器の装備者だけが挟撃に参加できる
 ///  ・挟撃の無効化（ガード）… 防御側の隣に「前衛武器の徒歩ユニット（歩兵・重装歩兵）」の
 ///    味方がいれば挟撃されない
-///  ・飛翔（Phase 14）… 飛翔中の相手と戦えるのは「飛翔中のユニット」か「対空武器
-///    （弓・魔導書・光魔法。杖は攻撃できないので不可）」だけ（Phase 25・IsAntiAirCapable）。
+///  ・飛翔（Phase 14）… 飛翔中の相手と戦えるのは「飛翔中のユニット」か「対空できる相手」だけ
+///    （Phase 25・IsAntiAirCapable）。対空は 後衛の攻撃武器（弓・魔導書・光魔法。杖は不可）が
+///    相手を問わず、前衛の特効武器（竜殺しの剣など）は特効が効く相手にだけ（2026-08-08 作者仕様）。
 ///    飛翔中のユニットは地上の相手を攻撃できない（CanEngage）。挟撃・ガードも同じ制限に従う
 /// </summary>
 public static class CombatRules
@@ -109,22 +110,30 @@ public static class CombatRules
     public static bool CanEngage(Unit attacker, Unit defender)
     {
         if (defender.IsFlying)
-            return attacker.IsFlying || IsAntiAirCapable(attacker);
+            return attacker.IsFlying || IsAntiAirCapable(attacker, defender);
 
         return !attacker.IsFlying; // 攻撃側だけ飛翔中なら不成立
     }
 
     /// <summary>
-    /// 地上から空中の相手を攻撃できる「対空」ユニットか（Phase 25）。
-    /// ＝後衛の攻撃武器（弓・魔導書・光魔法）を装備している。
+    /// unit が「飛翔中の target」に手を出せる対空ユニットか（Phase 25。2026-08-08 に相手依存へ変更）。
+    ///   後衛の攻撃武器（弓・魔導書・光魔法）… 相手を問わず対空
+    ///   前衛の特効武器（竜殺しの剣など）    … その武器の**特効が効く相手にだけ**対空（作者仕様変更）
     /// 杖は後衛だが攻撃できない武器なので対空ではない（修道士は敵飛行兵の頭上を塞がず、
     /// AIの対空圏回避の対象にもならない）。武装無しも対空ではない。
-    /// すり抜け判定（MovementCalculator）・対空圏（ThreatMap）とも判定を共有する。
+    /// 【重要】相手によって変わるので target を必ず渡す。竜殺しの剣は飛翔中の竜には届くが、
+    /// 飛翔中の天馬兵には届かない＝同じユニットでも相手次第で対空かどうかが変わる。
+    /// 攻撃の可否（CanEngage）・撃墜（ShootsDown）・すり抜け判定（MovementCalculator）・
+    /// 対空圏（ThreatMap）の4か所が、この1つの判定を共有する。
     /// </summary>
-    public static bool IsAntiAirCapable(Unit unit)
+    public static bool IsAntiAirCapable(Unit unit, Unit target)
     {
-        WeaponData w = unit.Weapon;
-        return w != null && w.category == WeaponCategory.Ranged && w.type != WeaponType.Staff;
+        WeaponData w = unit != null ? unit.Weapon : null;
+        if (w == null) return false;
+
+        if (w.category == WeaponCategory.Ranged && w.type != WeaponType.Staff) return true;
+
+        return EffectiveRules.GrantsAntiAirAgainst(w, target);
     }
 
     /// <summary>
@@ -139,7 +148,7 @@ public static class CombatRules
     public static bool ShootsDown(Unit attacker, Unit defender)
     {
         if (attacker == null || defender == null) return false;
-        return defender.IsFlying && IsAntiAirCapable(attacker);
+        return defender.IsFlying && IsAntiAirCapable(attacker, defender);
     }
 
     // ===== 三すくみ =====
@@ -189,8 +198,9 @@ public static class CombatRules
     /// 「マスから動かずに撃つと三すくみ有利が付く」武器を装備しているか（2026-07-30 作者仕様）。
     /// ＝後衛の攻撃武器（弓・魔導書・光魔法）。杖は攻撃できないので含まない。武装無しも含まない。
     /// 戦闘本体（GetTriangleModifier）と戦闘予測パネルの説明表示が同じ判定を見るために公開している。
-    /// ※中身は今のところ対空判定 IsAntiAirCapable と同じ条件だが、意味は別のルールなので分けてある
-    ///   （将来どちらか片方だけ武器種が増減しても、もう一方が巻き込まれないようにする）。
+    /// ※かつては対空判定 IsAntiAirCapable と同じ条件だったが、意味の違う別ルールなので分けてあった。
+    ///   2026-08-08 に対空が「相手によって変わる判定」になったので、いまは完全に別物
+    ///   （分けておいたおかげで、前衛の特効武器に静止撃ち有利が付く事故が起きずに済んでいる）。
     /// </summary>
     public static bool HasStandingShotAdvantage(Unit unit)
     {

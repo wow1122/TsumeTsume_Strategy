@@ -46,8 +46,11 @@ public class ItemListMenu : MonoBehaviour
     }
 
     [Header("見た目（持ち物リスト）")]
-    [Tooltip("ボタン1個の幅（ピクセル）。「傷薬（残り3）」「剣（装備中）」が収まる幅にしてある")]
-    public float buttonWidth = 170f;
+    // 2026-08-08 に 170 → 210 へ拡げた。特効武器の名前が長く、170px（全角10文字）では
+    // 「ホースキラー（装備中）」11文字・「アーマーキラー（装備中）」12文字が右端で見切れたため。
+    // 全角1文字あたり約17pxなので、210px で12文字ぶん。交換の2列表示もこの幅を共有する
+    [Tooltip("ボタン1個の幅（ピクセル）。「アーマーキラー（装備中）」が収まる幅にしてある")]
+    public float buttonWidth = 210f;
     [Tooltip("ボタン1個の高さ（ピクセル）")]
     public float buttonHeight = 34f;
     [Tooltip("メニューの枠とボタンの間の余白（ピクセル）")]
