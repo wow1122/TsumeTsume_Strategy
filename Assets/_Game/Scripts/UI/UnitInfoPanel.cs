@@ -12,10 +12,14 @@ using UnityEngine.InputSystem;
 /// 別の候補にマウスを重ねるとそちらへ切り替わる（離れても最後の候補を表示し続ける）。
 /// 貨物リスト（CargoListMenu）の行ホバーからも使うため、盤上のユニットを追う「盤面モード」と、
 /// 指定された1体だけを出す「単体モード」の2通りがある（格納中の貨物は盤上にいないため）。
-/// 場所も戦闘予測と同じ画面右下（対象選択中は戦闘予測が消えているので重ならない）。
+/// 場所は戦闘予測と同じ画面右下（救出・杖などの相手選択中は戦闘予測が出ないので重ならない）。
 /// 表示内容は UnitInfoLines に集約してあり、デバッグ用パネルと同じ内容になる。
 /// 見るだけのパネルでゲームの状態は一切変えない。
 /// BattleController が自動生成し、対象選択の開始・終了で Show / Hide を呼ぶ。
+///
+/// 縦積み（2026-08-09 作者合意）: 攻撃の対象選択だけは戦闘予測と同時に出る。
+/// このときは stackAbove で戦闘予測パネルの矩形を受け取り、その**上に**積む
+/// （下＝戦闘予測が従来の定位置のまま／上＝敵ユニット情報）。渡されなければ従来どおり右下の定位置。
 /// </summary>
 public class UnitInfoPanel : MonoBehaviour
 {
@@ -28,22 +32,36 @@ public class UnitInfoPanel : MonoBehaviour
     public float padding = 10f;
     [Tooltip("文字の大きさ")]
     public int fontSize = 14;
+    [Tooltip("下に積むパネル（戦闘予測）との隙間（ピクセル）")]
+    public float stackGap = 6f;
+
+    /// <summary>
+    /// 直近に描いたパネルの矩形（GUI座標。出していなければ Rect.zero）。
+    /// 武器の一覧がこのパネルを避けるために公開している（2026-08-09。
+    /// BattleForecast.PanelRect / DebugUnitPanel.PanelRect と同じ作法）。
+    /// </summary>
+    public Rect PanelRect { get; private set; }
 
     private List<Unit> candidates; // 盤面モード: 選択できる相手（null＝盤面モードではない）
     private GridManager grid;      // 盤面モードでのみ使う（マス→ユニットの割り出し）
     private bool pinned;           // 単体モード: 呼び出し側が指定した1体だけを出す
     private string title;
     private Unit current;          // いま情報を表示している相手（選択直後は最初の候補）
+    private System.Func<Rect> stackAbove; // このパネルを上に積む相手の矩形（null＝右下の定位置）
 
     /// <summary>
     /// 対象選択の開始時に呼ぶ（盤面モード）。title は見出し（例：「救出する相手」）。
     /// 盤上の候補にマウスを重ねると表示が切り替わる。
+    /// stackAbove を渡すと、その矩形（戦闘予測パネル）の上に積む（2026-08-09。
+    /// 描画のたびに評価するので、予測パネルの行数が相手ごとに変わっても追随する）。
     /// </summary>
-    public void Show(List<Unit> candidates, string title, GridManager grid)
+    public void Show(List<Unit> candidates, string title, GridManager grid,
+                     System.Func<Rect> stackAbove = null)
     {
         this.candidates = candidates;
         this.title = title;
         this.grid = grid;
+        this.stackAbove = stackAbove;
         pinned = false;
         current = (candidates != null && candidates.Count > 0) ? candidates[0] : null;
     }
@@ -57,6 +75,7 @@ public class UnitInfoPanel : MonoBehaviour
     {
         candidates = null;
         grid = null;
+        stackAbove = null;
         this.title = title;
         pinned = true;
         current = unit;
@@ -67,12 +86,16 @@ public class UnitInfoPanel : MonoBehaviour
     {
         candidates = null;
         grid = null;
+        stackAbove = null;
         pinned = false;
         current = null;
+        PanelRect = new Rect(); // 消えたパネルの位置に武器の一覧が引きずられないように戻す
     }
 
     void OnGUI()
     {
+        PanelRect = new Rect(); // 描かなかったときは「避ける相手は無い」扱いに戻す
+
         if (!pinned && (candidates == null || grid == null)) return;
 
         // 盤面モードでは、マウスの下に別の候補がいればそちらへ切り替える
@@ -96,9 +119,16 @@ public class UnitInfoPanel : MonoBehaviour
         // 行数は持ち物の数で変わるので、下端を固定して上へ伸ばす）
         // 文字行の下にマナ・気勢のゲージバー2本ぶんの高さを足す（フェーズ28）
         float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f + GaugeBars.TotalHeight; // +1 は見出しの行
-        var rect = new Rect(Screen.width - panelWidth - 12f,
-                            Screen.height - panelHeight - 12f,
+        float bottom = Screen.height - 12f;
+
+        // 攻撃の対象選択では戦闘予測と同時に出るので、その上に積む（2026-08-09 作者合意）。
+        // 戦闘予測が出ていなければ（Rect.zero）従来どおり右下の定位置
+        Rect below = stackAbove != null ? stackAbove() : new Rect();
+        if (below.height > 0f) bottom = below.yMin - stackGap;
+
+        var rect = new Rect(Screen.width - panelWidth - 12f, bottom - panelHeight,
                             panelWidth, panelHeight);
+        PanelRect = rect; // 武器の一覧の重なり回避に使う（2026-08-09）
 
         var boxStyle = new GUIStyle(GUI.skin.box)
         {

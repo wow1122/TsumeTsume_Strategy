@@ -49,6 +49,16 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  変えてしまうため巻き戻せない）。1個も動かさずに閉じたときは何も起きていない扱い。
 ///  相手は「隣接・同陣営・盤上（貨物は不可）・飛翔状態が同じ」（判定は ExchangeRules）。
 ///
+/// 2026-08-09 の追加（攻撃は「武器を選んでから相手を選ぶ」順）：
+///  「攻撃」→【武器選択】どの武器で殴るかを選ぶ（武器1本でも必ず通る）→
+///  【対象選択】その武器で狙える敵をクリック → その場で攻撃 → 行動終了。
+///  「攻撃」コマンドが出る条件は「持っている武器のどれかで届く敵がいるか」（装備中の武器だけではない）。
+///  武器の一覧で行にマウスを重ねると、その武器で狙える敵が盤面で赤く光る。
+///  行をクリックするとその武器を装備し（＝この時点で持ち替えが確定。行動は消費しない）、対象選択へ進む。
+///  敵にマウスを重ねると画面右下に「敵ユニット情報（上）＋戦闘予測（下）」が縦に並ぶ。
+///  右クリック/ESC で1段ずつ戻る（対象選択 → 武器選択 → 行動メニュー）。
+///  必殺技のマナが減るのは敵をクリックした瞬間なので、それまでに戻ればマナは減らない。
+///
 /// 2026-07-26 の仕様変更（救出系の2点）：
 ///  ・引き受けた行動中に「降ろす」を選べるのは、引き受けを実行したマスの上にいるときだけ
 ///    （引き受け後に移動した先では降ろせない。引き受けたマスへ戻れば また選べる）。
@@ -64,7 +74,7 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect, ExchangeSelect, RefreshMenu }
+    private enum State { Idle, MoveSelect, CommandMenu, WeaponSelect, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect, ExchangeSelect, RefreshMenu }
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
@@ -78,8 +88,11 @@ public class BattleController : MonoBehaviour
     private ActionContext context;              // いま行動中のユニットの文脈（移動取り消し用）
     private HashSet<Vector2Int> reachableCells; // 移動できるマス
     private Dictionary<Vector2Int, int> moveCosts = new Dictionary<Vector2Int, int>(); // 各マスまでの移動コスト（再移動の予算計算用）
-    private List<Unit> attackTargets;           // いまの位置から攻撃できる敵
-    private bool criticalPending;               // 対象選択中の攻撃が必殺技かどうか（フェーズ29）
+    private List<Unit> attackTargets;           // 攻撃できる敵（メニュー＝全武器の合算／対象選択＝選んだ武器ぶん）
+    private bool criticalPending;               // 武器・対象選択中の攻撃が必殺技かどうか（フェーズ29）
+    private List<WeaponData> weaponChoices;     // 武器選択の候補（並びは所持品の順・2026-08-09）
+    private int hoveredWeaponRow = -1;          // 武器一覧でいま赤表示を出している行（-1＝まだ無し）
+    private readonly Rect[] avoidPanelBuffer = new Rect[3]; // 武器選択のUIが避けるパネルの矩形（使い回し）
     private List<Unit> unitCandidates;          // 救出・引き受け・代わりに降ろすの相手候補
     private List<Vector2Int> tileCandidates;    // 降ろす先のマス候補
     private Unit proxyCarrier;                  // 「代わりに降ろす」で選んだ運び手
@@ -93,6 +106,7 @@ public class BattleController : MonoBehaviour
     private ItemListMenu itemMenu;              // 所持品リストメニュー（IMGUI・フェーズ23）
     private BattleForecast forecast;            // 戦闘予測パネル（IMGUI・Phase 15）
     private UnitInfoPanel unitInfo;             // 対象選択中の相手情報パネル（IMGUI・2026-07-26）
+    private DebugUnitPanel debugPanel;          // デバッグ用ユニット情報パネル（右上・武器選択の重なり回避に使う）
     private Unit previewedEnemy;                // 行動範囲を下見表示中の敵（Idle のときだけ使う）
 
     void Awake()
@@ -110,8 +124,10 @@ public class BattleController : MonoBehaviour
         if (unitInfo == null) unitInfo = gameObject.AddComponent<UnitInfoPanel>();
 
         // デバッグ用のユニット情報パネル（クリックで能力値・状態を表示）。
-        // 自分でクリックを読む独立部品なので、生成するだけでよい（呼び出しは不要）
-        if (GetComponent<DebugUnitPanel>() == null) gameObject.AddComponent<DebugUnitPanel>();
+        // 自分でクリックを読む独立部品なので呼び出しは不要だが、武器選択のUIが
+        // このパネルに被らないよう、矩形（PanelRect）を読むために参照だけ持っておく
+        debugPanel = GetComponent<DebugUnitPanel>();
+        if (debugPanel == null) debugPanel = gameObject.AddComponent<DebugUnitPanel>();
     }
 
     void Update()
@@ -142,7 +158,8 @@ public class BattleController : MonoBehaviour
         // ItemListMenu（IMGUI）側が行うので、ここで盤面まで反応すると二重処理になるのを防ぐ
         if (state == State.CommandMenu || state == State.CargoSelect
             || state == State.ItemSelect || state == State.ItemActionSelect
-            || state == State.ExchangeSelect || state == State.RefreshMenu) return;
+            || state == State.ExchangeSelect || state == State.RefreshMenu
+            || state == State.WeaponSelect) return;
 
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -226,20 +243,10 @@ public class BattleController : MonoBehaviour
                 break;
 
             case State.TargetSelect:
+                // 武器はもう選んである（＝装備済み）ので、敵をクリックした時点で攻撃が実行される
+                // （2026-08-09 の作者仕様。「実行」の確認は無い＝FEの古典的な流れ）
                 if (clickedUnit != null && attackTargets.Contains(clickedUnit))
-                {
-                    // 必殺技（フェーズ29）は対象を確定したここでマナを1本使う。
-                    // 途中でキャンセルしたときに減らないよう、消費は攻撃の直前に置いている
-                    if (criticalPending)
-                    {
-                        context.unit.SpendMana();
-                        Debug.Log($"{context.unit.Data.unitName} がマナを1本使った（残り {context.unit.Mana.Stock} 本）");
-                    }
-
-                    // 移動したかも渡す（後衛武器はマスから動かずに撃つと三すくみ有利。2026-07-30 作者仕様）
-                    CombatSystem.ResolveAttack(context.unit, clickedUnit, grid, criticalPending, context.hasMoved);
-                    FinishAction();
-                }
+                    ExecuteAttack(clickedUnit);
                 // 対象以外のクリックは無視（待機はメニューの「待機」から。誤クリックでの行動消費を防ぐ）
                 break;
 
@@ -297,10 +304,22 @@ public class BattleController : MonoBehaviour
                 state = State.Idle;
                 break;
 
-            case State.TargetSelect:
             case State.UnitTargetSelect:
             case State.DamageCheck:
-                // 対象選択・被ダメ確認 → メニューへ戻る（移動した位置はそのまま保持）
+                // 相手選択・被ダメ確認 → メニューへ戻る（移動した位置はそのまま保持）
+                OpenCommandMenu();
+                break;
+
+            case State.TargetSelect:
+                // 攻撃の対象選択 → 武器選択へ1段戻る（2026-08-09）。
+                // 選んだ武器は装備したまま（装備変更に取り消しは無い＝既存合意）だが、
+                // 一覧から別の武器を選び直せる。必殺技のマナはまだ使っていない
+                EnterWeaponSelect(criticalPending);
+                break;
+
+            case State.WeaponSelect:
+                // 武器選択 → 行動メニューへ1段戻る
+                itemMenu.Hide();
                 OpenCommandMenu();
                 break;
 
@@ -590,16 +609,18 @@ public class BattleController : MonoBehaviour
             return commands;
         }
 
+        // 攻撃コマンドを出す条件は「持っている武器のどれかで届く敵がいるか」（2026-08-09 の合意。
+        // 装備中の武器基準ではない＝飛翔中の相手も、対空の特効武器を持っていれば攻撃できる）
         attackTargets = FindAttackTargets(unit, context.hasMoved);
         if (attackTargets.Count > 0)
         {
-            commands.Add(new ActionMenu.Entry("攻撃", EnterTargetSelect));
+            commands.Add(new ActionMenu.Entry("攻撃", () => EnterWeaponSelect(false)));
 
             // 必殺技（フェーズ29）: マナが1本以上貯まっているときだけ「攻撃」の直後に出る。
-            // 対象選択の流れは攻撃とまったく同じで、ダメージだけ倍率ぶん増える。
-            // マナは対象を確定した瞬間に1本減る（対象選択でキャンセルすれば減らない）
+            // 武器・対象の選び方は攻撃とまったく同じで、ダメージだけ倍率ぶん増える。
+            // マナは敵をクリックした瞬間に1本減る（それまでに戻れば減らない）
             if (GaugeRules.CanUseCritical(unit))
-                commands.Add(new ActionMenu.Entry("必殺技", EnterCriticalTargetSelect));
+                commands.Add(new ActionMenu.Entry("必殺技", () => EnterWeaponSelect(true)));
 
             // 被ダメ確認（2026-07-18 作者要望）: 攻撃できる相手から「逆に攻撃されたら」の
             // 予測を見る。見るだけで行動は消費しない
@@ -679,37 +700,176 @@ public class BattleController : MonoBehaviour
         return commands;
     }
 
-    /// <summary>「攻撃」が選ばれた：対象の敵を赤表示して、クリックを待つ。</summary>
-    private void EnterTargetSelect()
+    // ===== 武器選択 → 対象選択（2026-08-09 作者仕様）=====
+    // 攻撃は「武器を選んでから相手を選ぶ」順（FEの古典的な流れ）。武器を1本しか持たない
+    // ユニットでも一覧は必ず通る。持ち替えは行動を消費しないので「持ち物」で持ち替えてから
+    // 攻撃するのと結果は同じだが、相手に合わせて特効武器へ持ち替える手間（メニューを2往復）が無くなる。
+
+    /// <summary>
+    /// 「攻撃」「必殺技」が選ばれた：どの武器で殴るかを選ぶ段階に入る（相手はまだ決めない）。
+    /// 対象選択から1段戻ってきたときもここへ来る＝武器を選び直せる。
+    /// 入った瞬間から「最初の押せる武器で狙える敵」を赤く出しておく
+    /// （戦闘予測・情報パネルと同じ「入った瞬間から最初の候補を見せる」作法）。
+    /// </summary>
+    private void EnterWeaponSelect(bool critical)
     {
-        EnterTargetSelectCore(false);
+        Unit unit = context.unit;
+        menu.Hide();
+        forecast.Hide(); // 対象選択から戻ったときは戦闘予測と相手情報を消す
+        unitInfo.Hide();
+        criticalPending = critical;
+        weaponChoices = WeaponChoiceRules.GetAttackWeapons(unit);
+
+        // 候補が0本になることは無い（「攻撃」は武器で届く敵がいるときだけ出る）が、
+        // 万一そうなったらメニューへ戻して知らせる
+        if (weaponChoices.Count == 0)
+        {
+            Debug.LogWarning($"{unit.Data.unitName}: 攻撃に使える武器が見つからない（メニューへ戻る）");
+            OpenCommandMenu();
+            return;
+        }
+
+        // 「持ち物」で見た性能詳細が右下に残っていると邪魔なので、いったん片付ける（交換と同じ作法）
+        itemMenu.Hide();
+
+        List<ItemListMenu.Entry> rows = BuildWeaponEntries();
+        itemMenu.Show(grid.CellToWorld(unit.GridPosition), grid.cellSize,
+                      rows, OnWeaponHovered, AvoidPanelRects);
+
+        // 押せる行が1つも無ければ選択マークだけ（武器 null＝狙える敵ゼロとして塗る）
+        hoveredWeaponRow = rows.FindIndex(row => row.enabled);
+        ShowWeaponTargets(hoveredWeaponRow >= 0 ? weaponChoices[hoveredWeaponRow] : null);
+
+        state = State.WeaponSelect;
+        Debug.Log($"{(critical ? "必殺技" : "攻撃")}の武器を選択（{weaponChoices.Count} 本）。" +
+                  "右クリック/ESCでメニューへ戻る。");
     }
 
     /// <summary>
-    /// 「必殺技」が選ばれた（フェーズ29）：対象の選び方は攻撃と同じで、
-    /// 予測パネルと実際のダメージに倍率がかかる点だけが違う。
-    /// マナを減らすのは対象を確定した瞬間なので、ここで戻ってもマナは失われない。
+    /// 武器一覧の行を作る。ラベルは武器名＋状態で、使えない武器は理由を添えた灰色の無効行にする
+    /// （なぜ選べないかがその場で分かるように。持ち物リストの「装備不可」と同じ考え方）。
+    /// 押せるかどうかは相手ではなく武器ごとに決まる＝その武器で狙える敵が1体でもいるか
+    /// （相手より先に武器を選ぶため。判定は WeaponChoiceRules.GetUnusableReason）。
+    /// ホバー詳細（detailLines）は付けない＝行にマウスを重ねたときは盤面の赤表示で見せるため。
     /// </summary>
-    private void EnterCriticalTargetSelect()
+    private List<ItemListMenu.Entry> BuildWeaponEntries()
     {
-        EnterTargetSelectCore(true);
+        var entries = new List<ItemListMenu.Entry>();
+        Unit unit = context.unit;
+
+        foreach (WeaponData weapon in weaponChoices)
+        {
+            string reason = WeaponChoiceRules.GetUnusableReason(unit, weapon, context.hasMoved);
+
+            string label = weapon.DisplayName;
+            if (reason != null) label += $"（{reason}）";
+            else if (weapon == unit.EquippedWeapon) label += "（装備中）";
+
+            entries.Add(new ItemListMenu.Entry(label, reason == null, () => EnterTargetSelect(weapon)));
+        }
+
+        return entries;
     }
 
-    /// <summary>攻撃・必殺技で共通の対象選択（critical で倍率の有無が変わるだけ）。</summary>
-    private void EnterTargetSelectCore(bool critical)
+    /// <summary>
+    /// 武器一覧の行にマウスが乗ったとき：その武器で狙える敵を盤面に赤く出す
+    /// （相手を先に選べなくなったぶん、どの武器で誰に届くのかをここで見せる。作者合意 2026-08-09）。
+    /// 塗り直すのは行が変わったときだけ＝IMGUI は毎フレーム呼ばれるので、
+    /// そのたびに対象さがしとハイライトの張り直しをすると無駄が大きい。
+    /// </summary>
+    private void OnWeaponHovered(int index)
     {
-        menu.Hide();
-        criticalPending = critical;
+        if (state != State.WeaponSelect) return;
+        if (weaponChoices == null || index < 0 || index >= weaponChoices.Count) return;
+        if (index == hoveredWeaponRow) return;
 
-        foreach (Unit enemy in attackTargets)
-            grid.AddHighlight(enemy.GridPosition, HighlightKind.TargetChoice);
+        hoveredWeaponRow = index;
+        ShowWeaponTargets(weaponChoices[index]);
+    }
 
-        // 対象にマウスを重ねると戦闘予測が出る（Phase 15）。
+    /// <summary>
+    /// 武器が決まった：その武器を装備し、狙える敵を赤表示してクリックを待つ。
+    /// **装備はここで切り替わる**（作者合意・FE準拠）＝この後キャンセルしてもその武器のまま。
+    /// 装備変更は行動を消費しないので、そのまま別のコマンドへ進んでも構わない
+    /// （既存の「装備変更に取り消しは無い」合意どおり）。
+    /// 威力・三すくみ・特効・対空（撃墜）・挟撃の資格・耐久の消費は、装備を変えた時点で
+    /// 既存の Unit.Weapon 窓口を通じて全部この武器のものになる。
+    /// </summary>
+    private void EnterTargetSelect(WeaponData weapon)
+    {
+        Unit unit = context.unit;
+        itemMenu.Hide();
+
+        if (weapon != unit.EquippedWeapon)
+        {
+            unit.Equip(weapon);
+            Debug.Log($"{unit.Data.unitName} は {weapon.DisplayName} に持ち替えた（行動は消費しない）");
+        }
+
+        attackTargets = WeaponChoiceRules.FindTargets(unit, weapon, context.hasMoved);
+        ShowAttackTargets(attackTargets);
+
+        // 敵にマウスを重ねると、画面右下に「敵ユニット情報（上）＋戦闘予測（下）」が縦に並ぶ。
         // 移動したかも渡して、後衛武器の静止撃ち有利を実戦と同じ数字で見せる（2026-07-30 作者仕様）
-        forecast.Show(context.unit, attackTargets, grid, critical, context.hasMoved);
+        forecast.Show(unit, attackTargets, grid, criticalPending, context.hasMoved);
+        unitInfo.Show(attackTargets, "攻撃する相手", grid, () => forecast.PanelRect);
 
         state = State.TargetSelect;
-        Debug.Log($"{(critical ? "必殺技" : "攻撃")}の対象を選択（{attackTargets.Count} 体）。右クリック/ESCでメニューへ戻る。");
+        Debug.Log($"{(criticalPending ? "必殺技" : "攻撃")}の対象を選択（{attackTargets.Count} 体）。" +
+                  "右クリック/ESCで武器選択へ戻る。");
+    }
+
+    /// <summary>その武器で狙える敵を赤く塗る（武器が null なら選択マークだけ＝狙える敵ゼロ）。</summary>
+    private void ShowWeaponTargets(WeaponData weapon)
+    {
+        ShowAttackTargets(WeaponChoiceRules.FindTargets(context.unit, weapon, context.hasMoved));
+    }
+
+    /// <summary>選択マークを付け直し、渡した敵を赤（攻撃対象）で塗る。武器選択・対象選択で共用。</summary>
+    private void ShowAttackTargets(List<Unit> targets)
+    {
+        grid.ResetAllHighlights();
+        grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
+
+        foreach (Unit enemy in targets)
+            grid.AddHighlight(enemy.GridPosition, HighlightKind.TargetChoice);
+    }
+
+    /// <summary>
+    /// 武器の一覧が避ける矩形＝戦闘予測・ユニット情報（どちらも右下）とデバッグ用パネル（右上）。
+    /// 出ていないパネルは Rect.zero が返り、避ける対象から自然に外れる
+    /// （武器選択中に右下の2枚が出ることは無いが、窓口を1つにしておく）。
+    /// 呼ばれるのは一覧を開いた最初の描画の1回だけ＝以後この結果でパネルが動いても一覧は動かない
+    /// （ItemListMenu が位置を覚える。動かすとクリックの最中に行が逃げて押せなくなる）。
+    /// ※配列は使い回して余計なゴミを作らない
+    /// </summary>
+    private Rect[] AvoidPanelRects()
+    {
+        avoidPanelBuffer[0] = forecast.PanelRect;
+        avoidPanelBuffer[1] = unitInfo.PanelRect;
+        avoidPanelBuffer[2] = debugPanel != null ? debugPanel.PanelRect : new Rect();
+        return avoidPanelBuffer;
+    }
+
+    /// <summary>
+    /// 攻撃を実行する（敵をクリックした瞬間。2026-08-09 から「実行」の確認は無い）。
+    /// 武器はもう装備してあるので、威力・三すくみ・特効・対空（撃墜）・挟撃の資格・耐久の消費は
+    /// すべて選んだ武器で決まる。装備は攻撃の後もそのまま＝敵フェイズもこの武器で受ける（FE準拠）。
+    /// 必殺技のマナはここで1本使う（敵をクリックする前に戻ればマナは減らない）。
+    /// </summary>
+    private void ExecuteAttack(Unit target)
+    {
+        Unit unit = context.unit;
+
+        if (criticalPending)
+        {
+            unit.SpendMana();
+            Debug.Log($"{unit.Data.unitName} がマナを1本使った（残り {unit.Mana.Stock} 本）");
+        }
+
+        // 移動したかも渡す（後衛武器はマスから動かずに撃つと三すくみ有利。2026-07-30 作者仕様）
+        CombatSystem.ResolveAttack(unit, target, grid, criticalPending, context.hasMoved);
+        FinishAction();
     }
 
     /// <summary>
@@ -1165,11 +1325,13 @@ public class BattleController : MonoBehaviour
         Debug.Log($"「{slot.Item.DisplayName}」の行動を選択。右クリック/ESCで持ち物へ戻る。");
     }
 
-    /// <summary>その兵種でこの武器を装備できるか（兵種データが無ければ従来どおり可）。</summary>
+    /// <summary>
+    /// その兵種でこの武器を装備できるか（判定は WeaponChoiceRules に集約。
+    /// 持ち物・交換の表示と、攻撃時の武器選択が同じ判定を見るようにするため）。
+    /// </summary>
     private bool CanEquip(Unit unit, WeaponData weapon)
     {
-        ClassData cls = unit.Data.classData;
-        return cls == null || cls.CanUse(weapon.type);
+        return WeaponChoiceRules.CanEquip(unit, weapon);
     }
 
     /// <summary>武器を装備して行動メニューへ戻る（行動は消費しない）。攻撃対象が新装備で再計算される。</summary>
@@ -1463,6 +1625,8 @@ public class BattleController : MonoBehaviour
         reachableCells = null;
         attackTargets = null;
         criticalPending = false;
+        weaponChoices = null;
+        hoveredWeaponRow = -1;
         unitCandidates = null;
         tileCandidates = null;
         proxyCarrier = null;
@@ -1483,33 +1647,43 @@ public class BattleController : MonoBehaviour
     /// 「後衛武器は移動すると最小射程ちょうどに縮む」ルールも正しく反映される。
     /// 表示用の下見なので、相手ごとの可否（飛翔の相性 CanEngage）までは見ない。
     /// 誰も立ち入れない壁マス（通行不可かつ飛行も不可）は塗らない。武装無しなら空を返す。
+    /// 2026-08-09 から、持っている武器ぶんを合算する（攻撃の対象を「全武器で届く敵」に
+    /// した合意に表示を合わせるため）。敵は装備中の1本だけが候補なので、
+    /// 敵の行動範囲プレビューの見た目は従来と変わらない。
     /// </summary>
     private HashSet<Vector2Int> ComputeAttackCells(Unit unit, HashSet<Vector2Int> reachable)
     {
         var result = new HashSet<Vector2Int>();
 
         var stands = new List<Vector2Int>(reachable) { unit.GridPosition };
-        foreach (Vector2Int stand in stands)
+        foreach (WeaponData weapon in WeaponChoiceRules.GetAttackWeapons(unit))
         {
-            // 現在地に居座る場合だけ hasMoved=false（後衛武器は武器上限まで届く）
-            bool hasMoved = stand != unit.GridPosition;
-            if (!CombatRules.TryGetAttackRange(unit, hasMoved, out int min, out int max)) continue;
-
-            // stand を中心に、マンハッタン距離 min〜max のひし形の輪を集める
-            for (int dx = -max; dx <= max; dx++)
+            // その武器を装備した状態で射程を出す（probe。評価が終わると元の装備へ戻る）
+            WeaponChoiceRules.WithWeapon(unit, weapon, () =>
             {
-                int rest = max - Mathf.Abs(dx);
-                for (int dy = -rest; dy <= rest; dy++)
+                foreach (Vector2Int stand in stands)
                 {
-                    if (Mathf.Abs(dx) + Mathf.Abs(dy) < min) continue; // 内側（射程未満）は届かない
+                    // 現在地に居座る場合だけ hasMoved=false（後衛武器は武器上限まで届く）
+                    bool hasMoved = stand != unit.GridPosition;
+                    if (!CombatRules.TryGetAttackRange(unit, hasMoved, out int min, out int max)) continue;
 
-                    var cell = new Vector2Int(stand.x + dx, stand.y + dy);
-                    TileData tile = grid.GetTile(cell);
-                    if (tile == null) continue;                         // 盤外
-                    if (!tile.IsWalkable && !tile.CanFlyOver) continue; // 壁（誰も立てない）
-                    result.Add(cell);
+                    // stand を中心に、マンハッタン距離 min〜max のひし形の輪を集める
+                    for (int dx = -max; dx <= max; dx++)
+                    {
+                        int rest = max - Mathf.Abs(dx);
+                        for (int dy = -rest; dy <= rest; dy++)
+                        {
+                            if (Mathf.Abs(dx) + Mathf.Abs(dy) < min) continue; // 内側（射程未満）は届かない
+
+                            var cell = new Vector2Int(stand.x + dx, stand.y + dy);
+                            TileData tile = grid.GetTile(cell);
+                            if (tile == null) continue;                         // 盤外
+                            if (!tile.IsWalkable && !tile.CanFlyOver) continue; // 壁（誰も立てない）
+                            result.Add(cell);
+                        }
+                    }
                 }
-            }
+            });
         }
 
         // 立てるマスは移動範囲（青）として見せたいので、赤にするのは「移動の外側」だけ
@@ -1562,20 +1736,14 @@ public class BattleController : MonoBehaviour
     }
 
     /// <summary>
-    /// unit がいまの位置から攻撃できる敵ユニットの一覧を返す。
-    /// 射程の判定は CombatRules に任せる（移動有無で後衛武器の射程が変わる。敵AIと共通ルール）。
+    /// unit がいまの位置から「持っている武器のどれかで」攻撃できる敵ユニットの一覧を返す。
+    /// 「攻撃」「必殺技」「被ダメ確認」を出すかどうかの判定と、被ダメ確認の相手がこれを使う
+    /// （どの武器で殴るかは、この後の武器選択で決める）。
+    /// 中身は WeaponChoiceRules に集約してある（射程・飛翔の相性の判定は CombatRules 共通＝敵AIと同じルール）。
+    /// 敵は候補が装備中の1本だけなので、敵の行動範囲プレビューの見た目は従来と変わらない。
     /// </summary>
     private List<Unit> FindAttackTargets(Unit unit, bool hasMoved)
     {
-        var targets = new List<Unit>();
-
-        // 相手陣営の盤上ユニット（名簿）から、攻撃可能なものを探す
-        Faction enemyFaction = (unit.Faction == Faction.Player) ? Faction.Enemy : Faction.Player;
-        foreach (Unit other in UnitRegistry.GetUnits(enemyFaction))
-        {
-            if (CombatRules.CanAttack(unit, unit.GridPosition, other, hasMoved))
-                targets.Add(other);
-        }
-        return targets;
+        return WeaponChoiceRules.FindAllTargets(unit, hasMoved);
     }
 }

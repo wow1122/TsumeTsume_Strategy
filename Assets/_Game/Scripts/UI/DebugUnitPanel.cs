@@ -26,6 +26,13 @@ public class DebugUnitPanel : MonoBehaviour
     [Tooltip("文字の大きさ")]
     public int fontSize = 14;
 
+    /// <summary>
+    /// 直近に描いたパネルの矩形（GUI座標。出していなければ Rect.zero）。
+    /// 攻撃時の武器選択のUI（一覧・「実行」）がこのパネルに被らないよう避けるために公開している
+    /// （2026-08-09。BattleForecast.PanelRect と同じ作法）。
+    /// </summary>
+    public Rect PanelRect { get; private set; }
+
     private GridManager grid;
     private Unit unit; // いま表示しているユニット（null = 非表示）
 
@@ -52,6 +59,8 @@ public class DebugUnitPanel : MonoBehaviour
 
     void OnGUI()
     {
+        PanelRect = new Rect(); // 出していないときは「避ける矩形は無い」扱いに戻す
+
         if (!panelEnabled) return;
         if (unit == null || !unit.IsAlive) return; // 倒れて Destroy されたら自動で閉じる
 
@@ -61,6 +70,7 @@ public class DebugUnitPanel : MonoBehaviour
         // 文字行の下にマナ・気勢のゲージバー2本ぶんの高さを足す（フェーズ28）
         float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f + GaugeBars.TotalHeight; // +1 は見出しの行
         var rect = new Rect(Screen.width - panelWidth - 12f, 10f, panelWidth, panelHeight);
+        PanelRect = rect; // 武器選択のUIの重なり回避に使う（2026-08-09）
 
         var boxStyle = new GUIStyle(GUI.skin.box)
         {

@@ -9,6 +9,11 @@ using UnityEngine;
 /// (2)「交換」コマンド（フェーズ27）: 自分の持ち物（列1）と相手の持ち物（列2）を横に並べ、
 ///    どちらの行もクリックで反対側へ移す（ShowExchange）。列の上に見出し
 ///    （名前・HP・持ち物の数・装備武器）を描き、受け取れない側の行は灰色の無効行になる。
+/// (3) 攻撃時の武器選択（2026-08-09）: 攻撃に使う武器の一覧（列1のみ。行動サブメニューは使わない）。
+///    行にマウスを重ねると onHover で行番号が通知され、呼び出し側が盤面に「その武器で狙える敵」を出す。
+///    一覧は avoidRects（戦闘予測・ユニット情報・デバッグ用パネルの矩形）と重ならない位置へ逃がすが、
+///    **逃がす位置を決めるのは開いた最初の1回だけ**で、開いているあいだは動かさない
+///    （毎フレーム決め直すとクリックの最中に一覧が動いて押せなくなる。理由は DrawItemMenu のコメント）。
 ///
 /// どちらの使い方でも、選んだ項目の性能詳細を画面右下の定位置に固定表示する。
 /// 項目は Entry（表示名＋押せるか＋処理＋ホバー詳細）で受け取り、押せない一次行動
@@ -85,6 +90,10 @@ public class ItemListMenu : MonoBehaviour
 
     private List<Entry> entries;         // 列1：持ち物リスト（交換モードでは自分の持ち物）
     private List<Entry> actionEntries;   // 列2：行動サブメニュー（null＝出さない）
+    private System.Action<int> onHover;  // 列1の行にマウスが乗ったときの通知（省略可・行番号を渡す）
+    private System.Func<Rect[]> avoidRects; // 避ける矩形（他のパネル）を返す窓口（省略可）
+    private bool placementResolved;      // 避ける位置をもう決めたか（開いているあいだは決め直さない）
+    private Vector2 placementOffset;     // 決めたずらし量（基準位置からの差）
     private int actionRowIndex;          // 行動サブメニューを合わせる列1の行
     private List<string> currentDetail;  // 右下に出す詳細（最後にホバーした行の内容を保持）
     private Vector3 anchorWorld;   // 基準となるユニットのワールド座標
@@ -96,12 +105,22 @@ public class ItemListMenu : MonoBehaviour
     private List<string> ownHeader;        // 列1の見出し（複数行）
     private List<string> partnerHeader;    // 列2の見出し（複数行）
 
-    /// <summary>持ち物リストを表示する（行動サブメニューは無しの状態に戻す）。anchorWorld は基準ユニットの位置。</summary>
-    public void Show(Vector3 anchorWorld, float cellWorldSize, List<Entry> entries)
+    /// <summary>
+    /// 持ち物リストを表示する（行動サブメニューは無しの状態に戻す）。anchorWorld は基準ユニットの位置。
+    /// onHover を渡すと、行にマウスを重ねたときにその行番号を通知する（2026-08-09。
+    /// 攻撃時の武器選択で、その武器で狙える敵を盤面に赤く出すのに使う。
+    /// CargoListMenu.Show の onHover と同じ作法）。
+    /// avoidRects を渡すと、他のパネル（戦闘予測・ユニット情報）と重ならない位置へ逃がす。
+    /// </summary>
+    public void Show(Vector3 anchorWorld, float cellWorldSize, List<Entry> entries,
+                     System.Action<int> onHover = null, System.Func<Rect[]> avoidRects = null)
     {
         this.anchorWorld = anchorWorld;
         this.cellWorldSize = cellWorldSize;
         this.entries = entries;
+        this.onHover = onHover;
+        this.avoidRects = avoidRects;
+        placementResolved = false; // 開くたびに位置を決め直す（開いているあいだは動かさない）
         actionEntries = null;   // 新しいリスト＝サブメニューはいったん消す
         exchangeMode = false;   // 「持ち物」コマンドの表示（交換モードではない）
         IsVisible = true;
@@ -123,16 +142,25 @@ public class ItemListMenu : MonoBehaviour
         this.ownHeader = ownHeader;
         this.partnerEntries = partnerEntries;
         this.partnerHeader = partnerHeader;
+        onHover = null;         // 交換ではホバーの通知を使わない（詳細は右下パネルが担当）
+        avoidRects = null;
+        placementResolved = false;
         actionEntries = null;
         exchangeMode = true;
         IsVisible = true;
     }
 
-    /// <summary>行動サブメニュー（列2）を出す。rowIndex は合わせる列1の行。リストはそのまま残る。</summary>
-    public void SetActions(List<Entry> actions, int rowIndex)
+    /// <summary>
+    /// 行動サブメニュー（列2）を出す。rowIndex は合わせる列1の行。リストはそのまま残る。
+    /// avoidRects を渡すと、その矩形（戦闘予測・ユニット情報のパネル）と重ならない位置へ逃がす
+    /// （2026-08-09。描画のたびに評価するので、パネルの大きさが変わっても追随する）。
+    /// 省略したときは、リストを出したとき（Show）に渡された指定をそのまま使う。
+    /// </summary>
+    public void SetActions(List<Entry> actions, int rowIndex, System.Func<Rect[]> avoidRects = null)
     {
         actionEntries = actions;
         actionRowIndex = rowIndex;
+        if (avoidRects != null) this.avoidRects = avoidRects;
     }
 
     /// <summary>行動サブメニュー（列2）だけ消す（持ち物リストと詳細は残す）。</summary>
@@ -147,6 +175,9 @@ public class ItemListMenu : MonoBehaviour
         IsVisible = false;
         entries = null;
         actionEntries = null;
+        onHover = null;
+        avoidRects = null;
+        placementResolved = false;
         currentDetail = null;
         exchangeMode = false;
         partnerEntries = null;
@@ -167,27 +198,54 @@ public class ItemListMenu : MonoBehaviour
         else DrawItemMenu(center, right);
     }
 
-    /// <summary>「持ち物」コマンドの表示（持ち物リスト＋行動サブメニュー）。</summary>
+    /// <summary>「持ち物」コマンド・武器選択の表示（リスト＋行動サブメニュー）。</summary>
     private void DrawItemMenu(Vector3 center, Vector3 right)
     {
         float listWidth = buttonWidth + padding * 2f;
         float listHeight = entries.Count * buttonHeight + padding * 2f;
-        float listX = right.x;
-        if (listX + listWidth > Screen.width)
-            listX = center.x - (right.x - center.x) - listWidth;
+
+        // 右隣に置く。画面右端にはみ出すなら左隣へ回り込む
+        float rightListX = right.x;
+        float leftListX = center.x - (right.x - center.x) - listWidth;
+        float listX = (rightListX + listWidth > Screen.width) ? leftListX : rightListX;
         // GUI座標は左上原点・Y下向きなので、スクリーンYを反転。縦はユニットの中心に合わせる
         float listY = Screen.height - center.y - listHeight * 0.5f;
         listY = Mathf.Clamp(listY, 0f, Mathf.Max(0f, Screen.height - listHeight));
-        var listRect = new Rect(listX, listY, listWidth, listHeight);
+
+        // 他のパネルと重なるなら逃がす（2026-08-09・武器選択のときだけ）。
+        // 【重要】逃がす位置は「開いた最初の1回」だけ決めて、以後は動かさない（2026-08-09 バグ修正）。
+        // 毎フレーム決め直すと、クリックの最中に一覧が動いてボタンを押せなくなる：
+        // デバッグ用パネル（右上）は盤面のクリックを独自に拾うので、武器の行を押した瞬間に
+        // 開閉して大きさが変わる → 避ける先が変わって一覧が左右に飛ぶ →
+        // マウスを離したときには行が別の場所にあり、クリックが成立しない、という繰り返しになる。
+        // ずらし量だけを覚えて基準位置には毎フレーム足すので、カメラが動いても追従する。
+        var baseRect = new Rect(listX, listY, listWidth, listHeight);
+        if (!placementResolved)
+        {
+            Rect placed = AvoidPanels(baseRect, listX == rightListX ? leftListX : rightListX);
+            placementOffset = new Vector2(placed.x - baseRect.x, placed.y - baseRect.y);
+
+            // 位置を確定するのは最初の Repaint まで待つ。各パネルの矩形は「描いたときに控えた値」なので、
+            // 開いた直後の Layout の時点ではまだ今フレームぶんが入っていない
+            // （メニューを開いたクリックでデバッグ用パネルが開いた場合、それを見落とすため）
+            if (Event.current.type == EventType.Repaint) placementResolved = true;
+        }
+        var listRect = new Rect(baseRect.x + placementOffset.x, baseRect.y + placementOffset.y,
+                                listWidth, listHeight);
 
         Vector2 mouse = Event.current.mousePosition;
 
-        // ホバー中の行の詳細を覚える（右下に固定表示。列やメニューを離れても最後の内容を保つ＝維持）
+        // ホバー中の行の詳細を覚える（右下に固定表示。列やメニューを離れても最後の内容を保つ＝維持）。
+        // onHover が渡されていれば行番号も通知する（武器選択の盤面の赤表示の切り替え用）
         for (int i = 0; i < entries.Count; i++)
         {
-            var r = new Rect(listX + padding, listY + padding + i * buttonHeight, buttonWidth, buttonHeight);
-            if (r.Contains(mouse) && entries[i].detailLines != null && entries[i].detailLines.Count > 0)
+            var r = new Rect(listRect.x + padding, listRect.y + padding + i * buttonHeight,
+                             buttonWidth, buttonHeight);
+            if (!r.Contains(mouse)) continue;
+
+            if (entries[i].detailLines != null && entries[i].detailLines.Count > 0)
                 currentDetail = entries[i].detailLines;
+            onHover?.Invoke(i);
         }
 
         // 詳細パネルはメニューより先に（＝後ろに）描く：重なってもメニューのボタンが隠れない
@@ -197,11 +255,12 @@ public class ItemListMenu : MonoBehaviour
         var style = new GUIStyle(GUI.skin.button) { fontSize = fontSize };
         System.Action selected = null; // 押された処理はループの外で呼ぶ（処理中に Hide されても安全）
 
-        // 列1：持ち物リスト
+        // 列1：持ち物リスト（武器選択では武器の一覧）
         GUI.Box(listRect, GUIContent.none);
         for (int i = 0; i < entries.Count; i++)
         {
-            var r = new Rect(listX + padding, listY + padding + i * buttonHeight, buttonWidth, buttonHeight);
+            var r = new Rect(listRect.x + padding, listRect.y + padding + i * buttonHeight,
+                             buttonWidth, buttonHeight);
             GUI.enabled = entries[i].enabled;
             if (GUI.Button(r, entries[i].label, style))
                 selected = entries[i].onSelect;
@@ -213,16 +272,22 @@ public class ItemListMenu : MonoBehaviour
         {
             float aWidth = actionButtonWidth + padding * 2f;
             float aHeight = actionEntries.Count * buttonHeight + padding * 2f;
-            float aX = listRect.xMax + columnGap;
-            if (aX + aWidth > Screen.width) aX = listRect.x - columnGap - aWidth; // 右がはみ出すなら左へ
-            float aY = Mathf.Clamp(listY + padding + actionRowIndex * buttonHeight,
+
+            float rightX = listRect.xMax + columnGap;
+            float leftX = listRect.x - columnGap - aWidth;
+
+            float aX = rightX;
+            if (aX + aWidth > Screen.width) aX = leftX; // 右がはみ出すなら左へ
+
+            float aY = Mathf.Clamp(listRect.y + padding + actionRowIndex * buttonHeight,
                                    0f, Mathf.Max(0f, Screen.height - aHeight));
-            var actionRect = new Rect(aX, aY, aWidth, aHeight);
+            var actionRect = AvoidPanels(new Rect(aX, aY, aWidth, aHeight), aX == rightX ? leftX : rightX);
 
             GUI.Box(actionRect, GUIContent.none);
             for (int i = 0; i < actionEntries.Count; i++)
             {
-                var r = new Rect(aX + padding, aY + padding + i * buttonHeight, actionButtonWidth, buttonHeight);
+                var r = new Rect(actionRect.x + padding, actionRect.y + padding + i * buttonHeight,
+                                 actionButtonWidth, buttonHeight);
                 GUI.enabled = actionEntries[i].enabled;
                 if (GUI.Button(r, actionEntries[i].label, style))
                     selected = actionEntries[i].onSelect;
@@ -231,6 +296,66 @@ public class ItemListMenu : MonoBehaviour
         }
 
         selected?.Invoke();
+    }
+
+    /// <summary>
+    /// avoidRects（戦闘予測パネル・ユニット情報パネル・デバッグ用パネル）と重なるとき、
+    /// 逃がした矩形を返す（2026-08-09）。
+    /// 逃がし方は「反対の隣（altX）へ回り込む」→ それでも重なるなら「縦にずらす」の順。
+    /// avoidRects が渡されていない（持ち物・交換）ときは、そのままの位置を返す＝従来どおり。
+    /// 出ていないパネルは Rect.zero（幅0）で返るので、Overlaps が常に false になり自然に無視される。
+    /// 【重要】呼ぶのはメニューを開いた最初の描画の1回だけ（DrawItemMenu が結果を覚える）。
+    /// </summary>
+    private Rect AvoidPanels(Rect rect, float altX)
+    {
+        if (avoidRects == null) return rect;
+
+        Rect[] panels = avoidRects();
+        if (panels == null || !OverlapsAny(rect, panels)) return rect;
+
+        // 反対側の隣へ（画面内に収まる場合だけ試す）
+        var moved = new Rect(altX, rect.y, rect.width, rect.height);
+        if (moved.x >= 0f && moved.xMax <= Screen.width && !OverlapsAny(moved, panels)) return moved;
+
+        return ShiftVertically(rect, panels);
+    }
+
+    /// <summary>いずれかのパネルと重なるか。</summary>
+    private static bool OverlapsAny(Rect rect, Rect[] panels)
+    {
+        foreach (Rect p in panels)
+            if (p.width > 0f && p.height > 0f && rect.Overlaps(p)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// 左右で避けきれないとき、パネルの上か下（余裕のある方・近い方）へ縦にずらす。
+    /// パネルが2枚あると1回では解けないことがあるので、動かなくなるまで数回だけ繰り返す。
+    /// どちらへも逃げられない（画面が狭い）ときは、それ以上動かさずに返す。
+    /// </summary>
+    private Rect ShiftVertically(Rect rect, Rect[] panels)
+    {
+        for (int pass = 0; pass <= panels.Length; pass++)
+        {
+            bool moved = false;
+            foreach (Rect p in panels)
+            {
+                if (p.width <= 0f || p.height <= 0f || !rect.Overlaps(p)) continue;
+
+                float above = p.yMin - rect.height - columnGap;
+                float below = p.yMax + columnGap;
+                bool canGoAbove = above >= 0f;
+                bool canGoBelow = below + rect.height <= Screen.height;
+
+                if (canGoAbove && (!canGoBelow || rect.center.y <= p.center.y)) rect.y = above;
+                else if (canGoBelow) rect.y = below;
+                else return rect; // 上にも下にも置けない
+
+                moved = true;
+            }
+            if (!moved) break;
+        }
+        return rect;
     }
 
     /// <summary>

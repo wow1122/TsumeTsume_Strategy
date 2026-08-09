@@ -69,6 +69,12 @@ public class Unit : MonoBehaviour
     /// 武器を装備する（フェーズ23の「所持品」コマンド）。行動は消費しない。
     /// 呼び出し側（BattleController）が所持品の中の装備可能な武器だけを渡すので、
     /// ここでは所持や兵種の可否は確認しない。読む側は従来どおり Weapon 窓口で自動追随する。
+    ///
+    /// 【警告】飛翔（StartFlight/CancelFlight）と同じ理由で、Equip / Unequip は
+    /// 「純粋な状態変更」のまま保つこと（2026-08-09）。攻撃対象の計算と戦闘予測が
+    /// probe（一時的に装備を差し替えて評価し、必ず元へ戻す。WeaponChoiceRules.WithWeapon）を
+    /// 使っており、ここに副作用（ログ・演出・行動消費・耐久の増減など）を足すと、
+    /// 予測を1回描くたびにそれが実行されて壊れる。ログや演出は呼び出し側に置くこと。
     /// </summary>
     public void Equip(WeaponData weapon)
     {

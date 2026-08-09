@@ -24,6 +24,14 @@ using UnityEngine.InputSystem;
 ///
 /// 撃墜（2026-08-05 作者仕様）: 対空武器で飛翔中の相手を撃つと相手は着地する。
 /// 攻撃する前に分かるように、その組み合わせのときだけ注記を1行足す（BuildShootDownNote）。
+///
+/// 武器の行（2026-08-09 作者仕様）: 攻撃は「武器を選んでから相手を選ぶ」順になり、
+/// 対象選択に入る時点で武器はもう装備されている。どの武器で殴るのかと残り耐久を
+/// 1行目に添える（BuildWeaponLine）。予測はいつも装備中の武器で組み立てるので、
+/// 内訳・三すくみ・静止撃ち・特効・挟撃・撃墜は何もしなくてもその武器の数字になる。
+///
+/// パネルの縦積み（2026-08-09 作者合意）: 対象選択中は敵のユニット情報パネルも同時に出る。
+/// 定位置（右下）はこちらが使い、情報パネルが PanelRect を読んでこの上に積む。
 /// </summary>
 public class BattleForecast : MonoBehaviour
 {
@@ -44,6 +52,13 @@ public class BattleForecast : MonoBehaviour
     private Unit current;  // いま予測を表示している対象（選択直後は最初の対象）
     private bool critical; // 必殺技モードか（フェーズ29。倍率込みの数字を出す）
     private bool attackerHasMoved; // 攻撃側がこの行動で移動したか（後衛武器の静止撃ち有利の判定）
+
+    /// <summary>
+    /// 直近に描いたパネルの矩形（GUI座標。表示していなければ Rect.zero）。
+    /// 敵のユニット情報パネルがこの上に積むため／武器の一覧がこのパネルを避けるために公開している
+    /// （2026-08-09。ActionMenu.MenuRect と同じ「描いた矩形を公開する」作法）。
+    /// </summary>
+    public Rect PanelRect { get; private set; }
 
     /// <summary>
     /// 対象選択の開始時に呼ぶ（attacker はいまの位置から targets を攻撃できる前提）。
@@ -89,10 +104,13 @@ public class BattleForecast : MonoBehaviour
         current = null;
         critical = false;
         attackerHasMoved = true;
+        PanelRect = new Rect(); // 消えたパネルの位置に情報パネル・武器の一覧が引きずられないように戻す
     }
 
     void OnGUI()
     {
+        PanelRect = new Rect(); // 描かなかったときは「積む相手・避ける相手は無い」扱いに戻す
+
         if ((attacker == null && incomingDefender == null) || targets == null || grid == null) return;
 
         // マウスの下に別の対象がいればそちらへ切り替える（離れても最後の対象を表示し続ける）
@@ -112,7 +130,7 @@ public class BattleForecast : MonoBehaviour
         else DrawIncoming(current);
     }
 
-    /// <summary>defender への攻撃の予測を組み立てて描く。</summary>
+    /// <summary>defender への攻撃の予測を組み立てて描く（装備中の武器で計算する）。</summary>
     private void DrawForecast(Unit defender)
     {
         // 本体ダメージ（実戦と同じ計算窓口。内訳つき）。
@@ -137,9 +155,15 @@ public class BattleForecast : MonoBehaviour
         var lines = new List<string>
         {
             $"{attacker.Data.unitName} → {defender.Data.unitName}",
-            $"与ダメージ　{main.ToLogString()}",
-            BuildTriangleLine(main.triangle, "有利", "不利"),
         };
+
+        // 「いまどの武器で殴ろうとしているか」と残り耐久（2026-08-09。武器を選んでから
+        // ここへ来るので、選んだ武器がそのまま出る。武器の一覧の行は武器名だけ＝作者合意）
+        string weaponLine = BuildWeaponLine(attacker.EquippedWeapon);
+        if (weaponLine != null) lines.Add(weaponLine);
+
+        lines.Add($"与ダメージ　{main.ToLogString()}");
+        lines.Add(BuildTriangleLine(main.triangle, "有利", "不利"));
 
         // 後衛武器なら「静止撃ちの有利が付いたか」を1行で添える（数字の理由が分かるように）
         string standNote = BuildStandingShotNote(attacker, attackerHasMoved);
@@ -169,6 +193,20 @@ public class BattleForecast : MonoBehaviour
         }
 
         DrawPanel(lines, critical ? "戦闘予測（必殺技）" : "戦闘予測");
+    }
+
+    /// <summary>
+    /// 「武器: 斬馬刀（耐久5／6）」の行。耐久を持たない武器では耐久の部分を出さない。
+    /// 武装無し（＝武器を持たないユニット）のときは null を返して行を足さない。
+    /// </summary>
+    private string BuildWeaponLine(WeaponData weapon)
+    {
+        if (weapon == null) return null;
+
+        ItemSlot slot = WeaponChoiceRules.FindSlot(attacker, weapon);
+        string durability = (slot != null && slot.HasDurability) ? $"（耐久{slot.UsesLeft}／{slot.MaxUses}）" : "";
+
+        return $"武器: {weapon.DisplayName}{durability}";
     }
 
     /// <summary>current の敵から「攻撃を受けたら」の予測を組み立てて描く（被ダメモード）。</summary>
@@ -340,6 +378,7 @@ public class BattleForecast : MonoBehaviour
         var rect = new Rect(Screen.width - panelWidth - 12f,
                             Screen.height - panelHeight - 12f,
                             panelWidth, panelHeight);
+        PanelRect = rect; // 情報パネルを上に積む・武器の一覧が避けるのに使う（2026-08-09）
 
         var boxStyle = new GUIStyle(GUI.skin.box)
         {
