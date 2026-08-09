@@ -114,6 +114,14 @@ C（特効武器11本＋対空状態）→ D（検証ステージ）の4段階�
 実装中に作者の仕様変更が1件あり、**前衛（剣・槍・斧）の特効武器の対空は
 「その武器の特効が効く相手」にだけ働く**形になっている。
 
+2026-08-09、**攻撃の操作順を「武器 → 相手」に変更**（作者要望。「攻撃時の武器選択の合意仕様」の節）。
+**「攻撃」→ 武器選択 → 敵をクリックで即攻撃**という FE の古典的な流れにした（武器1本でも一覧は必ず通る）。
+相手に合わせた特効武器への持ち替えが攻撃の流れの中でできるようになった
+（従来は「持ち物」でメニューを2往復する必要があった）。「攻撃」が出る条件は**持っている全武器で届く敵**になり、
+飛翔中の相手も対空の特効武器を持っていれば持ち替えなしで狙える。判定は新設の
+Combat/WeaponChoiceRules に集約し、**probe（お試し装備）方式**で既存の共有関数をそのまま使っている
+＝戦闘予測の数字と実戦の結果は必ず一致する。スクリプトのみでアセット変更なし。
+
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
 敵AI強化（Phase 16〜21）は `/home/wawo/.claude/plans/tsumetsume-strategy-ai-ai-ai-robust-quasar.md`、
@@ -954,6 +962,68 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - 検証が終わったら BattleScene の Stage を Stage_01 に戻して Ctrl+S
   （Stage_EffectiveTest への差し替えはコミットしない運用）
 
+### 攻撃時の武器選択の合意仕様（2026-08-09 作者要望）
+
+- 攻撃は**武器を選んでから相手を選ぶ**（FE の古典的な流れ。作者が操作順を3度見直した末の最終形）:
+
+  ```
+  行動メニュー「攻撃」／「必殺技」
+    → 【武器選択】ユニットの右隣に武器の一覧（武器1本でも必ず出る）
+         ・行にホバー → その武器で狙える敵が盤面で赤く光る
+         ・使えない武器は理由付きの灰色行（「（耐久0）」「（空中不可）」「（届く敵なし）」）
+         ・行をクリック → その武器を装備して対象選択へ
+    → 【対象選択】その武器で攻撃できる敵が赤
+         ・敵にホバー → 右下に「敵ユニット情報（上）＋戦闘予測（下）」
+         ・敵をクリック → その場で攻撃 → 行動終了（「実行」の確認は無い）
+  ```
+
+  「持ち物」で持ち替えてから攻撃するのと結果は同じ（持ち替えは行動を消費しない既存合意のまま）だが、
+  メニューを2往復せずに済む＝特効武器の持ち替え忘れを無くすのが目的
+- **武器が1本でも一覧は必ず出す**（作者合意）＝どの武器で戦うのかを毎回目にする形。
+  一覧はユニットの右隣（画面の右端では左隣へ回り込む）。行は**武器名だけ**（装備中の武器には「（装備中）」）
+- **武器を選んだ時点で装備が切り替わる**（作者合意・FE準拠）。
+  この後キャンセルしても**その武器を装備したまま**＝既存の「装備変更に取り消しは無い」合意どおり。
+  行動は消費していないので、そのまま別のコマンド（待機・持ち物など）へ進んでよい。
+  攻撃の後もその武器のまま＝**敵フェイズもその武器で受ける**（三すくみ・対空・挟撃の資格が変わる）
+- **武器の行にホバーすると、その武器で狙える敵を盤面に赤く出す**（作者合意）。
+  相手を先に選べなくなったぶんの埋め合わせで、どの武器で誰に届くのかをここで見せる。
+  塗り直すのは行が変わったときだけ（IMGUI は毎フレーム呼ばれるので毎回引き直さない）
+- **押せるかどうかは武器ごとに決まる＝その武器で狙える敵が1体でもいるか**（相手はまだ決まっていないため）。
+  灰色の理由は「耐久0」／射程には敵がいるのに戦えない「空中不可」／それ以外は「届く敵なし」
+- **「攻撃」コマンドが出る条件＝持っている武器のどれかで届く敵がいるか**（装備中の武器基準ではない。作者合意）。
+  今のユニットは全員が同じ射程の武器しか持たないので見た目の変化はほぼ無いが、
+  **飛翔中の相手に対空の特効武器（風斬りの剣など）を持っているとき、その相手が攻撃対象に出る**ようになる
+  （2026-08-08 の「対空は特効の相手にだけ」を、持ち替えなしで使えるようにしたもの）。
+  移動選択中の赤い攻撃範囲・被ダメ確認の相手も同じく全武器の合算。**敵は装備中の1本だけが候補**（既存合意
+  「敵AIは所持品を使わない」に沿う＝敵の行動範囲プレビューの見た目は従来どおり）
+- **対象選択中は右下のパネルを縦積みにする**（作者合意）。下＝戦闘予測（従来の定位置）／上＝敵ユニット情報。
+  情報パネルが戦闘予測の `PanelRect` を読んで上に積む（予測の行数が相手ごとに変わっても追随する）。
+  戦闘予測の1行目には「武器: 斬馬刀（耐久5／6）」＝いまどの武器で殴ろうとしているかと残り耐久が出る
+- **武器の一覧は他のパネルに被らない位置へ逃がす**（作者要望）。避ける相手は戦闘予測・ユニット情報（右下）と
+  デバッグ用パネル（右上）の3枚で、逃がし方は「反対の隣へ回り込む → それでも重なるなら縦にずらす」
+  （ItemListMenu.AvoidPanels）。矩形は各パネルが `PanelRect` で公開し（出していなければ Rect.zero＝
+  避ける対象から自然に外れる）、BattleController.AvoidPanelRects が窓口として渡す。
+  **持ち物・交換のメニューは渡していないので従来どおり**
+- **【重要】逃がす位置を決めるのは一覧を開いた最初の1回だけ。開いているあいだは動かさない**
+  （2026-08-09 のバグ修正。毎フレーム決め直す作りだと武器を選べなくなる）。
+  原因は**デバッグ用パネル（右上）が盤面のクリックを独自に拾う**こと＝武器の一覧は盤面のマスに重なるので、
+  行を押した瞬間に下のマスのユニットが右上に出て（あるいは消えて）パネルの大きさが変わり、
+  避ける先が変わって**一覧がユニットの左右に飛ぶ → マウスを離したときには行が別の場所にあり
+  クリックが不成立** → 押し直すとまた反対へ飛ぶ、を延々と繰り返す
+  （敵が周りに多いほど一覧が敵のマスに重なるので出やすい）。
+  位置の確定は最初の Repaint まで待つ（各パネルの `PanelRect` は描いたときの値なので、
+  開いた直後の Layout ではまだ今フレームぶんが入っていない）。
+  ずらし量だけを覚えて基準位置には毎フレーム足すので、カメラが動いても追従する
+- 必殺技も同じ流れ。**マナが減るのは敵をクリックした瞬間**＝それまでに右クリック/ESC で戻ればマナは減らない
+  （装備の切り替えだけは武器を選んだ時点で確定する。上記のとおり取り消しは無い）。
+  キャンセルは1段ずつ＝**対象選択 → 武器選択 → 行動メニュー**
+- 判定は **Combat/WeaponChoiceRules** に一元化（CombatRules / RescueRules / StaffRules と同じ方針）。
+  **probe（お試し装備）方式**＝一時的にその武器を装備して既存の共有関数を呼び、finally で必ず元へ戻す
+  （Phase 20 の敵AIの飛翔 probe と同じ手口）。おかげで射程・三すくみ・特効・対空・撃墜・挟撃・耐久が
+  引数を増やさずに全部その武器の判定になり、**表示（狙える敵・戦闘予測）と実戦の結果がズレない**。
+  そのため **Unit.Equip / Unequip には副作用（ログ・演出・行動消費）を足さないこと**（Unit.cs に警告コメントあり）
+- 杖（回復）の武器選択は当面なし（杖を2本持つユニットが出たら同じ形で足せる）
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -966,14 +1036,22 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 ## コード構成（Assets/_Game/Scripts/）
 
-- Core/ … BattleController(操作の司令塔・12状態FSM: Idle/MoveSelect/CommandMenu/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect/RefreshMenu。
+- Core/ … BattleController(操作の司令塔・13状態FSM: Idle/MoveSelect/CommandMenu/WeaponSelect/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect/RefreshMenu。
   飛翔・着陸コマンドと飛翔の段階取り消しCancelFlightAndReturn・
   飛翔コマンドの可否CanUseFlightCommand※2026-08-05〔BuildCommandsの4分岐が共有＝撃墜の飛翔禁止を1か所で見る〕・
   攻撃可能マス表示ComputeAttackCells・
   持ち物コマンド（2段階サブメニュー: 装備/外す/道具使用/捨てる・ホバー詳細は右下固定）・杖コマンド（回復対象選択→ExecuteHeal・杖が届くマス表示ComputeHealCells）・
   交換コマンド（相手選択→2列の交換画面。左右共用のBuildExchangeColumn/TransferItem・列見出しBuildExchangeHeader・行動は消費せず1個目でCommit）・
   敵の行動範囲プレビューShowEnemyPreview・被ダメ確認の閲覧状態もここ・
-  必殺技コマンド※フェーズ29〔攻撃と共通のEnterTargetSelectCore(critical)・マナ消費は対象確定の瞬間・criticalPending〕・
+  必殺技コマンド※フェーズ29〔武器・対象の選び方は攻撃と共通のEnterWeaponSelect(critical)・criticalPending〕・
+  攻撃の武器選択→対象選択※2026-08-09〔EnterWeaponSelect(bool critical)（武器1本でも必ず一覧を出す）→
+  BuildWeaponEntries（押せる＝その武器で狙える敵がいること。使えない武器は理由付きの灰色行）→
+  行のホバーOnWeaponHovered→ShowWeaponTargets（その武器で狙える敵を赤く。行が変わったときだけ塗り直す）→
+  EnterTargetSelect(WeaponData)（**その武器を装備**してから対象選択。forecast.Show＋unitInfo.Showを縦積みで）→
+  敵クリックでExecuteAttack(Unit)（マナ消費→CombatSystem.ResolveAttack→FinishAction）。
+  **装備の切り替えは武器を選んだ瞬間・マナ消費は敵をクリックした瞬間**・
+  ハイライトはShowAttackTargetsに集約・避ける矩形の窓口AvoidPanelRects（予測/情報/デバッグの3枚）・
+  攻撃対象FindAttackTargets（＝WeaponChoiceRules.FindAllTargets）と攻撃可能マスComputeAttackCellsは全武器ぶんを合算〕・
   再行動コマンド※フェーズ30〔Idleで行動済みの味方をクリック→EnterRefreshMenu／ExecuteRefreshで気勢1本消費→SetActed(false)→EnterMoveSelect〕),
   ActionContext(1行動の文脈・移動取り消し・再移動予算・取り消し不能点Commit※引数keepHasMovedで移動済みを引き継ぐ〔交換用〕＋飛翔の中間点も引き上げる・飛翔の中間点MarkFlight),
   TurnManager(フェイズ・勝敗・ターン制限判定・簡易UI・フェイズ開始時の飛翔Tick・
@@ -998,7 +1076,14 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   CargoListMenu(貨物リスト選択。名前+HP表示・行ホバーの通知onHover※ユニット情報パネル用・BattleControllerが自動生成),
   ItemListMenu(持ち物リスト＋行動サブメニューの2列同時表示・選んだ品の性能を画面右下に固定表示
   ※ホバー詳細には有効・特効の行も出る（2026-08-06）・ボタン幅は210px※2026-08-08に170から拡げた〔特効武器は名前が長い〕・
-  enabled で押せない行を灰色無効化・BattleControllerが自動生成。
+  enabled で押せない行を灰色無効化・行ホバーの通知onHover※2026-08-09〔行番号を渡す。武器選択で
+  「その武器で狙える敵」の赤表示の切替に使う。CargoListMenuのonHoverと同じ作法〕・
+  避ける矩形avoidRects※2026-08-09〔Show/SetActionsにSystem.Func<Rect[]>で渡す。
+  AvoidPanelsが列1と行動サブメニューの両方を「反対の隣→縦にずらす」の順で逃がす
+  （ShiftVerticallyは上下の余裕がある方・近い方へ）。**位置を決めるのは開いた最初の1回だけ**
+  （placementResolved/placementOffset。毎フレーム決め直すとクリックの最中に一覧が動いて押せなくなる
+  ＝上の合意仕様の【重要】を参照）。既存の持ち物・交換は渡さないので無改変〕・
+  BattleControllerが自動生成。
   交換用の2列モードShowExchangeも持つ※両列とも持ち物リスト＋列見出し〔名前/HP・数/装備〕・ホバー詳細は両列有効・左右の回り込みは2列ぶんの幅で判定),
   BattleForecast(戦闘予測パネル・右下。対象選択に入った瞬間に即表示・三すくみ専用行・
   被ダメ確認の逆向き予測ShowIncomingもここ・必殺技モード※フェーズ29〔倍率込みの数字・見出し「戦闘予測（必殺技）」〕・
@@ -1007,11 +1092,18 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   撃墜の注記BuildShootDownNote※2026-08-05〔与ダメ・被ダメの両モードに1行。判定はCombatRules.ShootsDown共有〕・
   有効・特効の注記BuildEffectiveNote※2026-08-06〔「※特効: 天馬（武器威力3倍）」／被ダメは「※相手の…」。
   弓魔法の移動時/静止時は倍率が同じなので1行だけ〕・
+  武器の行BuildWeaponLine※2026-08-09〔「武器: 斬馬刀（耐久5／6）」。対象選択に入る時点で武器は
+  もう装備済みなので、装備中の武器から作るだけでよい〕・
+  描いた矩形の公開PanelRect※2026-08-09〔ユニット情報パネルを上に積む・武器の一覧が避けるのに使う。
+  描かなかったフレームはRect.zero〕・
   BattleControllerが自動生成),
   DebugUnitPanel(デバッグ用ユニット情報パネル・右上。クリックしたユニットの能力値・武器・状態を表示。
-  panelEnabledでOFF可・ゲーム状態は変えない・行の組み立てはUnitInfoLines共通＋敵AI/挟撃の行を追加),
+  panelEnabledでOFF可・ゲーム状態は変えない・行の組み立てはUnitInfoLines共通＋敵AI/挟撃の行を追加・
+  描いた矩形の公開PanelRect※2026-08-09〔武器選択のUIの重なり回避用。出していなければRect.zero〕),
   UnitInfoPanel(対象選択・貨物リストのユニット情報パネル・右下。盤面モード＝候補をホバーで切替／
-  単体モード＝指定1体を表示※格納中の貨物用・BattleControllerが自動生成。2026-07-26),
+  単体モード＝指定1体を表示※格納中の貨物用・BattleControllerが自動生成。2026-07-26。
+  縦積みstackAbove※2026-08-09〔盤面モードのShowにSystem.Func<Rect>で戦闘予測の矩形を渡すと その上に積む。
+  渡さなければ従来どおり右下の定位置＝救出・杖・交換の呼び出しは無改変〕・描いた矩形の公開PanelRect),
   UnitInfoLines(ユニット情報の表示行を組み立てる共通処理。名前/兵種/HP/能力値/装備武器/特効/耐久/持ち物/状態。
   武器の行は EquippedWeapon を読む※傷んでいても何を装備しているかは見せる・
   相性の行 AddWeaponEffectLines※2026-08-06〔「特効: 竜（対空）」「有効: 騎馬・天馬」を武器の行の下に別行で。
@@ -1083,6 +1175,13 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   仮定位置ガード判定WouldGuardAt・ガード役かどうかIsGuardingSomeone※Phase 18),
   StaffRules(杖の可否・回復対象・回復量の一元判定※Phase 25。HasStaffEquipped/TryGetStaffRange/FindHealTargets/HealAmount。
   武器はEquippedWeaponではなくWeapon窓口から読む※フェーズ31で差し替え〔傷んだ杖では回復できない〕),
+  WeaponChoiceRules(攻撃時にどの武器で殴るかの一元判定※2026-08-09。候補GetAttackWeapons
+  〔プレイヤー＝所持品の武器のうち杖でない・兵種が扱えるもの＋装備中の武器は例外装備でも必ず／敵＝装備中の1本だけ〕・
+  可否CanAttackWith・対象さがしFindTargets〔武器1本ぶん〕/FindAllTargets〔全武器の合算・重複なし〕・
+  使えない理由GetUnusableReason〔耐久0/空中不可/届く敵なし。相手は引数に取らない＝武器を先に選ぶため〕・
+  耐久の置き場FindSlot/IsWorn・
+  **probe（お試し装備）WithWeapon**〔一時的にEquipして評価しfinallyで必ず戻す＝共有関数に武器引数を足さずに
+  武器ごとの判定ができる。Phase 20の飛翔probeと同じ手口。Unit.Equip/Unequipに副作用を足すと壊れる〕),
   DamageCalculator(物理/魔法分岐・DamageBreakdown内訳・飛翔中は地形防御なし・
   武器威力の倍率mightMultiplier※2026-08-06〔有効2倍・特効3倍。EffectiveRulesから取る。
   武器威力にだけ掛かる＝必殺技の倍率とは別の段。ログは「威力5×3」〕・
@@ -1171,8 +1270,19 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 2026-08-06〜08 に、持ち越し候補だった**特効ダメージと特効武器を完了**
 （段階A〜D。「有効と特効の合意仕様」の節）。兵種の特攻タグがこれで初めて仕事をするようになった。
 
+2026-08-09 に作者要望で**攻撃の操作順を「武器 → 相手」に変更**（「攻撃時の武器選択の合意仕様」の節）。
+特効武器を持たせた後の「持ち替えが面倒・使い忘れる」を解消する導線で、新しい強さは足していない。
+
 **現在アクティブなロードマップは無い。次は作者と次期ロードマップの優先度を相談してから着手する**
 （下の「持ち越し候補」から作者が選ぶ。フェーズ着手は明示の合図をもらってから）。
+
+**武器選択まわりの宿題（作者と相談すること）**:
+- 武器1本のユニットでも一覧を1段通る（作者合意）。プレイしてテンポが悪ければ
+  「押せる武器が1本なら飛ばす」へ変えられる（EnterWeaponSelect の分岐1つ）
+- 武器を選んだ時点で装備が確定するので、**一覧を開いて右クリックで戻るだけでも装備が変わりうる**
+  （ホバーでは変わらない＝クリックしたときだけ）。既存の「装備変更に取り消しは無い」合意どおりだが、
+  「攻撃をやめたのに武器が変わっている」と感じるようなら、対象選択のキャンセルで元の武器へ戻す案もある
+- 杖（回復）の武器選択は入れていない（杖を2本持つユニットが出たら同じ形で足せる）
 
 **有効と特効まわりの宿題（作者と相談すること）**:
 - 弓・魔導書の特効は現行の能力値だと一撃必殺（弓→敵槍飛行兵で19・HP18）。
