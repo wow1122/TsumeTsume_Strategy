@@ -22,7 +22,18 @@ public class Unit : MonoBehaviour
     public int Speed { get; private set; }        // 速さ（三すくみ補正・Phase 9 から使用）
     public int Defense { get; private set; }      // 守備（物理防御）
     public int Resistance { get; private set; }   // 魔防（魔法防御）
-    public int Move { get; private set; }         // 移動力
+    public int GroundMove { get; private set; }   // 移動力（地上を歩くとき）
+    public int FlightMove { get; private set; }   // 移動力（飛翔中。飛行兵以外は地上と同じ値）
+
+    /// <summary>
+    /// いまの移動力。飛翔中は飛翔用の値を返す（2026-08-10 作者仕様。天馬兵は地上4/飛翔6、
+    /// 竜騎兵は地上3/飛翔7）。移動力を読む側はこの窓口だけを見る約束で、
+    /// これ1箇所で 移動範囲・再移動の残り予算・敵AI・情報パネルの表示が自動で追随する
+    /// （装備武器を Weapon 窓口へ集めたのと同じ手口）。
+    /// 【注意】「地上を歩いたときの距離」を測りたい場所（敵AIの着陸判断・陸路のターン数）は、
+    /// 飛翔中に呼ばれても地上の値が要るので、この窓口ではなく GroundMove を読むこと。
+    /// </summary>
+    public int Move => IsFlying ? FlightMove : GroundMove;
 
     /// <summary>陣営（UnitData から取得）。</summary>
     public Faction Faction => Data.faction;
@@ -392,7 +403,8 @@ public class Unit : MonoBehaviour
         Speed = data.speed;
         Defense = data.defense;
         Resistance = data.resistance;
-        Move = data.EffectiveMove;   // 移動力は兵種データ優先（無ければ旧 move）
+        GroundMove = data.EffectiveMove;         // 移動力は兵種データ優先（無ければ旧 move）
+        FlightMove = data.EffectiveFlightMove;   // 飛翔中の移動力（未設定なら地上と同じ）
         CurrentHP = MaxHP;
 
         // ゲージを用意する（フェーズ28）。マナの初期値は技の値そのもので、

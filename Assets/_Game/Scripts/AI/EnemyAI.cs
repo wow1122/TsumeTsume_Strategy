@@ -576,7 +576,9 @@ public static class EnemyAI
             TileData tile = grid.GetTile(cell);
             if (tile == null || !tile.IsWalkableFor(enemy.Class)) continue;      // 歩けない地形に手動着陸はしない
             if (!ground.map.TryGetValue(cell, out int dist)) continue;           // そこからは目標へ地上路が無い
-            if (dist > enemy.Move) continue;                                     // 次のターンに攻撃位置まで届かない
+            // 着陸後は地上を歩くので、ここは飛翔中の移動力ではなく地上の移動力で測る（2026-08-10）。
+            // enemy.Move は「いまは飛翔中」なので飛翔の値を返してしまう
+            if (dist > enemy.GroundMove) continue;                               // 次のターンに攻撃位置まで届かない
 
             int defense = tile.DefenseBonus; // 着陸後は地上なので地形防御が効く
             int moveDist = CombatRules.Manhattan(enemy.GridPosition, cell);
@@ -768,9 +770,12 @@ public static class EnemyAI
 
         if (!cruiseFound) return false; // 空中にも行き先が無いなら離陸しない
 
-        // (2)(3) 陸路と空路のターン数を比べる（ターン数 = 道のり ÷ 移動力 の切り上げ）
-        int move = Mathf.Max(1, enemy.Move);
-        int airTurns = (distFromHere + move - 1) / move;
+        // (2)(3) 陸路と空路のターン数を比べる（ターン数 = 道のり ÷ 移動力 の切り上げ）。
+        // 飛行兵は地上と飛翔で移動力が違うので、それぞれの値で割る（2026-08-10。
+        // ここは probe を抜けた後＝地上に戻っているので、enemy.Move だと両方が地上の値になってしまう）
+        int groundMove = Mathf.Max(1, enemy.GroundMove);
+        int flightMove = Mathf.Max(1, enemy.FlightMove);
+        int airTurns = (distFromHere + flightMove - 1) / flightMove;
 
         string reason;
         if (!groundReachable)
@@ -779,7 +784,7 @@ public static class EnemyAI
         }
         else
         {
-            int groundTurns = (groundDist + move - 1) / move;
+            int groundTurns = (groundDist + groundMove - 1) / groundMove;
             bool airFaster = airTurns + 1 <= groundTurns; // +1 は着陸行動の分。同数なら空路優先（作者合意）
             if (airFaster)
                 reason = $"離陸して({cruiseCell.x},{cruiseCell.y})へ巡航（空{airTurns}ターン+着陸1 vs 陸{groundTurns}ターン）";

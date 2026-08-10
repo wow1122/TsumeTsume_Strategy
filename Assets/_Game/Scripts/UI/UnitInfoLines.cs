@@ -23,7 +23,7 @@ public static class UnitInfoLines
         lines.Add($"{unit.Data.unitName}（{side}・{ClassName(unit)}）{place}");
         lines.Add($"HP {unit.CurrentHP}／{unit.MaxHP}");
         lines.Add($"力{unit.Strength}　魔力{unit.Magic}　技{unit.Skill}　速さ{unit.Speed}");
-        lines.Add($"守備{unit.Defense}　魔防{unit.Resistance}　移動{unit.Move}");
+        lines.Add($"守備{unit.Defense}　魔防{unit.Resistance}　移動{MoveText(unit)}");
         lines.Add(WeaponLine(unit));
         AddWeaponEffectLines(unit, lines);
         AddDurabilityLines(unit, lines);
@@ -31,6 +31,16 @@ public static class UnitInfoLines
         AddStateLines(unit, lines);
 
         return lines;
+    }
+
+    /// <summary>
+    /// 移動力の表示（2026-08-10）。飛行兵は地上と飛翔で値が違うので「4（飛翔6）」と両方出す。
+    /// 値が同じ兵種（飛行兵以外の全部）は今までどおり数字1つだけ＝行が伸びない。
+    /// </summary>
+    private static string MoveText(Unit unit)
+    {
+        if (unit.FlightMove == unit.GroundMove) return unit.GroundMove.ToString();
+        return $"{unit.GroundMove}（飛翔{unit.FlightMove}）";
     }
 
     /// <summary>

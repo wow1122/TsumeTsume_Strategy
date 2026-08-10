@@ -26,10 +26,14 @@ public class UnitDataEditor : Editor
         if (useClass)
         {
             var c = (ClassData)cd.objectReferenceValue;
+            // 飛行兵は地上と飛翔で移動力が違うので、違うときだけ括弧で添える（2026-08-10）
+            string moveText = c.EffectiveFlightMove == c.move
+                ? $"移動{c.move}"
+                : $"移動{c.move}（飛翔{c.EffectiveFlightMove}）";
             using (new EditorGUI.DisabledScope(true))
             {
                 EditorGUILayout.LabelField("兵種（データ由来）",
-                    $"{c.className}（{c.moveType.DisplayName()}・移動{c.move}）");
+                    $"{c.className}（{c.moveType.DisplayName()}・{moveText}）");
             }
         }
         else
