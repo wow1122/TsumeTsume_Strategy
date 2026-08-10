@@ -122,6 +122,14 @@ C（特効武器11本＋対空状態）→ D（検証ステージ）の4段階�
 Combat/WeaponChoiceRules に集約し、**probe（お試し装備）方式**で既存の共有関数をそのまま使っている
 ＝戦闘予測の数字と実戦の結果は必ず一致する。スクリプトのみでアセット変更なし。
 
+2026-08-10、**飛行兵の移動力を「地上／飛翔」の2本立てに変更**（作者仕様変更。「飛翔の合意仕様」の節）。
+天馬兵系 6 → 地上4/飛翔6、竜騎兵系 5 → 地上3/飛翔7。飛翔は行動を消費しないが、
+飛翔中は地上の敵を攻撃できず着陸は即行動終了なので、「本来の脚を出すターンは攻撃を捨てる」という
+選択が生まれる（撃墜との相性も含めた設計）。データは ClassData.flightMove の追加だけで、
+読む側は `Unit.Move`（飛翔中は飛翔の値を返す窓口）を見るので移動範囲・再移動の残り予算・
+敵AI・表示が自動追随する。あわせて敵AIで「地上の道のりを飛翔中の移動力で測っていた」2箇所を修正
+（着陸先の判断・陸路と空路のターン数比較）。
+
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
 敵AI強化（Phase 16〜21）は `/home/wawo/.claude/plans/tsumetsume-strategy-ai-ai-ai-robust-quasar.md`、
@@ -217,9 +225,12 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - 兵種（クラス）: ClassData（ScriptableObject）38種で定義（「兵種データの合意仕様」の節参照）。
   移動タイプ・移動力・装備可能武器は兵種で決まる。移動力の実数値は
   Assets/_Game/Data/Classes/Class_*.asset が正で、作者が Unity のエディタで調整する
-  （旧「標準移動力」の合意は兵種ごとの値に置き換え。例: 剣闘士3・剣士4・重装兵2・騎馬兵6・竜騎兵5）
+  （旧「標準移動力」の合意は兵種ごとの値に置き換え。例: 剣闘士3・剣士4・重装兵2・騎馬兵6）。
+  **飛行兵だけは地上と飛翔で移動力が違う**（2026-08-10。天馬兵系 地上4/飛翔6・竜騎兵系 地上3/飛翔7。
+  「飛翔の合意仕様」の節）
 - Unit は Initialize で UnitData をコピーした「ランタイム能力値」を使う（Strength〜Move/Class/Weapon プロパティ経由。
-  移動タイプと移動力は UnitData.EffectiveClass/EffectiveMove＝兵種データ優先・未設定時は旧フィールドで解決。
+  移動タイプと移動力は UnitData.EffectiveClass/EffectiveMove/EffectiveFlightMove＝兵種データ優先・未設定時は旧フィールドで解決。
+  移動力は GroundMove/FlightMove の2本を持ち、読む側は **Unit.Move 窓口**（飛翔中は飛翔の値を返す）だけを見る。
   Data 直読みは Unit 内の窓口のみ。ユニット列挙は UnitRegistry（名簿）経由で、FindObjectsByType は使わない）
 - 移動: 味方のマスは通過可・停止不可、敵のマスは侵入・通過不可。非アクティブ化＝盤上から外れる（占有も明け渡す）。
   飛翔中の例外は「飛翔の合意仕様」の節を参照
@@ -303,6 +314,13 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   着地したターンは地上ユニットとして普通に行動できる。着地したターンの再飛翔も可（クールタイムなし）
 - 「着陸」コマンド: 飛翔中の飛行兵が使える（飛翔を発動したターンは不可）。飛翔を解除して**即行動済み**。移動→着陸も可。
   空中で引き受けた後も使える（2026-07-30 作者仕様変更。着陸してもその行動は終わるので、降ろせるのは翌ターン）
+- **飛行兵の移動力は地上と飛翔で別（2026-08-10 作者仕様変更）**: 天馬兵系（天馬兵・聖天馬兵・金鵄兵）は
+  地上4/飛翔6、竜騎兵系（竜騎兵・大竜騎兵・魔竜騎兵）は地上3/飛翔7（上級職も下級と同じ数値）。
+  データは ClassData.flightMove（0＝地上と同じ＝飛行兵以外の32兵種は未設定のまま）。
+  地上を歩いてから飛翔した場合、そのターンの合計は飛翔の値（残り＝飛翔移動力−使用済みコスト）。
+  飛翔を取り消せば地上の値に戻る（既存の中間点の巻き戻しがそのまま働く）。
+  飛翔中は地上の敵を攻撃できず着陸は即行動終了なので、**「飛んで長く動いたターンは攻撃を捨てる」**のが要点。
+  表示は情報パネル・デバッグパネルで「移動4（飛翔6）」（値が同じ兵種は今までどおり数字1つ）
 - 飛翔中の移動: 全マス移動コスト1（地形無視）。屋内壁 `#` は飛行でも通過不可。
   城壁 `=`（Phase 14 新地形。地上は通行不可・地形防御+2）は飛行なら通過も停止も可。
   飛翔が切れたとき城壁の上にいたら、そのまま城壁の上に着地する（翌ターン歩いて降りられる。詰みなし）
@@ -513,7 +531,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 - 兵種は ClassData（ScriptableObject、Assets/_Game/Data/Classes/）で38種を定義:
   下級14職・上級24職。聖騎馬兵は槍兵と騎馬兵の**共有**昇格先でアセットは1つ。
-  各兵種 = 名前・階級（下級/上級 ClassTier）・移動タイプ（UnitClass）・移動力・装備可能武器種・
+  各兵種 = 名前・階級（下級/上級 ClassTier）・移動タイプ（UnitClass）・移動力（地上）・
+  飛翔中の移動力（flightMove。0＝地上と同じ。飛行兵6種だけが設定。2026-08-10）・装備可能武器種・
   特攻タグ（ClassTag: 騎馬/天馬/竜/重装/亜竜）・昇格先（下級のみ最大2つ）。兵種表は作者提供（2026-07-18）
 - 昇格先は**データのみ**（クラスチェンジの実行はレベル/経験値が前提なので将来実装）。
   **特攻タグは 2026-08-06〜08 の「有効と特効」で戦闘に効くようになった**（同節が正）。
@@ -1114,7 +1133,9 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   GaugeBars(マナ・気勢のゲージバーを描く共通部品※フェーズ28。MonoBehaviourではない静的クラスで
   UnitInfoLinesと同じ位置づけ。デバッグパネルとユニット情報パネルの両方が文字行の下で呼ぶ。
   緑＝マナ/青＝気勢・値10ごとに黒い目盛り・右に「n本 値／最大」・塗りはTexture2D.whiteTextureに色を掛ける)
-- Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried・飛翔IsFlying/FlightTurnsLeft・
+- Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried・
+  移動力GroundMove/FlightMove※2026-08-10〔読む側はMove窓口＝飛翔中は飛翔の値。
+  「地上を歩く距離」を測る敵AIの2箇所だけGroundMoveを直に読む〕・飛翔IsFlying/FlightTurnsLeft・
   撃墜ShootDown/飛翔禁止FlightBlockedTurns・IsFlightBlocked/TickFlightBlock※2026-08-05〔CancelFlight+カウンタ2。
   StartFlight/CancelFlight自体は敵AIのprobe用に純粋な状態変更のまま〕・
   AI性格AIProfile/挑発済みIsProvoked※永続・所持品Items/装備EquippedWeapon※Weapon窓口・Equip/Unequip/破棄DiscardItem・
@@ -1272,6 +1293,10 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 2026-08-09 に作者要望で**攻撃の操作順を「武器 → 相手」に変更**（「攻撃時の武器選択の合意仕様」の節）。
 特効武器を持たせた後の「持ち替えが面倒・使い忘れる」を解消する導線で、新しい強さは足していない。
+
+2026-08-10 に作者仕様変更で**飛行兵の移動力を地上／飛翔の2本立てに変更**（「飛翔の合意仕様」の節）。
+天馬兵系 地上4/飛翔6・竜騎兵系 地上3/飛翔7。飛行兵は「飛ばないと遅い／飛ぶと殴れない」となり、
+撃墜（2026-08-05）と合わせて空を使うかどうかが毎ターンの判断になる。
 
 **現在アクティブなロードマップは無い。次は作者と次期ロードマップの優先度を相談してから着手する**
 （下の「持ち越し候補」から作者が選ぶ。フェーズ着手は明示の合図をもらってから）。
