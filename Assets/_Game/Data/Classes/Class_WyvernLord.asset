@@ -15,7 +15,8 @@ MonoBehaviour:
   className: "大竜騎兵"
   tier: 1
   moveType: 2
-  move: 5
+  move: 3
+  flightMove: 7
   usableWeapons:
   - 2
   - 1

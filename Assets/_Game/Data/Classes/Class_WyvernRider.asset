@@ -15,7 +15,8 @@ MonoBehaviour:
   className: "竜騎兵"
   tier: 0
   moveType: 2
-  move: 5
+  move: 3
+  flightMove: 7
   usableWeapons:
   - 2
   tags: 16

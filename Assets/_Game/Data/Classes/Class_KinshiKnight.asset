@@ -15,7 +15,8 @@ MonoBehaviour:
   className: "金鵄兵"
   tier: 1
   moveType: 2
-  move: 6
+  move: 4
+  flightMove: 6
   usableWeapons:
   - 1
   - 3
