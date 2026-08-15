@@ -1043,6 +1043,26 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   そのため **Unit.Equip / Unequip には副作用（ログ・演出・行動消費）を足さないこと**（Unit.cs に警告コメントあり）
 - 杖（回復）の武器選択は当面なし（杖を2本持つユニットが出たら同じ形で足せる）
 
+### コマンド一覧と画面レイアウトの合意仕様（2026-08-15 作者要望）
+
+**ねらい**: 画面の隅に貼り足してきた常駐UIを減らし、「盤面のメニュー」から呼び出す形に集約する。
+空いた画面右側を今後のパネル置き場にする（次に予定しているユニット情報UIの刷新もここに置く）。
+
+- **コマンド一覧**＝Idle 中に**ユニットがいないマス**を左クリックで、そのマスの隣に出る（行動メニューと同じ
+  ActionMenu を使い回すので、見た目・回り込みの作法も同じ）。並びは **状況 ／ 設定 ／ 終了**。
+  「終了」を最下段にしたのは誤クリックでターンが終わる事故を防ぐため
+- **「終了」** ＝ 自軍フェイズの終了（旧「ターン終了」ボタン）。全員行動済みでの自動ターン終了は従来どおり
+  （再行動できる味方が残っているときだけ自動で終わらない＝フェーズ30 の合意も従来どおり）
+- **「状況」** ＝ ターン数／ターン制限・フェイズ・クリア条件・両軍の数（味方は未行動数も）。見るだけ
+- **クリア条件はステージのデータではなくコードの判定から自動生成**（TurnManager.BuildClearConditionLines を
+  CheckGameEnd の真下に置く）。「味方輸送隊の死亡」は輸送隊がいるステージだけ、ターン制限の行は turnLimit>0 だけ出す。
+  **勝敗判定を変えたらこの関数も直すこと**（拠点到達などを足すときの唯一の注意点）
+- **「設定」** ＝ 枠と開閉だけ作り、中身は「準備中」の案内（項目は将来決める）
+- **画面レイアウト**: 盤面は画面の**左寄り**（既定で横 65%・下 10% を空ける）に収め、**地形情報は盤面の真下**。
+  右側はコマンド一覧・状況/設定・戦闘予測・ユニット情報の置き場。**左上の常駐表示（ターン数・フェイズ）は撤去**
+- 撤去にともなう既知の副作用: **敵フェイズ中は画面に状態表示が出ない**（操作不可なのでコマンド一覧も開けない）。
+  遊んでみて分かりにくければ、敵フェイズ中だけの小さな表示を足す
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -1055,7 +1075,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 ## コード構成（Assets/_Game/Scripts/）
 
-- Core/ … BattleController(操作の司令塔・13状態FSM: Idle/MoveSelect/CommandMenu/WeaponSelect/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect/RefreshMenu。
+- Core/ … BattleController(操作の司令塔・15状態FSM: Idle/MoveSelect/CommandMenu/WeaponSelect/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect/RefreshMenu/SystemMenu/SystemInfo。
   飛翔・着陸コマンドと飛翔の段階取り消しCancelFlightAndReturn・
   飛翔コマンドの可否CanUseFlightCommand※2026-08-05〔BuildCommandsの4分岐が共有＝撃墜の飛翔禁止を1か所で見る〕・
   攻撃可能マス表示ComputeAttackCells・
@@ -1071,19 +1091,28 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   **装備の切り替えは武器を選んだ瞬間・マナ消費は敵をクリックした瞬間**・
   ハイライトはShowAttackTargetsに集約・避ける矩形の窓口AvoidPanelRects（予測/情報/デバッグの3枚）・
   攻撃対象FindAttackTargets（＝WeaponChoiceRules.FindAllTargets）と攻撃可能マスComputeAttackCellsは全武器ぶんを合算〕・
-  再行動コマンド※フェーズ30〔Idleで行動済みの味方をクリック→EnterRefreshMenu／ExecuteRefreshで気勢1本消費→SetActed(false)→EnterMoveSelect〕),
+  再行動コマンド※フェーズ30〔Idleで行動済みの味方をクリック→EnterRefreshMenu／ExecuteRefreshで気勢1本消費→SetActed(false)→EnterMoveSelect〕・
+  コマンド一覧※2026-08-15〔Idleでユニットのいないマスをクリック→OpenSystemMenu（状況/設定/終了。ActionMenuを使い回し・
+  出したマスsystemMenuCellを覚えてパネルから戻る先にする）→OpenSystemInfo(SystemInfoKind)は見るだけのSystemInfo／
+  ExecuteEndTurnはturnManager.EndPlayerPhase()。キャンセルはパネル→一覧→閉じる〕),
   ActionContext(1行動の文脈・移動取り消し・再移動予算・取り消し不能点Commit※引数keepHasMovedで移動済みを引き継ぐ〔交換用〕＋飛翔の中間点も引き上げる・飛翔の中間点MarkFlight),
-  TurnManager(フェイズ・勝敗・ターン制限判定・簡易UI・フェイズ開始時の飛翔Tick・
+  TurnManager(フェイズ・勝敗・ターン制限判定・画面表示は決着の「勝利！／敗北…」だけ
+  ※2026-08-15に左上のターン数表示と「ターン終了」ボタンを撤去〔コマンド一覧へ移設〕・
+  クリア条件の文言BuildClearConditionLines※判定CheckGameEndの真下に置く＝食い違い防止・ターン制限の公開TurnLimit・
+  フェイズ開始時の飛翔Tick・
   敵AI思考ログの切替enemyAILog・敵フェイズ内の敵HasActed管理※フェイズ終了時に戻す・
   フェイズ開始時のマナ加算/再行動フラグ戻し/連鎖リセット※ターン1は初期値のまま・
   再行動できる味方がいる間は自動でターンを終えない※フェーズ30・
   自軍フェイズ開始時の補給SupplyRules.TickRepair※フェーズ32〔敵フェイズは無改変〕・
   フェイズ開始時の撃墜による飛翔禁止TickFlightBlock※2026-08-05〔敵味方とも〕),
   BattleSetup(StageDataを読んで初期配置・開始時飛翔の適用・配置マスの兵種チェック)
-- Grid/ … GridManager(盤面・可変サイズApplyStageSize・カメラ自動フィットFitCamera・座標変換・
+- Grid/ … GridManager(盤面・可変サイズApplyStageSize・カメラ自動フィットFitCamera
+  ※2026-08-15から「画面の左boardAreaWidth（既定0.65）・下boardBottomArea（既定0.10）を除いた矩形」に収める
+  〔cam.rectは使わない＝領域外が塗られずゴミが残るため。orthographicSizeと位置だけで寄せる。
+  画面サイズが変わったらUpdateで合わせ直す〕・座標変換・
   多層ハイライト※HighlightKindの優先順は Selection > TargetChoice > AttackRange > HealRange >
   MoveRange > SupplyZone〔補給圏・薄紫・フェーズ32。一番下なので他を隠さない〕・
-  地形適用ApplyTerrain・地形情報の画面下表示※騎乗差分も表示),
+  地形適用ApplyTerrain・地形情報を盤面の真下に表示※騎乗差分も表示・位置はGetBoardScreenRectから算出),
   TileData(1マスの論理データ。IsWalkable/CanFlyOver/MoveCost/DefenseBonus に加え
   兵種別の IsWalkableFor/MoveCostFor),
   TerrainType(地形enum+TerrainDef定義。城壁Rampart・飛行可否canFlyOver・騎乗の mountedWalkable/mountedCost),
@@ -1116,6 +1145,9 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   描いた矩形の公開PanelRect※2026-08-09〔ユニット情報パネルを上に積む・武器の一覧が避けるのに使う。
   描かなかったフレームはRect.zero〕・
   BattleControllerが自動生成),
+  SystemInfoPanel(コマンド一覧の「状況」「設定」のパネル・右上※2026-08-15。SystemInfoKind(Status/Settings)で1枚を兼用・
+  状況＝ターン数/フェイズ＋クリア条件（TurnManager.BuildClearConditionLines）＋両軍の数（UnitRegistry.CountAlive・未行動数も）・
+  設定＝「準備中」の案内だけ・見るだけでゲーム状態は変えない・BattleControllerが自動生成),
   DebugUnitPanel(デバッグ用ユニット情報パネル・右上。クリックしたユニットの能力値・武器・状態を表示。
   panelEnabledでOFF可・ゲーム状態は変えない・行の組み立てはUnitInfoLines共通＋敵AI/挟撃の行を追加・
   描いた矩形の公開PanelRect※2026-08-09〔武器選択のUIの重なり回避用。出していなければRect.zero〕),
@@ -1297,6 +1329,10 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 2026-08-10 に作者仕様変更で**飛行兵の移動力を地上／飛翔の2本立てに変更**（「飛翔の合意仕様」の節）。
 天馬兵系 地上4/飛翔6・竜騎兵系 地上3/飛翔7。飛行兵は「飛ばないと遅い／飛ぶと殴れない」となり、
 撃墜（2026-08-05）と合わせて空を使うかどうかが毎ターンの判断になる。
+
+2026-08-15 に作者要望で**UIの刷新に着手**。第1弾として**コマンド一覧（状況／設定／終了）と画面レイアウト**を変更
+（「コマンド一覧と画面レイアウトの合意仕様」の節）。常駐UIを減らし、盤面を左へ寄せて右側をパネル置き場にした。
+**第2弾＝ユニット情報UIの大幅改善が続く予定**（作者の予告。空けた右側に置く）。
 
 **現在アクティブなロードマップは無い。次は作者と次期ロードマップの優先度を相談してから着手する**
 （下の「持ち越し候補」から作者が選ぶ。フェーズ着手は明示の合図をもらってから）。
