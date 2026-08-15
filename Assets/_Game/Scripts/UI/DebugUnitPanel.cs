@@ -66,7 +66,9 @@ public class DebugUnitPanel : MonoBehaviour
 
         List<string> lines = BuildLines();
 
-        // 画面右上に描く（左上のターン表示・左下の地形情報・右下の戦闘予測と重ならない位置）
+        // 画面右上に描く（盤面の下の地形情報・右下の戦闘予測と重ならない位置。
+        // コマンド一覧の「状況」「設定」も同じ右上に出るが、一覧は空きマスのクリックで開き、
+        // そのクリックでこのパネルは閉じる（unit=null）ので同時には出ない）
         // 文字行の下にマナ・気勢のゲージバー2本ぶんの高さを足す（フェーズ28）
         float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f + GaugeBars.TotalHeight; // +1 は見出しの行
         var rect = new Rect(Screen.width - panelWidth - 12f, 10f, panelWidth, panelHeight);

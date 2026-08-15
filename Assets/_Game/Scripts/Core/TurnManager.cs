@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>戦闘のフェイズ（どちらの軍の番か）。</summary>
@@ -12,7 +13,9 @@ public enum TurnPhase { Player, Enemy }
 ///  ・勝敗判定：敵全滅で勝利／味方全滅・味方輸送隊の死亡で敗北。
 ///    ターン制限（Phase 15）：StageData で指定されたターン数を使い切っても
 ///    決着していなければ敗北（0なら無制限）
-///  ・画面左上にターン数・フェイズ・「ターン終了」ボタンを表示（簡易UI）
+///  ・画面に出すのは決着時の「勝利！／敗北…」だけ。ターン数・フェイズ・クリア条件は
+///    コマンド一覧の「状況」（SystemInfoPanel）から見る。ターンを終えるのも
+///    コマンド一覧の「終了」から（2026-08-15 の UI 刷新）
 /// </summary>
 public class TurnManager : MonoBehaviour
 {
@@ -36,6 +39,9 @@ public class TurnManager : MonoBehaviour
 
     private GridManager grid;
     private int turnLimit; // ステージのターン制限（0なら無制限。StageData から読む。Phase 15）
+
+    /// <summary>このステージのターン制限（0なら無制限）。「状況」の表示に使う。</summary>
+    public int TurnLimit => turnLimit;
 
     void Start()
     {
@@ -163,11 +169,11 @@ public class TurnManager : MonoBehaviour
         // 再行動（気勢1本）は行動済みのユニットを選び直して使うので、
         // 最後の1体が行動した瞬間に自動でターンが終わると使う隙が無くなってしまう。
         // 使うかどうかはプレイヤーが決めることなので、ここでは終わらせず
-        // 「ターン終了」ボタンで明示的に終えてもらう
+        // コマンド一覧の「終了」で明示的に終えてもらう
         if (GaugeRules.AnyoneCanRefresh(Faction.Player))
         {
             Debug.Log("全味方が行動済み。ただし再行動できる味方がいるので、"
-                      + "ターンを終えるときは「ターン終了」ボタンを押してください");
+                      + "ターンを終えるときは空きマスをクリックして「終了」を選んでください");
             return;
         }
 
@@ -206,6 +212,38 @@ public class TurnManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// いまの勝敗ルールを説明する行の一覧を作る（コマンド一覧の「状況」で表示する。2026-08-15）。
+    /// 文言はステージのデータではなく、実際の判定（CheckGameEnd とターン制限）から組み立てる。
+    /// <b>CheckGameEnd を変えたら、ここも必ず直すこと</b>（判定と説明が食い違わないよう、
+    /// あえて判定の真下に置いている）。
+    /// </summary>
+    public List<string> BuildClearConditionLines()
+    {
+        var lines = new List<string>
+        {
+            "勝利：敵ユニットの全滅",
+            "敗北：味方ユニットの全滅",
+        };
+
+        // 輸送隊がいるステージでだけ出す（いなければ起こりえない敗北条件なので）
+        if (HasPlayerTransporter())
+            lines.Add("　　　味方輸送隊の死亡");
+
+        if (turnLimit > 0)
+            lines.Add($"　　　{turnLimit} ターン以内に勝利できない");
+
+        return lines;
+    }
+
+    /// <summary>味方に輸送隊がいるか（クリア条件の表示に使う）。</summary>
+    private static bool HasPlayerTransporter()
+    {
+        foreach (Unit u in UnitRegistry.GetUnits(Faction.Player))
+            if (u.IsAlive && u.Class == UnitClass.Transporter) return true;
+        return false;
+    }
+
     // ===== ユニットの問い合わせ =====
 
     private bool AllActed(Faction faction)
@@ -216,37 +254,24 @@ public class TurnManager : MonoBehaviour
     }
 
     // ===== 簡易UI（Canvas不要・コードで画面に直接描画）=====
+    // 2026-08-15 の UI 刷新で、常時表示していたターン数・フェイズと「ターン終了」ボタンは撤去した。
+    // ターン数・フェイズ・クリア条件・両軍の数は「状況」（SystemInfoPanel）へ、
+    // ターンを終える操作はコマンド一覧の「終了」へ移した。ここに残すのは決着の表示だけ。
 
     void OnGUI()
     {
-        string phaseLabel = (CurrentPhase == TurnPhase.Player) ? "自軍フェイズ" : "敵フェイズ";
+        if (!IsGameOver) return;
 
-        // ターン制限があるステージでは「ターン 3／15」のように残りが分かる表示にする（Phase 15）
-        string turnLabel = (turnLimit > 0) ? $"ターン {TurnNumber}／{turnLimit}" : $"ターン {TurnNumber}";
-
-        var style = new GUIStyle(GUI.skin.label) { fontSize = 18 };
-        GUI.Label(new Rect(12, 10, 360, 28), $"{turnLabel} ／ {phaseLabel}", style);
-
-        // 決着後：画面中央に結果を大きく表示（ボタンは出さない）
-        if (IsGameOver)
+        // 決着後：画面中央に結果を大きく表示
+        var bigStyle = new GUIStyle(GUI.skin.label)
         {
-            var bigStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 48,
-                alignment = TextAnchor.MiddleCenter,
-                fontStyle = FontStyle.Bold
-            };
-            bigStyle.normal.textColor = (Result == GameResult.Win) ? Color.yellow : Color.red;
+            fontSize = 48,
+            alignment = TextAnchor.MiddleCenter,
+            fontStyle = FontStyle.Bold
+        };
+        bigStyle.normal.textColor = (Result == GameResult.Win) ? Color.yellow : Color.red;
 
-            string text = (Result == GameResult.Win) ? "勝利！" : "敗北…";
-            GUI.Label(new Rect(0, Screen.height * 0.4f, Screen.width, 80), text, bigStyle);
-            return;
-        }
-
-        if (CurrentPhase == TurnPhase.Player)
-        {
-            if (GUI.Button(new Rect(12, 44, 130, 32), "ターン終了"))
-                EndPlayerPhase();
-        }
+        string text = (Result == GameResult.Win) ? "勝利！" : "敗北…";
+        GUI.Label(new Rect(0, Screen.height * 0.4f, Screen.width, 80), text, bigStyle);
     }
 }

@@ -115,7 +115,7 @@ public class UnitInfoPanel : MonoBehaviour
 
         List<string> lines = UnitInfoLines.BuildBasic(current);
 
-        // 画面右下に描く（左上のターン表示・左下の地形情報と重ならない位置。
+        // 画面右下に描く（盤面の下の地形情報と重ならない位置。
         // 行数は持ち物の数で変わるので、下端を固定して上へ伸ばす）
         // 文字行の下にマナ・気勢のゲージバー2本ぶんの高さを足す（フェーズ28）
         float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f + GaugeBars.TotalHeight; // +1 は見出しの行

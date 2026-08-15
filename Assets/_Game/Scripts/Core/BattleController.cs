@@ -59,6 +59,13 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  右クリック/ESC で1段ずつ戻る（対象選択 → 武器選択 → 行動メニュー）。
 ///  必殺技のマナが減るのは敵をクリックした瞬間なので、それまでに戻ればマナは減らない。
 ///
+/// 2026-08-15 の追加（コマンド一覧）：
+///  ユニットがいないマスをクリックすると「状況／設定／終了」のコマンド一覧が出る【SystemMenu】。
+///  「状況」はターン数・フェイズ・クリア条件・両軍の数のパネル、「設定」は将来の調整項目の枠
+///  （どちらも見るだけ【SystemInfo】）、「終了」は自軍フェイズの終了。
+///  画面左上に常駐していたターン数の表示と「ターン終了」ボタンはこれに置き換えて撤去した。
+///  右クリック/ESC で1段ずつ戻る（パネル → コマンド一覧 → 閉じる）。
+///
 /// 2026-07-26 の仕様変更（救出系の2点）：
 ///  ・引き受けた行動中に「降ろす」を選べるのは、引き受けを実行したマスの上にいるときだけ
 ///    （引き受け後に移動した先では降ろせない。引き受けたマスへ戻れば また選べる）。
@@ -74,7 +81,7 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, WeaponSelect, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect, ExchangeSelect, RefreshMenu }
+    private enum State { Idle, MoveSelect, CommandMenu, WeaponSelect, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect, ExchangeSelect, RefreshMenu, SystemMenu, SystemInfo }
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
@@ -107,6 +114,8 @@ public class BattleController : MonoBehaviour
     private BattleForecast forecast;            // 戦闘予測パネル（IMGUI・Phase 15）
     private UnitInfoPanel unitInfo;             // 対象選択中の相手情報パネル（IMGUI・2026-07-26）
     private DebugUnitPanel debugPanel;          // デバッグ用ユニット情報パネル（右上・武器選択の重なり回避に使う）
+    private SystemInfoPanel systemInfo;         // 「状況」「設定」のパネル（IMGUI・2026-08-15）
+    private Vector2Int systemMenuCell;          // コマンド一覧を出している空きマス（パネルから戻る先）
     private Unit previewedEnemy;                // 行動範囲を下見表示中の敵（Idle のときだけ使う）
 
     void Awake()
@@ -128,6 +137,10 @@ public class BattleController : MonoBehaviour
         // このパネルに被らないよう、矩形（PanelRect）を読むために参照だけ持っておく
         debugPanel = GetComponent<DebugUnitPanel>();
         if (debugPanel == null) debugPanel = gameObject.AddComponent<DebugUnitPanel>();
+
+        // コマンド一覧の「状況」「設定」で出るパネル（2026-08-15）
+        systemInfo = GetComponent<SystemInfoPanel>();
+        if (systemInfo == null) systemInfo = gameObject.AddComponent<SystemInfoPanel>();
     }
 
     void Update()
@@ -159,7 +172,8 @@ public class BattleController : MonoBehaviour
         if (state == State.CommandMenu || state == State.CargoSelect
             || state == State.ItemSelect || state == State.ItemActionSelect
             || state == State.ExchangeSelect || state == State.RefreshMenu
-            || state == State.WeaponSelect) return;
+            || state == State.WeaponSelect
+            || state == State.SystemMenu || state == State.SystemInfo) return;
 
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -203,7 +217,13 @@ public class BattleController : MonoBehaviour
                 {
                     ShowEnemyPreview(clickedUnit);
                 }
-                // それ以外（空きマス・行動済みの味方）→ プレビューを消す
+                // ユニットがいないマス → コマンド一覧（状況・設定・終了）を出す（2026-08-15）
+                else if (clickedUnit == null)
+                {
+                    ClearEnemyPreview();
+                    OpenSystemMenu(cell);
+                }
+                // それ以外（行動済みで再行動もできない味方）→ プレビューを消す
                 else
                 {
                     ClearEnemyPreview();
@@ -302,6 +322,18 @@ public class BattleController : MonoBehaviour
                 refreshCandidate = null;
                 grid.ResetAllHighlights();
                 state = State.Idle;
+                break;
+
+            case State.SystemMenu:
+                // コマンド一覧 → 閉じるだけ（何も選ばなかった。2026-08-15）
+                menu.Hide();
+                state = State.Idle;
+                break;
+
+            case State.SystemInfo:
+                // 状況・設定のパネル → コマンド一覧へ1段戻る（見ていただけなので何も変わらない）
+                systemInfo.Hide();
+                OpenSystemMenu(systemMenuCell);
                 break;
 
             case State.UnitTargetSelect:
@@ -452,6 +484,43 @@ public class BattleController : MonoBehaviour
                   $"（残りの気勢 {unit.Momentum.Stock} 本・このターンはもう使えない）");
 
         EnterMoveSelect(unit);
+    }
+
+    // ===== コマンド一覧（状況・設定・終了）＝2026-08-15 の UI 刷新 =====
+    // ユニットがいないマスをクリックすると出る「盤面のメニュー」。
+    // 画面に常駐させていた「ターン終了」ボタン・ターン数の表示はここへ集約した。
+    // 表示位置・見た目はユニットの行動メニューと同じ部品（ActionMenu）を使い回している。
+
+    /// <summary>空きマスのクリックでコマンド一覧を開く（状況／設定／終了）。</summary>
+    private void OpenSystemMenu(Vector2Int cell)
+    {
+        systemMenuCell = cell; // 「状況」「設定」から戻ってきたとき同じ位置に出し直す
+
+        var commands = new List<ActionMenu.Entry>
+        {
+            new ActionMenu.Entry("状況", () => OpenSystemInfo(SystemInfoKind.Status)),
+            new ActionMenu.Entry("設定", () => OpenSystemInfo(SystemInfoKind.Settings)),
+            // 「終了」は一番下に置く（誤クリックでターンが終わる事故を防ぐ＝作者合意）
+            new ActionMenu.Entry("終了", ExecuteEndTurn),
+        };
+        menu.Show(grid.CellToWorld(cell), grid.cellSize, commands);
+        state = State.SystemMenu;
+    }
+
+    /// <summary>「状況」「設定」のパネルを開く（見るだけ。右クリック/ESC で一覧へ戻る）。</summary>
+    private void OpenSystemInfo(SystemInfoKind kind)
+    {
+        menu.Hide();
+        systemInfo.Show(kind, turnManager);
+        state = State.SystemInfo;
+    }
+
+    /// <summary>「終了」：自軍フェイズを終えて敵フェイズへ（旧「ターン終了」ボタン）。</summary>
+    private void ExecuteEndTurn()
+    {
+        menu.Hide();
+        state = State.Idle;
+        turnManager.EndPlayerPhase();
     }
 
     /// <summary>
@@ -1619,6 +1688,7 @@ public class BattleController : MonoBehaviour
         itemMenu.Hide();
         forecast.Hide();
         unitInfo.Hide();
+        systemInfo.Hide(); // コマンド一覧の「状況」「設定」も一緒に閉じる（2026-08-15）
         grid.ResetAllHighlights();
         previewedEnemy = null;
         context = null;

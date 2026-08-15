@@ -40,6 +40,14 @@ public class GridManager : MonoBehaviour
     [Tooltip("カメラを盤面に合わせるときの、盤面の外側に足す余白（マス数）")]
     public float cameraMargin = 1f;
 
+    [Tooltip("盤面を映す画面の横の割合。残りの右側はコマンド一覧・各種パネルの置き場になる（2026-08-15）")]
+    [Range(0.3f, 1f)]
+    public float boardAreaWidth = 0.65f;
+
+    [Tooltip("盤面の下に空ける画面の縦の割合。ここに地形情報の帯を出す（2026-08-15）")]
+    [Range(0f, 0.3f)]
+    public float boardBottomArea = 0.10f;
+
     [Header("見た目（仮素材）")]
     [Tooltip("市松模様の暗い方のマスに掛ける明るさ（地形色 × この値。1で市松なし）")]
     [Range(0.5f, 1f)]
@@ -80,6 +88,21 @@ public class GridManager : MonoBehaviour
         squareSprite = CreateSquareSprite();
         BuildGrid();
         FitCamera();
+        lastScreenWidth = Screen.width;
+        lastScreenHeight = Screen.height;
+    }
+
+    // 画面サイズ（縦横比）が変わったらカメラを合わせ直す。
+    // 盤面を「画面の左◯％」に収める計算が縦横比に依存するようになったため（2026-08-15）
+    private int lastScreenWidth;
+    private int lastScreenHeight;
+
+    void Update()
+    {
+        if (Screen.width == lastScreenWidth && Screen.height == lastScreenHeight) return;
+        lastScreenWidth = Screen.width;
+        lastScreenHeight = Screen.height;
+        FitCamera();
     }
 
     /// <summary>
@@ -96,23 +119,44 @@ public class GridManager : MonoBehaviour
     }
 
     /// <summary>
-    /// メインカメラを、盤面全体がちょうど収まる位置・表示範囲に合わせる（Phase 15）。
-    /// 盤面サイズがステージごとに変わっても、シーンのカメラを手で直す必要がない。
+    /// メインカメラを、盤面が「画面の左寄り・下に帯ぶんを空けた領域」にちょうど収まるように合わせる。
+    /// 盤面サイズがステージごとに変わっても、シーンのカメラを手で直す必要がない（Phase 15）。
+    ///
+    /// 2026-08-15：画面いっぱいではなく、左 boardAreaWidth ぶん・下から boardBottomArea を除いた
+    /// 矩形に収めるようにした。空いた右側はコマンド一覧・戦闘予測などのパネル置き場、
+    /// 空いた下側は地形情報の帯（OnGUI）になる。
+    /// カメラの描画範囲（cam.rect）は変えない＝領域外が塗られずゴミが残るのを避けるため、
+    /// 表示倍率（orthographicSize）と位置だけで寄せている。
     /// </summary>
     private void FitCamera()
     {
         Camera cam = Camera.main;
         if (cam == null || !cam.orthographic) return;
 
-        // カメラを盤面の中心へ（Z はシーンの値のまま＝盤面より手前）
-        Vector3 pos = cam.transform.position;
-        cam.transform.position = new Vector3(transform.position.x, transform.position.y, pos.z);
+        // 盤面（＋外側の余白）の半分の大きさ
+        float halfBoardH = height * cellSize * 0.5f + cameraMargin * cellSize;
+        float halfBoardW = width * cellSize * 0.5f + cameraMargin * cellSize;
+
+        // 盤面を映す領域の大きさ（画面に対する割合）
+        float w = Mathf.Clamp(boardAreaWidth, 0.3f, 1f);
+        float h = Mathf.Clamp(1f - boardBottomArea, 0.3f, 1f);
 
         // orthographicSize は「画面の縦半分に映るワールドの長さ」。
-        // 盤面の縦がそのまま収まる大きさと、横が収まる大きさ（画面の縦横比で換算）の大きい方にする
-        float halfHeight = height * cellSize * 0.5f + cameraMargin * cellSize;
-        float halfWidth = (width * cellSize * 0.5f + cameraMargin * cellSize) / cam.aspect;
-        cam.orthographicSize = Mathf.Max(halfHeight, halfWidth);
+        // 盤面の縦が領域の縦に収まる大きさと、横が収まる大きさの大きい方にする
+        float size = Mathf.Max(halfBoardH / h, halfBoardW / (cam.aspect * w));
+        cam.orthographicSize = size;
+
+        // カメラの中心＝画面の中心なので、「領域の中心」との差だけカメラをずらすと
+        // 盤面の中心が領域の中心に来る（ビューポート座標：左下(0,0)〜右上(1,1)）
+        float viewX = w * 0.5f;
+        float viewY = boardBottomArea + h * 0.5f;
+        float dx = (viewX - 0.5f) * 2f * size * cam.aspect;
+        float dy = (viewY - 0.5f) * 2f * size;
+
+        Vector3 pos = cam.transform.position; // Z はシーンの値のまま（盤面より手前）
+        cam.transform.position = new Vector3(transform.position.x - dx,
+                                             transform.position.y - dy,
+                                             pos.z);
     }
 
     // ===== グリッド生成 =====
@@ -325,7 +369,7 @@ public class GridManager : MonoBehaviour
         return Color.Lerp(baseColor, highlightColor, highlightBlend);
     }
 
-    // ===== カーソル下のマスの地形情報（画面左下に1行表示） =====
+    // ===== カーソル下のマスの地形情報（盤面のすぐ下に1行表示） =====
 
     void OnGUI()
     {
@@ -346,7 +390,30 @@ public class GridManager : MonoBehaviour
             fontSize = 14,
             padding = new RectOffset(8, 8, 2, 2),
         };
-        GUI.Box(new Rect(12, Screen.height - 36, 360, 26), text, style);
+
+        // 盤面の左下に揃えて、そのすぐ下に置く（FitCamera の割合を変えても自動で付いてくる）
+        Rect board = GetBoardScreenRect(cam);
+        GUI.Box(new Rect(board.x, board.yMax + 8f, Mathf.Max(360f, board.width), 26f), text, style);
+    }
+
+    /// <summary>
+    /// 盤面が画面のどこに映っているかを GUI 座標（左上原点・Y は下向き）で返す。
+    /// 地形情報の帯を「盤面の真下」に置くために使う（2026-08-15）。
+    /// </summary>
+    private Rect GetBoardScreenRect(Camera cam)
+    {
+        // 左下マスの左下角と、右上マスの右上角をスクリーン座標へ
+        float half = cellSize * 0.5f;
+        Vector3 bottomLeft = CellToWorld(new Vector2Int(0, 0)) - new Vector3(half, half, 0f);
+        Vector3 topRight = CellToWorld(new Vector2Int(width - 1, height - 1)) + new Vector3(half, half, 0f);
+
+        Vector3 a = cam.WorldToScreenPoint(bottomLeft);
+        Vector3 b = cam.WorldToScreenPoint(topRight);
+
+        // スクリーン座標は左下原点・Y 上向きなので、GUI 座標へ反転する
+        float top = Screen.height - b.y;
+        float bottom = Screen.height - a.y;
+        return new Rect(a.x, top, b.x - a.x, bottom - top);
     }
 
     /// <summary>カーソル下マスの地形情報1行分の文字列を作る（騎乗との差があれば括弧で併記。Phase 15）。</summary>
