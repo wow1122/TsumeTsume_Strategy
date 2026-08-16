@@ -46,8 +46,8 @@ public class GridManager : MonoBehaviour
     // 高さ側で大きさが決まっているステージでは盤面は縮まず、位置だけ左へ動く
     public float boardAreaWidth = 0.58f;
 
-    [Tooltip("盤面の下に空ける画面の縦の割合。2026-08-16 に地形情報がカーソル追従になったので、" +
-             "いまは単なる余白。盤面を大きくしたければ 0 に近づけてよい")]
+    [Tooltip("盤面の下に空ける画面の縦の割合。ここに地形情報の帯を出す（2026-08-15。" +
+             "帯の高さは約56pxなので、狭くしすぎると帯が画面からはみ出す）")]
     [Range(0f, 0.3f)]
     public float boardBottomArea = 0.10f;
 
@@ -372,35 +372,46 @@ public class GridManager : MonoBehaviour
         return Color.Lerp(baseColor, highlightColor, highlightBlend);
     }
 
-    // ===== カーソル下のマスの地形情報と座標（盤上の4隅・2行。2026-08-17 作者仕様） =====
+    // ===== カーソル下のマスの地形情報と座標（盤面の下の帯。2026-08-17 作者仕様） =====
 
-    /// <summary>地形情報の枠の内側の余白。</summary>
+    /// <summary>地形情報の帯の内側の余白。</summary>
     private const float TerrainInfoPadding = 8f;
 
-    /// <summary>地形情報の枠の1行の高さ。</summary>
+    /// <summary>地形情報の帯の文字1行の高さ（帯はこの1行ぶん＋余白の厚み）。</summary>
     private const float TerrainInfoLineHeight = 20f;
 
-    /// <summary>地形情報の枠と盤面の端のあいだに空ける距離（隅に置くときの寄せ具合）。</summary>
-    private const float TerrainInfoInset = 8f;
+    /// <summary>盤面の下端と帯のあいだに空ける隙間。</summary>
+    private const float TerrainInfoGap = 8f;
 
     /// <summary>
-    /// 直近に描いた地形情報の枠（GUI 座標。描かなかったフレームは Rect.zero）。
-    /// 戦闘予測パネルがこの枠を避けるために公開している
+    /// 帯の右端に空ける座標のぶんの幅（2桁の「(13,11)」＝半角7文字ぶん＋地形名との隙間）。
+    /// 桁数で変えず固定にしてあるのは、カーソルを動かすたびに地形名に使える幅が
+    /// 変わらないようにするため。
+    /// </summary>
+    private const float TerrainInfoCoordWidth = 60f;
+
+    /// <summary>帯の文字の大きさ。</summary>
+    private const int TerrainInfoFontSize = 14;
+
+    /// <summary>
+    /// 直近に描いた地形情報の帯（GUI 座標。描かなかったフレームは Rect.zero）。
+    /// 他のUIがこの帯を避けるために公開している
     /// （2026-08-17。BattleForecast.PanelRect と同じ「描いた矩形を公開する」作法）。
     /// </summary>
     public Rect TerrainInfoRect { get; private set; }
 
     /// <summary>
-    /// カーソルが指しているマスの地形を、**盤上の4隅のどれか**に2行で出す（2026-08-17 作者仕様）。
-    ///  1行目 … 地形名と移動コスト（騎乗との差があれば括弧で併記）
-    ///  2行目 … 地形防御と座標
+    /// カーソルが指しているマスの地形を、**盤面のすぐ下の帯**に1行で出す。
+    /// 左に 地形名・移動コスト（騎乗との差があれば併記）・地形防御、**右端に座標**。
     ///
-    /// 置く隅は**カーソルがいる四分円の対角**。盤面の縦横それぞれの半分を境目にして、
-    ///   カーソルが 左上 → 右下隅 ／ 左下 → 右上隅 ／ 右上 → 左下隅 ／ 右下 → 左上隅。
-    /// こうすると、見ているあたりの盤面が枠で隠れることが無い。
+    /// 帯は**盤面の真下に固定**で、大きさも一定（**横幅は盤面と同じ**・高さは1行）。
+    /// カーソルでも他のUIでも動かない。盤面いっぱいの幅があるので、
+    /// 一番長い「山　移動コスト 3（騎乗は通行不可）　地形防御 +2」でも切れない。
+    /// 盤上のメニュー（行動メニュー・コマンド一覧・持ち物・貨物）は UI/MenuPlacement によって
+    /// 盤面の中に収まるので、帯と重なることはない（2026-08-17 作者指示）。
     ///
-    /// 経緯: 2026-08-15 は盤面の真下の帯 → 2026-08-16 にカーソル追従（枠が付いてくる）
-    /// → 2026-08-17 に「隅に固定して対角へ切り替わる」形へ。
+    /// 経緯: 2026-08-15 は盤面の真下の帯 → 08-16 カーソル追従 → 08-17 盤上の4隅
+    /// → 位置が入れ替わりすぎるという作者の指摘で帯へ戻した。
     /// </summary>
     void OnGUI()
     {
@@ -415,46 +426,38 @@ public class GridManager : MonoBehaviour
         Vector3 world = cam.ScreenToWorldPoint(mousePos);
         if (!TryWorldToCell(world, out Vector2Int cell)) return;
 
-        TileData tile = GetTile(cell);
-        var line1 = new GUIContent(BuildTerrainInfo(tile));
-        var line2 = new GUIContent(BuildTerrainDetail(tile, cell));
-
-        var lineStyle = new GUIStyle(GUI.skin.label)
-        {
-            alignment = TextAnchor.MiddleLeft,
-            fontSize = 14,
-        };
-
-        // 枠は中身にぴったり合わせる（盤上に浮かせるので、余った空き枠が盤面を隠さないように）
-        float textWidth = Mathf.Max(lineStyle.CalcSize(line1).x, lineStyle.CalcSize(line2).x);
-        float boxWidth = textWidth + TerrainInfoPadding * 2f;
-        float boxHeight = TerrainInfoLineHeight * 2f + TerrainInfoPadding * 2f;
-
-        // スクリーン座標（左下原点）→ GUI 座標（左上原点。Y が小さいほど画面の上）
-        var cursor = new Vector2(mousePos.x, Screen.height - mousePos.y);
-
-        // カーソルのいる四分円と**対角**の隅へ。
-        // 左半分にいる → 右側の隅／上半分にいる → 下側の隅（縦横それぞれ独立に決まる）
         Rect board = GetBoardScreenRect();
-        bool cursorOnLeft = cursor.x < board.center.x;
-        bool cursorOnUpper = cursor.y < board.center.y;
+        if (board.width <= 0f) return;
 
-        float x = cursorOnLeft ? board.xMax - boxWidth - TerrainInfoInset : board.x + TerrainInfoInset;
-        float y = cursorOnUpper ? board.yMax - boxHeight - TerrainInfoInset : board.y + TerrainInfoInset;
+        float boxWidth = board.width; // 盤面と同じ横幅（2026-08-17 作者指示）
+        float boxHeight = TerrainInfoLineHeight + TerrainInfoPadding * 2f;
+        float boxY = Mathf.Min(board.yMax + TerrainInfoGap, Mathf.Max(0f, Screen.height - boxHeight));
 
-        // 盤面が画面より大きいときでも枠が画面から出ないように最後に押し込む
-        x = Mathf.Clamp(x, 0f, Mathf.Max(0f, Screen.width - boxWidth));
-        y = Mathf.Clamp(y, 0f, Mathf.Max(0f, Screen.height - boxHeight));
-
-        var rect = new Rect(x, y, boxWidth, boxHeight);
-        TerrainInfoRect = rect; // 戦闘予測パネルがここを避ける
+        var rect = new Rect(board.x, boxY, boxWidth, boxHeight);
+        TerrainInfoRect = rect;
         GUI.Box(rect, GUIContent.none);
 
-        float lineX = rect.x + TerrainInfoPadding;
-        float lineY = rect.y + TerrainInfoPadding;
-        GUI.Label(new Rect(lineX, lineY, textWidth, TerrainInfoLineHeight), line1, lineStyle);
-        GUI.Label(new Rect(lineX, lineY + TerrainInfoLineHeight, textWidth, TerrainInfoLineHeight),
-                  line2, lineStyle);
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleLeft,
+            fontSize = TerrainInfoFontSize,
+        };
+        float innerX = rect.x + TerrainInfoPadding;
+        float innerY = rect.y + TerrainInfoPadding;
+        float innerWidth = boxWidth - TerrainInfoPadding * 2f;
+        float textWidth = Mathf.Max(0f, innerWidth - TerrainInfoCoordWidth);
+
+        // 盤面と同じ幅があるので普通は切れないが、ウィンドウが極端に小さいときの保険として
+        // 入りきらない説明は「…」で丸める（半角1文字ぶん＝文字の大きさの半分で数える）
+        int limit = Mathf.Max(1, Mathf.FloorToInt(textWidth / (TerrainInfoFontSize * 0.5f)));
+        string info = UnitInfoLines.Truncate(BuildTerrainInfo(GetTile(cell)), limit);
+
+        // 地形の説明は左詰め、座標は帯の右端に右詰め（2026-08-17 の作者指示）
+        GUI.Label(new Rect(innerX, innerY, textWidth, TerrainInfoLineHeight), info, style);
+
+        var coordStyle = new GUIStyle(style) { alignment = TextAnchor.MiddleRight };
+        GUI.Label(new Rect(innerX, innerY, innerWidth, TerrainInfoLineHeight),
+                  $"({cell.x},{cell.y})", coordStyle);
     }
 
     /// <summary>
@@ -491,8 +494,9 @@ public class GridManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 地形情報の1行目：地形名と移動コスト（騎乗との差があれば括弧で併記。Phase 15）。
-    /// 地形防御は 2026-08-17 の作者指示で2行目（BuildTerrainDetail）へ移した。
+    /// 帯に出す地形情報を1行で作る（Phase 15 の形に戻したもの）。
+    /// 地形名・移動コスト（騎乗との差があれば括弧で併記）・地形防御。
+    /// 誰も立てない壁は地形防御に意味が無いので出さない。座標は出さない（2026-08-17 作者指示）。
     /// </summary>
     private static string BuildTerrainInfo(TileData tile)
     {
@@ -500,7 +504,9 @@ public class GridManager : MonoBehaviour
 
         if (!tile.IsWalkable)
         {
-            return tile.CanFlyOver ? $"{name}　通行不可（飛行は可）" : $"{name}　通行不可";
+            return tile.CanFlyOver
+                ? $"{name}　通行不可（飛行は可）　地形防御 +{tile.DefenseBonus}"
+                : $"{name}　通行不可";
         }
 
         // 騎乗ユニットだけ通れない・コストが違う地形は、その差も表示する
@@ -512,20 +518,7 @@ public class GridManager : MonoBehaviour
         else
             cost = $"移動コスト {tile.MoveCost}";
 
-        return $"{name}　{cost}";
-    }
-
-    /// <summary>
-    /// 地形情報の2行目：地形防御と座標（2026-08-17 作者指示で1行目から分けた）。
-    /// 飛行でも越えられない壁は誰も立てないので地形防御に意味が無く、座標だけにする
-    /// （1行目でも「通行不可」としか出さないのと同じ考え方）。
-    /// 座標はカーソルが指しているマスのもの＝ユニットに合わせればそのユニットの座標になる。
-    /// </summary>
-    private static string BuildTerrainDetail(TileData tile, Vector2Int cell)
-    {
-        if (!tile.IsWalkable && !tile.CanFlyOver) return $"({cell.x},{cell.y})";
-
-        return $"地形防御 +{tile.DefenseBonus}　({cell.x},{cell.y})";
+        return $"{name}　{cost}　地形防御 +{tile.DefenseBonus}";
     }
 
     // ===== 仮素材スプライトの生成 =====

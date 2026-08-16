@@ -204,13 +204,15 @@ public class ItemListMenu : MonoBehaviour
         float listWidth = buttonWidth + padding * 2f;
         float listHeight = entries.Count * buttonHeight + padding * 2f;
 
-        // 右隣に置く。画面右端にはみ出すなら左隣へ回り込む
-        float rightListX = right.x;
-        float leftListX = center.x - (right.x - center.x) - listWidth;
-        float listX = (rightListX + listWidth > Screen.width) ? leftListX : rightListX;
-        // GUI座標は左上原点・Y下向きなので、スクリーンYを反転。縦はユニットの中心に合わせる
-        float listY = Screen.height - center.y - listHeight * 0.5f;
-        listY = Mathf.Clamp(listY, 0f, Mathf.Max(0f, Screen.height - listHeight));
+        // 右隣に置く。盤面の右端にはみ出すなら左隣へ回り込み、盤面の外へは出さない
+        // （2026-08-17。置き場所の計算は UI/MenuPlacement に集約）
+        Rect placement = MenuPlacement.Beside(center, right, listWidth, listHeight, out float leftListX);
+        float listX = placement.x;
+        float listY = placement.y;
+
+        // 逃がすときの反対側。押し込みで座標がずれることがあるので、
+        // 「ユニットのどちら側に置かれたか」で判断する（値の一致では見ない）
+        float altListX = (listX >= center.x) ? leftListX : right.x;
 
         // 他のパネルと重なるなら逃がす（2026-08-09・武器選択のときだけ）。
         // 【重要】逃がす位置は「開いた最初の1回」だけ決めて、以後は動かさない（2026-08-09 バグ修正）。
@@ -222,7 +224,7 @@ public class ItemListMenu : MonoBehaviour
         var baseRect = new Rect(listX, listY, listWidth, listHeight);
         if (!placementResolved)
         {
-            Rect placed = AvoidPanels(baseRect, listX == rightListX ? leftListX : rightListX);
+            Rect placed = AvoidPanels(baseRect, altListX);
             placementOffset = new Vector2(placed.x - baseRect.x, placed.y - baseRect.y);
 
             // 位置を確定するのは最初の Repaint まで待つ。各パネルの矩形は「描いたときに控えた値」なので、
@@ -276,11 +278,13 @@ public class ItemListMenu : MonoBehaviour
             float rightX = listRect.xMax + columnGap;
             float leftX = listRect.x - columnGap - aWidth;
 
+            Rect bounds = MenuPlacement.Bounds;
+
             float aX = rightX;
-            if (aX + aWidth > Screen.width) aX = leftX; // 右がはみ出すなら左へ
+            if (aX + aWidth > bounds.xMax) aX = leftX; // 右がはみ出すなら左へ
 
             float aY = Mathf.Clamp(listRect.y + padding + actionRowIndex * buttonHeight,
-                                   0f, Mathf.Max(0f, Screen.height - aHeight));
+                                   bounds.y, Mathf.Max(bounds.y, bounds.yMax - aHeight));
             var actionRect = AvoidPanels(new Rect(aX, aY, aWidth, aHeight), aX == rightX ? leftX : rightX);
 
             GUI.Box(actionRect, GUIContent.none);
@@ -313,9 +317,10 @@ public class ItemListMenu : MonoBehaviour
         Rect[] panels = avoidRects();
         if (panels == null || !OverlapsAny(rect, panels)) return rect;
 
-        // 反対側の隣へ（画面内に収まる場合だけ試す）
+        // 反対側の隣へ（盤面内に収まる場合だけ試す）
+        Rect bounds = MenuPlacement.Bounds;
         var moved = new Rect(altX, rect.y, rect.width, rect.height);
-        if (moved.x >= 0f && moved.xMax <= Screen.width && !OverlapsAny(moved, panels)) return moved;
+        if (moved.x >= bounds.x && moved.xMax <= bounds.xMax && !OverlapsAny(moved, panels)) return moved;
 
         return ShiftVertically(rect, panels);
     }
@@ -335,6 +340,8 @@ public class ItemListMenu : MonoBehaviour
     /// </summary>
     private Rect ShiftVertically(Rect rect, Rect[] panels)
     {
+        Rect bounds = MenuPlacement.Bounds;
+
         for (int pass = 0; pass <= panels.Length; pass++)
         {
             bool moved = false;
@@ -344,8 +351,8 @@ public class ItemListMenu : MonoBehaviour
 
                 float above = p.yMin - rect.height - columnGap;
                 float below = p.yMax + columnGap;
-                bool canGoAbove = above >= 0f;
-                bool canGoBelow = below + rect.height <= Screen.height;
+                bool canGoAbove = above >= bounds.y;
+                bool canGoBelow = below + rect.height <= bounds.yMax;
 
                 if (canGoAbove && (!canGoBelow || rect.center.y <= p.center.y)) rect.y = above;
                 else if (canGoBelow) rect.y = below;
@@ -372,15 +379,11 @@ public class ItemListMenu : MonoBehaviour
         int rows = Mathf.Max(entries.Count, Count(partnerEntries));
         float colHeight = headerLines * headerLineHeight + rows * buttonHeight + padding * 2f;
 
+        // 右にはみ出すなら2列まとめて左隣へ。盤面の外へは出さない（2026-08-17）
         float totalWidth = colWidth * 2f + columnGap;
-        float x = right.x;
-        if (x + totalWidth > Screen.width)
-            x = center.x - (right.x - center.x) - totalWidth; // 右にはみ出すなら2列まとめて左隣へ
-        x = Mathf.Max(0f, x);
-
-        // GUI座標は左上原点・Y下向きなので、スクリーンYを反転。縦はユニットの中心に合わせる
-        float y = Screen.height - center.y - colHeight * 0.5f;
-        y = Mathf.Clamp(y, 0f, Mathf.Max(0f, Screen.height - colHeight));
+        Rect placement = MenuPlacement.Beside(center, right, totalWidth, colHeight, out _);
+        float x = placement.x;
+        float y = placement.y;
 
         float partnerX = x + colWidth + columnGap;
         Vector2 mouse = Event.current.mousePosition;

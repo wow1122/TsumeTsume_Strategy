@@ -66,16 +66,11 @@ public class CargoListMenu : MonoBehaviour
         float menuWidth = buttonWidth + padding * 2f;
         float menuHeight = cargoes.Count * buttonHeight + padding * 2f;
 
-        // 右隣に置く。画面右端にはみ出すなら左隣へ回り込む
-        float menuX = right.x;
-        if (menuX + menuWidth > Screen.width)
-            menuX = center.x - (right.x - center.x) - menuWidth;
-
-        // GUI座標は左上原点・Y下向きなので、スクリーンYを反転。縦はユニットの中心に合わせる
-        float menuY = Screen.height - center.y - menuHeight * 0.5f;
-        menuY = Mathf.Clamp(menuY, 0f, Mathf.Max(0f, Screen.height - menuHeight));
-
-        var menuRect = new Rect(menuX, menuY, menuWidth, menuHeight);
+        // 右隣に置く。盤面の右端にはみ出すなら左隣へ回り込み、盤面の外へは出さない
+        // （2026-08-17。置き場所の計算は UI/MenuPlacement に集約）
+        var menuRect = MenuPlacement.Beside(center, right, menuWidth, menuHeight, out _);
+        float menuX = menuRect.x;
+        float menuY = menuRect.y;
         GUI.Box(menuRect, GUIContent.none);
 
         var style = new GUIStyle(GUI.skin.button) { fontSize = fontSize };
