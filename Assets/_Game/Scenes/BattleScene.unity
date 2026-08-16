@@ -161,6 +161,8 @@ MonoBehaviour:
   targetChoiceColor: {r: 1, g: 0.45, b: 0.45, a: 1}
   attackRangeColor: {r: 1, g: 0.7, b: 0.5, a: 1}
   moveRangeColor: {r: 0.5, g: 0.8, b: 1, a: 1}
+  healRangeColor: {r: 0.5, g: 0.9, b: 0.5, a: 1}
+  supplyZoneColor: {r: 0.78, g: 0.66, b: 1, a: 1}
 --- !u!4 &1854418882
 Transform:
   m_ObjectHideFlags: 0
