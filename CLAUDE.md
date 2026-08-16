@@ -300,7 +300,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - 地形の適用は BattleSetup.Start → GridManager.ApplyTerrain の流れ（シーン参照の追加は不要）
 - 表示は地形色×市松の明暗（GridManager.checkerDarken）。ハイライトは Color.Lerp で
   地形色に混ぜる（highlightBlend）ので地形とハイライトが同時に判別できる。
-  カーソル下マスの地形名/コスト/防御を、盤上の4隅のどれかに2行表示（IMGUI。※2026-08-17 の形）
+  カーソル下マスの地形名/コスト/防御と座標を、盤面の真下の帯に1行表示（IMGUI。※2026-08-17 の形）
 - 移動範囲計算はダイクストラ法（コスト差のある地形で最短経路を保証）。
   マス進入コストは MovementCalculator.GetMoveCost(unit, tile) に分離
   （Phase 14 で「飛翔中は常に1」を差し込む拡張点）
@@ -593,7 +593,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 **パネルの外へ移した表示**
 
-- **座標** … **地形情報の枠の2行目**（`GridManager.OnGUI`）。枠はカーソルが指しているマスの
+- **座標** … **地形情報の帯の右端に右詰め**（`GridManager.OnGUI`）。帯はカーソルが指しているマスの
   情報を出す場所なので、**そのマスの座標**を出す＝ユニットにカーソルを合わせればそのユニットの座標になる
 - **敵AIの性格** … 遊ぶ人には要らないので**専用パネル**へ（`UI/AIDebugPanel`）。
   ユニット情報パネルが出しているユニット（`UnitInfoPanel.DisplayedUnit`）が敵のときだけ、
@@ -1183,9 +1183,12 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - **画面レイアウト**: 盤面は画面の**左寄り**（既定で横 58%・下 10% を空ける）に収める。
   右側はコマンド一覧・状況/設定・戦闘予測・ユニット情報（とその下の敵AIデバッグ表示）の置き場。
   **左上の常駐表示（ターン数・フェイズ）は撤去**
-  ※**地形情報の置き場所は 2回変わった**（作者指示）: 2026-08-15「盤面の真下の帯」→ 08-16「盤上の
-  カーソル追従」→ **08-17「盤上の4隅のどれかに固定し、カーソルのいる四分円の対角へ切り替わる」**。
-  下に空けた 10% は今は単なる余白なので、盤面を大きくしたければ `boardBottomArea` を下げてよい
+  ※**地形情報は 2026-08-17 に「盤面の真下の帯」へ戻した**（作者指示。
+  帯 → カーソル追従 → 盤上の4隅 と動かしたが「位置が入れ替わりすぎて注意力を奪う」ため）。
+  **横幅は盤面と同じ・高さは1行で固定**。下に空けた 10% がその置き場なので、
+  `boardBottomArea` を下げすぎると帯が画面からはみ出す（帯の高さは36px）
+  ※**盤上のメニューは盤面の外に出さない**（`UI/MenuPlacement`）＝帯や右側のパネルの領域に
+  メニューがはみ出さない。これで帯とメニューが重ならない
   ※横の割合は 2026-08-16 の修正案で 65%→58%（盤面をさらに左へ寄せる作者の指示）。
   高さ側で大きさが決まっているステージでは盤面は縮まず位置だけ動く
 - 撤去にともなう既知の副作用: **敵フェイズ中は画面に状態表示が出ない**（操作不可なのでコマンド一覧も開けない）。
@@ -1240,11 +1243,11 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   画面サイズが変わったらUpdateで合わせ直す〕・座標変換・
   多層ハイライト※HighlightKindの優先順は Selection > TargetChoice > AttackRange > HealRange >
   MoveRange > SupplyZone〔補給圏・薄紫・フェーズ32。一番下なので他を隠さない〕・
-  地形適用ApplyTerrain・地形情報を**盤上の4隅のどれかに2行で表示**※2026-08-17
-  〔1行目=地形名+移動コスト（騎乗差分も）BuildTerrainInfo／2行目=地形防御+座標BuildTerrainDetail・
-  置く隅はカーソルのいる四分円の**対角**（盤面の縦横の半分が境目。GetBoardScreenRect.center で判定）・
-  枠はCalcSizeで中身ぴったり・飛行でも越えられない壁は2行目が座標だけ・
-  描いた矩形の公開TerrainInfoRect※戦闘予測パネルがここを避ける〕・
+  地形適用ApplyTerrain・地形情報を**盤面の真下の帯に1行で表示**※2026-08-17
+  〔文字はBuildTerrainInfo（地形名+移動コスト〔騎乗差分も〕+地形防御）を左詰め・座標は右端に右詰め・
+  **横幅は盤面と同じ・高さは1行で固定**〔盤面の左下から動かない〕・
+  極端に狭いウィンドウ用の保険としてUnitInfoLines.Truncateで「…」に丸める・
+  描いた矩形の公開TerrainInfoRect〕・
   画面上の位置を返す窓口GetBoardScreenRect／GetCellsScreenRect(min,max)※後者は戦闘予測が
   「自分＋選べる相手が乗っている範囲」を測るのに使う。2026-08-17),
   TileData(1マスの論理データ。IsWalkable/CanFlyOver/MoveCost/DefenseBonus に加え
@@ -1254,12 +1257,21 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   飛翔中はコスト1で、自分に対して対空できる敵※CombatRules.IsAntiAirCapable(blocker, unit)のみすり抜け不可
   〔2026-08-08 から相手依存＝竜殺しの剣を持つ敵の上は天馬兵なら通れるが竜騎兵は通れない〕・
   通行判定はCanTraverseに集約・目標マス群への距離マップGetDistanceMap※敵AIの接近用)
-- UI/ … ActionMenu(IMGUI行動メニュー。Entryリスト駆動・BattleControllerが自動生成),
-  CargoListMenu(貨物リスト選択。名前+HP表示・行ホバーの通知onHover※ユニット情報パネル用・BattleControllerが自動生成),
+- UI/ … MenuPlacement(盤上のユニットの隣に出るメニューの置き場所を決める共通処理※2026-08-17。
+  MonoBehaviourではない静的クラス。Bounds＝盤面の画面矩形〔GridManagerを一度だけ探して覚える・
+  RuntimeInitializeOnLoadMethodで入り直しのたびに戻す〕・Beside(center,right,w,h,out altX)＝
+  右隣に置き右端をはみ出すなら左隣へ回り込んでBoundsへ押し込む・Clamp(rect)。
+  **これらのメニューを盤面の外に出さないための窓口**＝以前は画面いっぱいが基準で、
+  盤面の下側のマスで開くと地形情報の帯に重なっていた),
+  ActionMenu(IMGUI行動メニュー。Entryリスト駆動・置き場所はMenuPlacement.Beside・BattleControllerが自動生成),
+  CargoListMenu(貨物リスト選択。名前+HP表示・行ホバーの通知onHover※ユニット情報パネル用・
+  置き場所はMenuPlacement.Beside・BattleControllerが自動生成),
   ItemListMenu(持ち物リスト＋行動サブメニューの2列同時表示・選んだ品の性能を画面右下に固定表示
   ※ホバー詳細には有効・特効の行も出る（2026-08-06）・ボタン幅は210px※2026-08-08に170から拡げた〔特効武器は名前が長い〕・
   enabled で押せない行を灰色無効化・行ホバーの通知onHover※2026-08-09〔行番号を渡す。武器選択で
   「その武器で狙える敵」の赤表示の切替に使う。CargoListMenuのonHoverと同じ作法〕・
+  置き場所はMenuPlacement※2026-08-17〔列1・交換の2列はBeside、行動サブメニューと
+  AvoidPanels/ShiftVerticallyの上下左右の限界はBounds＝どれも盤面の外へ出ない〕・
   避ける矩形avoidRects※2026-08-09〔Show/SetActionsにSystem.Func<Rect[]>で渡す。
   AvoidPanelsが列1と行動サブメニューの両方を「反対の隣→縦にずらす」の順で逃がす
   （ShiftVerticallyは上下の余裕がある方・近い方へ）。**位置を決めるのは開いた最初の1回だけ**
@@ -1526,6 +1538,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 **盤上の4隅のどれかに固定してカーソルのいる四分円の対角へ切り替わる**形に
 （左上にいれば右下隅、右下にいれば左上隅…）。あわせて**表示を2行に**分け、
 **地形防御と座標を2行目**へ移した。
+→ ただし作者の Play 確認で「位置が入れ替わりすぎて注意力を奪う」となり、**同日中に帯へ戻した**
+（下の段落）。
 
 同日さらに**戦闘予測パネルを作り替え**（作者指示）: **計算式の表示を廃止**して代わりに
 **「攻撃力」（力/魔力＋武器威力）を与ダメージの下・「防御力」（守備/魔防＋地形防御）を三すくみの下**に出す
@@ -1534,6 +1548,13 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 パネルは**幅220pxの縦長**に縮小し（行は折り返す）、置き場所は**盤上の4隅のうち
 「攻撃するユニット自身と選べる相手が乗っている範囲」に一番重ならない隅**へ
 （狙う相手がパネルで隠れないように。地形情報の枠も避ける）。
+
+最後に**地形情報を盤面の真下の帯へ戻した**（作者指示。位置が動くこと自体をやめる判断）。
+**横幅は盤面と同じ・高さは1行で固定**、左詰めで 地形名・移動コスト・地形防御、**右端に座標**。
+帯とメニューが重なる問題は帯を逃がすのではなく、**盤上のメニュー（行動メニュー／コマンド一覧・
+持ち物／交換／武器選択・貨物リスト）を盤面の外へ出さない**ことで解決した
+＝新規 `UI/MenuPlacement.cs` に置き場所の計算を集約し、回り込み・押し込みの基準を
+画面いっぱいから**盤面の矩形**に変えた（画面の隅に固定で出すパネルは対象外）。
 
 **現在アクティブなロードマップは無い。次は作者と次期ロードマップの優先度を相談してから着手する**
 （下の「持ち越し候補」から作者が選ぶ。フェーズ着手は明示の合図をもらってから）。
