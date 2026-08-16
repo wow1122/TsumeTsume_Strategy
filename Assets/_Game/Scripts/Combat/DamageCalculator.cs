@@ -32,8 +32,20 @@ public struct DamageBreakdown
     /// <summary>有効・特効を反映した武器威力（等倍なら武器の威力そのまま）。</summary>
     public int EffectiveMight => might * MightMultiplier;
 
+    /// <summary>
+    /// 攻撃側の合計＝「攻撃力」（力または魔力 ＋ 武器威力×特効倍率）。**三すくみ補正は含まない**。
+    /// 戦闘予測パネルが1項目として出す（2026-08-17 作者指示）。
+    /// </summary>
+    public int AttackTotal => attackPower + EffectiveMight;
+
+    /// <summary>
+    /// 防御側の合計＝「防御力」（守備または魔防 ＋ 地形防御）。**三すくみ補正は含まない**。
+    /// 戦闘予測パネルが1項目として出す（2026-08-17 作者指示）。
+    /// </summary>
+    public int DefenseTotal => guardPower + terrainDefense;
+
     /// <summary>倍率をかける前のダメージ（0未満にはならない）。</summary>
-    public int BaseTotal => Mathf.Max(0, attackPower + EffectiveMight + triangle - (guardPower + terrainDefense));
+    public int BaseTotal => Mathf.Max(0, AttackTotal + triangle - DefenseTotal);
 
     /// <summary>最終ダメージ（倍率をかけたあと。端数は切り捨て）。</summary>
     public int Total => Mathf.FloorToInt(BaseTotal * Multiplier);
@@ -44,16 +56,27 @@ public struct DamageBreakdown
     /// </summary>
     public string ToLogString()
     {
+        return $"{ToFormulaString()} = {Total}";
+    }
+
+    /// <summary>
+    /// 合計を含まない計算式だけの文字列。例：「力6＋威力5＋相性+2 − (守備2＋地形0)」
+    /// 倍率がかかっているときは「… = 5 ×2倍」まで見せる。
+    /// ※2026-08-16 は戦闘予測パネルもこれを出していたが、翌日の作者指示で式の表示は廃止され
+    ///   （代わりに「攻撃力」「防御力」の項目を出す）、いまは Console のログ専用。
+    /// </summary>
+    private string ToFormulaString()
+    {
         string atkName = isMagic ? "魔力" : "力";
         string grdName = isMagic ? "魔防" : "守備";
         string triText = triangle == 0 ? "" : $"＋相性{(triangle > 0 ? "+" : "")}{triangle}";
         // 有効・特効が乗っているときは「威力5×3」と、掛け算の形をそのまま見せる
-        // （パネルの幅が430pxしかないので「＝15」までは書かない。合計は行の末尾に出る）
+        // （行の幅に限りがあるので「＝15」までは書かない。合計は別に出る）
         string mightText = MightMultiplier == 1 ? $"威力{might}" : $"威力{might}×{MightMultiplier}";
         string basePart = $"{atkName}{attackPower}＋{mightText}{triText} − ({grdName}{guardPower}＋地形{terrainDefense})";
 
-        if (Mathf.Approximately(Multiplier, 1f)) return $"{basePart} = {Total}";
-        return $"{basePart} = {BaseTotal} ×{Multiplier:0.#}倍 = {Total}";
+        if (Mathf.Approximately(Multiplier, 1f)) return basePart;
+        return $"{basePart} = {BaseTotal} ×{Multiplier:0.#}倍";
     }
 }
 

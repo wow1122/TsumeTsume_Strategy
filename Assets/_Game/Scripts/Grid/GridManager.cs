@@ -42,9 +42,12 @@ public class GridManager : MonoBehaviour
 
     [Tooltip("盤面を映す画面の横の割合。残りの右側はコマンド一覧・各種パネルの置き場になる（2026-08-15）")]
     [Range(0.3f, 1f)]
-    public float boardAreaWidth = 0.65f;
+    // 2026-08-16：作者の指示で盤面をさらに左へ寄せるため 0.65 → 0.58。
+    // 高さ側で大きさが決まっているステージでは盤面は縮まず、位置だけ左へ動く
+    public float boardAreaWidth = 0.58f;
 
-    [Tooltip("盤面の下に空ける画面の縦の割合。ここに地形情報の帯を出す（2026-08-15）")]
+    [Tooltip("盤面の下に空ける画面の縦の割合。2026-08-16 に地形情報がカーソル追従になったので、" +
+             "いまは単なる余白。盤面を大きくしたければ 0 に近づけてよい")]
     [Range(0f, 0.3f)]
     public float boardBottomArea = 0.10f;
 
@@ -123,8 +126,8 @@ public class GridManager : MonoBehaviour
     /// 盤面サイズがステージごとに変わっても、シーンのカメラを手で直す必要がない（Phase 15）。
     ///
     /// 2026-08-15：画面いっぱいではなく、左 boardAreaWidth ぶん・下から boardBottomArea を除いた
-    /// 矩形に収めるようにした。空いた右側はコマンド一覧・戦闘予測などのパネル置き場、
-    /// 空いた下側は地形情報の帯（OnGUI）になる。
+    /// 矩形に収めるようにした。空いた右側はコマンド一覧・戦闘予測などのパネル置き場。
+    /// 空いた下側はもともと地形情報の帯だったが、2026-08-16 にカーソル追従へ変えたので今は余白。
     /// カメラの描画範囲（cam.rect）は変えない＝領域外が塗られずゴミが残るのを避けるため、
     /// 表示倍率（orthographicSize）と位置だけで寄せている。
     /// </summary>
@@ -369,10 +372,40 @@ public class GridManager : MonoBehaviour
         return Color.Lerp(baseColor, highlightColor, highlightBlend);
     }
 
-    // ===== カーソル下のマスの地形情報（盤面のすぐ下に1行表示） =====
+    // ===== カーソル下のマスの地形情報と座標（盤上の4隅・2行。2026-08-17 作者仕様） =====
 
+    /// <summary>地形情報の枠の内側の余白。</summary>
+    private const float TerrainInfoPadding = 8f;
+
+    /// <summary>地形情報の枠の1行の高さ。</summary>
+    private const float TerrainInfoLineHeight = 20f;
+
+    /// <summary>地形情報の枠と盤面の端のあいだに空ける距離（隅に置くときの寄せ具合）。</summary>
+    private const float TerrainInfoInset = 8f;
+
+    /// <summary>
+    /// 直近に描いた地形情報の枠（GUI 座標。描かなかったフレームは Rect.zero）。
+    /// 戦闘予測パネルがこの枠を避けるために公開している
+    /// （2026-08-17。BattleForecast.PanelRect と同じ「描いた矩形を公開する」作法）。
+    /// </summary>
+    public Rect TerrainInfoRect { get; private set; }
+
+    /// <summary>
+    /// カーソルが指しているマスの地形を、**盤上の4隅のどれか**に2行で出す（2026-08-17 作者仕様）。
+    ///  1行目 … 地形名と移動コスト（騎乗との差があれば括弧で併記）
+    ///  2行目 … 地形防御と座標
+    ///
+    /// 置く隅は**カーソルがいる四分円の対角**。盤面の縦横それぞれの半分を境目にして、
+    ///   カーソルが 左上 → 右下隅 ／ 左下 → 右上隅 ／ 右上 → 左下隅 ／ 右下 → 左上隅。
+    /// こうすると、見ているあたりの盤面が枠で隠れることが無い。
+    ///
+    /// 経緯: 2026-08-15 は盤面の真下の帯 → 2026-08-16 にカーソル追従（枠が付いてくる）
+    /// → 2026-08-17 に「隅に固定して対角へ切り替わる」形へ。
+    /// </summary>
     void OnGUI()
     {
+        TerrainInfoRect = new Rect(); // 描かなかったときは「避ける相手は無い」扱いに戻す
+
         if (tiles == null || Mouse.current == null) return;
 
         Camera cam = Camera.main;
@@ -382,30 +415,71 @@ public class GridManager : MonoBehaviour
         Vector3 world = cam.ScreenToWorldPoint(mousePos);
         if (!TryWorldToCell(world, out Vector2Int cell)) return;
 
-        string text = BuildTerrainInfo(GetTile(cell));
+        TileData tile = GetTile(cell);
+        var line1 = new GUIContent(BuildTerrainInfo(tile));
+        var line2 = new GUIContent(BuildTerrainDetail(tile, cell));
 
-        var style = new GUIStyle(GUI.skin.box)
+        var lineStyle = new GUIStyle(GUI.skin.label)
         {
             alignment = TextAnchor.MiddleLeft,
             fontSize = 14,
-            padding = new RectOffset(8, 8, 2, 2),
         };
 
-        // 盤面の左下に揃えて、そのすぐ下に置く（FitCamera の割合を変えても自動で付いてくる）
-        Rect board = GetBoardScreenRect(cam);
-        GUI.Box(new Rect(board.x, board.yMax + 8f, Mathf.Max(360f, board.width), 26f), text, style);
+        // 枠は中身にぴったり合わせる（盤上に浮かせるので、余った空き枠が盤面を隠さないように）
+        float textWidth = Mathf.Max(lineStyle.CalcSize(line1).x, lineStyle.CalcSize(line2).x);
+        float boxWidth = textWidth + TerrainInfoPadding * 2f;
+        float boxHeight = TerrainInfoLineHeight * 2f + TerrainInfoPadding * 2f;
+
+        // スクリーン座標（左下原点）→ GUI 座標（左上原点。Y が小さいほど画面の上）
+        var cursor = new Vector2(mousePos.x, Screen.height - mousePos.y);
+
+        // カーソルのいる四分円と**対角**の隅へ。
+        // 左半分にいる → 右側の隅／上半分にいる → 下側の隅（縦横それぞれ独立に決まる）
+        Rect board = GetBoardScreenRect();
+        bool cursorOnLeft = cursor.x < board.center.x;
+        bool cursorOnUpper = cursor.y < board.center.y;
+
+        float x = cursorOnLeft ? board.xMax - boxWidth - TerrainInfoInset : board.x + TerrainInfoInset;
+        float y = cursorOnUpper ? board.yMax - boxHeight - TerrainInfoInset : board.y + TerrainInfoInset;
+
+        // 盤面が画面より大きいときでも枠が画面から出ないように最後に押し込む
+        x = Mathf.Clamp(x, 0f, Mathf.Max(0f, Screen.width - boxWidth));
+        y = Mathf.Clamp(y, 0f, Mathf.Max(0f, Screen.height - boxHeight));
+
+        var rect = new Rect(x, y, boxWidth, boxHeight);
+        TerrainInfoRect = rect; // 戦闘予測パネルがここを避ける
+        GUI.Box(rect, GUIContent.none);
+
+        float lineX = rect.x + TerrainInfoPadding;
+        float lineY = rect.y + TerrainInfoPadding;
+        GUI.Label(new Rect(lineX, lineY, textWidth, TerrainInfoLineHeight), line1, lineStyle);
+        GUI.Label(new Rect(lineX, lineY + TerrainInfoLineHeight, textWidth, TerrainInfoLineHeight),
+                  line2, lineStyle);
     }
 
     /// <summary>
     /// 盤面が画面のどこに映っているかを GUI 座標（左上原点・Y は下向き）で返す。
-    /// 地形情報の帯を「盤面の真下」に置くために使う（2026-08-15）。
+    /// 地形情報の枠を盤上の4隅に置く（＋カーソルがどの四分円にいるかを測る）のと、
+    /// 戦闘予測パネルを盤面の隅に置くのに使う（BattleForecast が読む）。
+    /// カメラが無いときは Rect.zero（呼び出し側は width で判定する）。
     /// </summary>
-    private Rect GetBoardScreenRect(Camera cam)
+    public Rect GetBoardScreenRect() =>
+        GetCellsScreenRect(new Vector2Int(0, 0), new Vector2Int(width - 1, height - 1));
+
+    /// <summary>
+    /// min〜max のマスの範囲（両端を含む）が画面のどこに映っているかを GUI 座標で返す。
+    /// 戦闘予測パネルが「攻撃するユニットと選べる相手が乗っている範囲」を避けるのに使う
+    /// （2026-08-17）。カメラが無いときは Rect.zero。
+    /// </summary>
+    public Rect GetCellsScreenRect(Vector2Int min, Vector2Int max)
     {
+        Camera cam = Camera.main;
+        if (cam == null) return new Rect();
+
         // 左下マスの左下角と、右上マスの右上角をスクリーン座標へ
         float half = cellSize * 0.5f;
-        Vector3 bottomLeft = CellToWorld(new Vector2Int(0, 0)) - new Vector3(half, half, 0f);
-        Vector3 topRight = CellToWorld(new Vector2Int(width - 1, height - 1)) + new Vector3(half, half, 0f);
+        Vector3 bottomLeft = CellToWorld(min) - new Vector3(half, half, 0f);
+        Vector3 topRight = CellToWorld(max) + new Vector3(half, half, 0f);
 
         Vector3 a = cam.WorldToScreenPoint(bottomLeft);
         Vector3 b = cam.WorldToScreenPoint(topRight);
@@ -416,16 +490,17 @@ public class GridManager : MonoBehaviour
         return new Rect(a.x, top, b.x - a.x, bottom - top);
     }
 
-    /// <summary>カーソル下マスの地形情報1行分の文字列を作る（騎乗との差があれば括弧で併記。Phase 15）。</summary>
+    /// <summary>
+    /// 地形情報の1行目：地形名と移動コスト（騎乗との差があれば括弧で併記。Phase 15）。
+    /// 地形防御は 2026-08-17 の作者指示で2行目（BuildTerrainDetail）へ移した。
+    /// </summary>
     private static string BuildTerrainInfo(TileData tile)
     {
         string name = tile.Terrain != null ? tile.Terrain.displayName : "平地";
 
         if (!tile.IsWalkable)
         {
-            return tile.CanFlyOver
-                ? $"{name}　通行不可（飛行は可）　地形防御 +{tile.DefenseBonus}"
-                : $"{name}　通行不可";
+            return tile.CanFlyOver ? $"{name}　通行不可（飛行は可）" : $"{name}　通行不可";
         }
 
         // 騎乗ユニットだけ通れない・コストが違う地形は、その差も表示する
@@ -437,7 +512,20 @@ public class GridManager : MonoBehaviour
         else
             cost = $"移動コスト {tile.MoveCost}";
 
-        return $"{name}　{cost}　地形防御 +{tile.DefenseBonus}";
+        return $"{name}　{cost}";
+    }
+
+    /// <summary>
+    /// 地形情報の2行目：地形防御と座標（2026-08-17 作者指示で1行目から分けた）。
+    /// 飛行でも越えられない壁は誰も立てないので地形防御に意味が無く、座標だけにする
+    /// （1行目でも「通行不可」としか出さないのと同じ考え方）。
+    /// 座標はカーソルが指しているマスのもの＝ユニットに合わせればそのユニットの座標になる。
+    /// </summary>
+    private static string BuildTerrainDetail(TileData tile, Vector2Int cell)
+    {
+        if (!tile.IsWalkable && !tile.CanFlyOver) return $"({cell.x},{cell.y})";
+
+        return $"地形防御 +{tile.DefenseBonus}　({cell.x},{cell.y})";
     }
 
     // ===== 仮素材スプライトの生成 =====

@@ -4,7 +4,7 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// 戦闘予測パネル（Phase 15・IMGUI）。攻撃の対象選択に入った瞬間から
-/// 「与えるダメージの内訳・三すくみ補正・挟撃の見込み・相手の残りHP」を画面右下に表示する。
+/// 「与えるダメージの内訳・三すくみ補正・挟撃の見込み・相手の残りHP」を盤面の下に表示する。
 /// 対象が複数いるときは最初の対象で表示を始め、別の対象にマウスを重ねるとそちらへ切り替わる
 /// （マウスが離れても最後の対象を表示し続ける。2026-07-18 作者要望 — 以前は重ねたときだけ表示）。
 /// 計算は実際の戦闘と同じ共有関数（DamageCalculator / CombatRules）を使うので、
@@ -30,20 +30,39 @@ using UnityEngine.InputSystem;
 /// 1行目に添える（BuildWeaponLine）。予測はいつも装備中の武器で組み立てるので、
 /// 内訳・三すくみ・静止撃ち・特効・挟撃・撃墜は何もしなくてもその武器の数字になる。
 ///
-/// パネルの縦積み（2026-08-09 作者合意）: 対象選択中は敵のユニット情報パネルも同時に出る。
-/// 定位置（右下）はこちらが使い、情報パネルが PanelRect を読んでこの上に積む。
+/// 置き場所（2026-08-17 作者指示）: **盤上の4隅のどれか**。
+/// 「攻撃するユニット自身と、選べる相手が乗っているマス」を囲む範囲（と地形情報の枠）に
+/// 一番重ならない隅を選ぶ＝狙う相手がパネルで隠れない。
+/// パネルは**縦長**（幅は固定・高さは中身しだい）で、長い注記の行は折り返す。
+/// ユニット情報は画面右上なので場所を取り合わない
+/// （置き場所の変遷: 2026-08-09 右下に縦積み → 08-16 ユニット情報が右上へ移り縦積み撤去 →
+/// 同日 盤面の下 → 08-17 盤上の4隅）。
+///
+/// ダメージの内訳（2026-08-17 作者指示）: **計算式は出さない**。代わりに
+/// **「攻撃力」（力/魔力＋武器威力。三すくみを含まない）**を与ダメージの下、
+/// **「防御力」（守備/魔防＋地形防御。同じく三すくみを含まない）**を三すくみの下に出す。
+/// 読み手は「攻撃力 ＋ 三すくみ − 防御力 ＝ ダメージ」と足し引きできる。
 /// </summary>
 public class BattleForecast : MonoBehaviour
 {
     [Header("見た目")]
-    [Tooltip("パネルの幅（ピクセル）。ダメージ内訳が1行で収まる幅にしてある")]
-    public float panelWidth = 430f;
-    [Tooltip("1行の高さ（ピクセル）")]
-    public float lineHeight = 24f;
+    [Tooltip("パネルの幅（ピクセル）。縦長にするため狭くしてあり、長い注記の行は折り返す")]
+    public float panelWidth = 220f;
+    [Tooltip("1行の高さ（ピクセル）。折り返した行はこれより高くなる")]
+    public float lineHeight = 20f;
     [Tooltip("パネルの枠と文字の間の余白（ピクセル）")]
-    public float padding = 10f;
+    public float padding = 8f;
     [Tooltip("文字の大きさ")]
     public int fontSize = 14;
+
+    /// <summary>パネルと盤面の端のあいだに空ける距離（隅に置くときの寄せ具合）。</summary>
+    private const float PanelInset = 8f;
+
+    /// <summary>隅の候補（左下・右下・左上・右上）。使い回して余計なゴミを作らない。</summary>
+    private readonly Rect[] cornerBuffer = new Rect[4];
+
+    /// <summary>行ごとの高さ（折り返した行があるので毎回測る）。使い回す。</summary>
+    private readonly List<float> rowHeights = new List<float>();
 
     private Unit attacker;         // 与ダメモード: 攻撃する自分側（被ダメモードでは null）
     private Unit incomingDefender; // 被ダメモード: 攻撃を受ける自分側（与ダメモードでは null）
@@ -55,7 +74,7 @@ public class BattleForecast : MonoBehaviour
 
     /// <summary>
     /// 直近に描いたパネルの矩形（GUI座標。表示していなければ Rect.zero）。
-    /// 敵のユニット情報パネルがこの上に積むため／武器の一覧がこのパネルを避けるために公開している
+    /// 武器の一覧がこのパネルを避けるために公開している
     /// （2026-08-09。ActionMenu.MenuRect と同じ「描いた矩形を公開する」作法）。
     /// </summary>
     public Rect PanelRect { get; private set; }
@@ -162,8 +181,11 @@ public class BattleForecast : MonoBehaviour
         string weaponLine = BuildWeaponLine(attacker.EquippedWeapon);
         if (weaponLine != null) lines.Add(weaponLine);
 
-        lines.Add($"与ダメージ　{main.ToLogString()}");
+        // 計算式は出さず、攻撃力を与ダメージの下・防御力を三すくみの下に出す（2026-08-17 作者指示）
+        lines.Add($"与ダメージ　{main.Total}");
+        lines.Add($"攻撃力　{main.AttackTotal}");
         lines.Add(BuildTriangleLine(main.triangle, "有利", "不利"));
+        lines.Add($"防御力　{main.DefenseTotal}");
 
         // 後衛武器なら「静止撃ちの有利が付いたか」を1行で添える（数字の理由が分かるように）
         string standNote = BuildStandingShotNote(attacker, attackerHasMoved);
@@ -244,8 +266,10 @@ public class BattleForecast : MonoBehaviour
         DamageBreakdown main = DamageCalculator.CalculateBreakdown(enemy, incomingDefender, grid);
         int hpAfter = Mathf.Max(0, incomingDefender.CurrentHP - main.Total);
 
-        lines.Add($"被ダメージ　{main.ToLogString()}");
+        lines.Add($"被ダメージ　{main.Total}");
+        lines.Add($"攻撃力　{main.AttackTotal}");
         lines.Add(BuildTriangleLine(main.triangle, "相手が有利", "相手が不利"));
+        lines.Add($"防御力　{main.DefenseTotal}");
 
         string incomingEffectiveNote = BuildEffectiveNote(enemy, incomingDefender, incoming: true);
         if (incomingEffectiveNote != null) lines.Add(incomingEffectiveNote);
@@ -278,9 +302,12 @@ public class BattleForecast : MonoBehaviour
         int hpMoved = Mathf.Max(0, hp - moved.Total);
         int hpStand = Mathf.Max(0, hp - stand.Total);
 
-        lines.Add($"移動時　{moved.ToLogString()}");
-        lines.Add($"静止時　{stand.ToLogString()}");
+        lines.Add($"移動時　{moved.Total}");
+        lines.Add($"静止時　{stand.Total}");
+        // 攻撃力・防御力は移動したかで変わらない（変わるのは三すくみだけ）ので1行ずつ
+        lines.Add($"攻撃力　{moved.AttackTotal}");
         lines.Add($"三すくみ　移動時 {Signed(moved.triangle)} ／ 静止時 {Signed(stand.triangle)}（相手が有利）");
+        lines.Add($"防御力　{moved.DefenseTotal}");
 
         // 有効・特効は移動したかに関係なく同じだけ乗るので、両方の場合に共通の1行として出す
         string effectiveNote = BuildEffectiveNote(enemy, incomingDefender, incoming: true);
@@ -369,16 +396,28 @@ public class BattleForecast : MonoBehaviour
             : "※当てると着地させる（飛翔が解除される）";
     }
 
-    /// <summary>組み立てた行を画面右下のパネルに描く（title は見出し）。</summary>
+    /// <summary>
+    /// 組み立てた行を盤上の隅のパネルに描く（title は見出し）。
+    /// パネルは幅が固定の縦長で、長い注記の行は折り返す＝高さは中身しだいに決まる。
+    /// </summary>
     private void DrawPanel(List<string> lines, string title)
     {
+        var lineStyle = new GUIStyle(GUI.skin.label) { fontSize = fontSize, wordWrap = true };
+        float textWidth = panelWidth - padding * 2f;
 
-        // 画面右下に描く（左下の地形情報表示と重ならない位置）
-        float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f; // +1 は見出しの行
-        var rect = new Rect(Screen.width - panelWidth - 12f,
-                            Screen.height - panelHeight - 12f,
-                            panelWidth, panelHeight);
-        PanelRect = rect; // 情報パネルを上に積む・武器の一覧が避けるのに使う（2026-08-09）
+        // 行ごとの高さを先に測る（折り返した行は2行分以上になる）
+        rowHeights.Clear();
+        float contentHeight = 0f;
+        foreach (string line in lines)
+        {
+            float height = Mathf.Max(lineHeight, lineStyle.CalcHeight(new GUIContent(line), textWidth));
+            rowHeights.Add(height);
+            contentHeight += height;
+        }
+
+        float panelHeight = contentHeight + lineHeight + padding * 2f; // +1行ぶんは見出しの行
+        Rect rect = ChoosePanelRect(panelHeight);
+        PanelRect = rect; // 武器の一覧が避けるのに使う（2026-08-09）
 
         var boxStyle = new GUIStyle(GUI.skin.box)
         {
@@ -388,13 +427,111 @@ public class BattleForecast : MonoBehaviour
         };
         GUI.Box(rect, title, boxStyle);
 
-        var lineStyle = new GUIStyle(GUI.skin.label) { fontSize = fontSize };
+        float y = rect.y + padding + lineHeight;
         for (int i = 0; i < lines.Count; i++)
         {
-            GUI.Label(new Rect(rect.x + padding,
-                               rect.y + padding + (i + 1) * lineHeight,
-                               panelWidth - padding * 2f, lineHeight),
-                      lines[i], lineStyle);
+            GUI.Label(new Rect(rect.x + padding, y, textWidth, rowHeights[i]), lines[i], lineStyle);
+            y += rowHeights[i];
         }
+    }
+
+    /// <summary>
+    /// パネルを置く場所を決める（2026-08-17 作者指示）。盤上の4隅のうち、
+    /// **攻撃するユニット自身と選べる相手が乗っている範囲**（と地形情報の枠）に
+    /// 一番重ならない隅を選ぶ＝狙う相手がパネルで隠れない。
+    /// 隅を見る順番は 左下・右下・左上・右上 で固定してあるので、
+    /// 同じ重なり具合なら常に同じ隅に出る（見る場所が毎回変わらない）。
+    /// </summary>
+    private Rect ChoosePanelRect(float panelHeight)
+    {
+        Rect board = grid != null ? grid.GetBoardScreenRect() : new Rect();
+
+        // 盤面の場所が分からないときは画面の左下（従来の位置）
+        if (board.width <= 0f)
+        {
+            return new Rect(12f, Mathf.Max(12f, Screen.height - panelHeight - 12f),
+                            panelWidth, panelHeight);
+        }
+
+        float left = board.x + PanelInset;
+        float right = board.xMax - panelWidth - PanelInset;
+        float top = board.y + PanelInset;
+        float bottom = board.yMax - panelHeight - PanelInset;
+
+        cornerBuffer[0] = new Rect(left, bottom, panelWidth, panelHeight);   // 左下
+        cornerBuffer[1] = new Rect(right, bottom, panelWidth, panelHeight);  // 右下
+        cornerBuffer[2] = new Rect(left, top, panelWidth, panelHeight);      // 左上
+        cornerBuffer[3] = new Rect(right, top, panelWidth, panelHeight);     // 右上
+
+        Rect units = BuildUnitsRect();
+        Rect terrain = grid != null ? grid.TerrainInfoRect : new Rect();
+
+        Rect best = cornerBuffer[0];
+        float bestOverlap = float.MaxValue;
+        foreach (Rect candidate in cornerBuffer)
+        {
+            float overlap = OverlapArea(candidate, units) + OverlapArea(candidate, terrain);
+            if (overlap >= bestOverlap) continue;
+
+            best = candidate;
+            bestOverlap = overlap;
+            if (overlap <= 0f) break; // 何とも重ならない隅が見つかればそれで決まり
+        }
+
+        // 盤面が画面より大きいときでもパネルが画面から出ないように押し込む
+        best.x = Mathf.Clamp(best.x, 0f, Mathf.Max(0f, Screen.width - panelWidth));
+        best.y = Mathf.Clamp(best.y, 0f, Mathf.Max(0f, Screen.height - panelHeight));
+        return best;
+    }
+
+    /// <summary>
+    /// パネルが避ける範囲＝自分（攻撃する側／被ダメを見ている側）と、選べる相手が乗っている
+    /// マスをまとめて囲んだ矩形（GUI座標）。誰もいなければ Rect.zero。
+    /// ホバーで表示が切り替わっても範囲は変わらないので、選択中にパネルが動き回ることはない。
+    /// </summary>
+    private Rect BuildUnitsRect()
+    {
+        bool any = false;
+        Vector2Int min = Vector2Int.zero;
+        Vector2Int max = Vector2Int.zero;
+
+        Unit self = attacker != null ? attacker : incomingDefender;
+        if (IsOnBoard(self))
+        {
+            min = max = self.GridPosition;
+            any = true;
+        }
+
+        if (targets != null)
+        {
+            foreach (Unit unit in targets)
+            {
+                if (!IsOnBoard(unit)) continue;
+
+                if (!any)
+                {
+                    min = max = unit.GridPosition;
+                    any = true;
+                    continue;
+                }
+                min = Vector2Int.Min(min, unit.GridPosition);
+                max = Vector2Int.Max(max, unit.GridPosition);
+            }
+        }
+
+        return any ? grid.GetCellsScreenRect(min, max) : new Rect();
+    }
+
+    /// <summary>盤上にいて座標が意味を持つユニットか（格納中の貨物は盤上にいない）。</summary>
+    private static bool IsOnBoard(Unit unit) => unit != null && unit.IsAlive && !unit.IsCarried;
+
+    /// <summary>2つの矩形が重なっている面積（重なっていなければ0）。どちらかが空でも0。</summary>
+    private static float OverlapArea(Rect a, Rect b)
+    {
+        if (a.width <= 0f || a.height <= 0f || b.width <= 0f || b.height <= 0f) return 0f;
+
+        float w = Mathf.Min(a.xMax, b.xMax) - Mathf.Max(a.x, b.x);
+        float h = Mathf.Min(a.yMax, b.yMax) - Mathf.Max(a.y, b.y);
+        return (w <= 0f || h <= 0f) ? 0f : w * h;
     }
 }

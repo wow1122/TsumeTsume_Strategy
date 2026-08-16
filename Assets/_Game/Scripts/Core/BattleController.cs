@@ -55,7 +55,7 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  「攻撃」コマンドが出る条件は「持っている武器のどれかで届く敵がいるか」（装備中の武器だけではない）。
 ///  武器の一覧で行にマウスを重ねると、その武器で狙える敵が盤面で赤く光る。
 ///  行をクリックするとその武器を装備し（＝この時点で持ち替えが確定。行動は消費しない）、対象選択へ進む。
-///  敵にマウスを重ねると画面右下に「敵ユニット情報（上）＋戦闘予測（下）」が縦に並ぶ。
+///  敵にマウスを重ねると、画面右上に敵ユニット情報・右下に戦闘予測が出る（2026-08-16）。
 ///  右クリック/ESC で1段ずつ戻る（対象選択 → 武器選択 → 行動メニュー）。
 ///  必殺技のマナが減るのは敵をクリックした瞬間なので、それまでに戻ればマナは減らない。
 ///
@@ -99,7 +99,7 @@ public class BattleController : MonoBehaviour
     private bool criticalPending;               // 武器・対象選択中の攻撃が必殺技かどうか（フェーズ29）
     private List<WeaponData> weaponChoices;     // 武器選択の候補（並びは所持品の順・2026-08-09）
     private int hoveredWeaponRow = -1;          // 武器一覧でいま赤表示を出している行（-1＝まだ無し）
-    private readonly Rect[] avoidPanelBuffer = new Rect[3]; // 武器選択のUIが避けるパネルの矩形（使い回し）
+    private readonly Rect[] avoidPanelBuffer = new Rect[2]; // 武器選択のUIが避けるパネルの矩形（使い回し）
     private List<Unit> unitCandidates;          // 救出・引き受け・代わりに降ろすの相手候補
     private List<Vector2Int> tileCandidates;    // 降ろす先のマス候補
     private Unit proxyCarrier;                  // 「代わりに降ろす」で選んだ運び手
@@ -112,8 +112,7 @@ public class BattleController : MonoBehaviour
     private CargoListMenu cargoMenu;            // 貨物リストメニュー（IMGUI・Phase 12）
     private ItemListMenu itemMenu;              // 所持品リストメニュー（IMGUI・フェーズ23）
     private BattleForecast forecast;            // 戦闘予測パネル（IMGUI・Phase 15）
-    private UnitInfoPanel unitInfo;             // 対象選択中の相手情報パネル（IMGUI・2026-07-26）
-    private DebugUnitPanel debugPanel;          // デバッグ用ユニット情報パネル（右上・武器選択の重なり回避に使う）
+    private UnitInfoPanel unitInfo;             // ユニット情報パネル（IMGUI・右上・2026-08-16 に統合）
     private SystemInfoPanel systemInfo;         // 「状況」「設定」のパネル（IMGUI・2026-08-15）
     private Vector2Int systemMenuCell;          // コマンド一覧を出している空きマス（パネルから戻る先）
     private Unit previewedEnemy;                // 行動範囲を下見表示中の敵（Idle のときだけ使う）
@@ -129,14 +128,15 @@ public class BattleController : MonoBehaviour
         if (itemMenu == null) itemMenu = gameObject.AddComponent<ItemListMenu>();
         forecast = GetComponent<BattleForecast>();
         if (forecast == null) forecast = gameObject.AddComponent<BattleForecast>();
+        // ユニット情報パネル（画面右上・2026-08-16 にデバッグ用パネルと統合）。
+        // 盤上クリックでの表示は自分でクリックを読むので呼び出し不要。ここから呼ぶのは
+        // 相手選択中の Show / Hide と、パネル内クリックを盤面に流さないための判定だけ
         unitInfo = GetComponent<UnitInfoPanel>();
         if (unitInfo == null) unitInfo = gameObject.AddComponent<UnitInfoPanel>();
 
-        // デバッグ用のユニット情報パネル（クリックで能力値・状態を表示）。
-        // 自分でクリックを読む独立部品なので呼び出しは不要だが、武器選択のUIが
-        // このパネルに被らないよう、矩形（PanelRect）を読むために参照だけ持っておく
-        debugPanel = GetComponent<DebugUnitPanel>();
-        if (debugPanel == null) debugPanel = gameObject.AddComponent<DebugUnitPanel>();
+        // 敵AIの性格をデバッグ用に画面左下へ出すパネル（2026-08-16）。
+        // 出す相手はユニット情報パネルから自分で読むので、ここからの呼び出しは無い
+        if (GetComponent<AIDebugPanel>() == null) gameObject.AddComponent<AIDebugPanel>();
 
         // コマンド一覧の「状況」「設定」で出るパネル（2026-08-15）
         systemInfo = GetComponent<SystemInfoPanel>();
@@ -146,6 +146,14 @@ public class BattleController : MonoBehaviour
     void Update()
     {
         if (grid == null || turnManager == null) return;
+
+        // メニュー（行動メニュー・持ち物・貨物・コマンド一覧）を出しているか。
+        // 下のセルクリック無効化に使う（IMGUIのボタンとクリックを取り合わないため）
+        bool menuOpen = state == State.CommandMenu || state == State.CargoSelect
+            || state == State.ItemSelect || state == State.ItemActionSelect
+            || state == State.ExchangeSelect || state == State.RefreshMenu
+            || state == State.WeaponSelect
+            || state == State.SystemMenu || state == State.SystemInfo;
 
         // 決着後・敵フェイズ中は操作不可。行動の途中なら移動も取り消して選択を解除する
         if (turnManager.IsGameOver || turnManager.CurrentPhase != TurnPhase.Player)
@@ -169,15 +177,16 @@ public class BattleController : MonoBehaviour
 
         // メニュー表示中のセルクリックは無効。ボタンの処理は ActionMenu / CargoListMenu /
         // ItemListMenu（IMGUI）側が行うので、ここで盤面まで反応すると二重処理になるのを防ぐ
-        if (state == State.CommandMenu || state == State.CargoSelect
-            || state == State.ItemSelect || state == State.ItemActionSelect
-            || state == State.ExchangeSelect || state == State.RefreshMenu
-            || state == State.WeaponSelect
-            || state == State.SystemMenu || state == State.SystemInfo) return;
+        if (menuOpen) return;
 
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
             Vector2 screenPos = Mouse.current.position.ReadValue();
+
+            // ユニット情報パネルの上のクリックは盤面に流さない（パネル側でレイアウト切替に使う。2026-08-16）。
+            // パネルは盤面の右の余白に出るので普段は当たらないが、ウィンドウを小さくすると盤面に重なる
+            if (unitInfo.ContainsScreenPoint(screenPos)) return;
+
             Vector3 worldPos = Camera.main.ScreenToWorldPoint(screenPos);
 
             if (grid.TryWorldToCell(worldPos, out Vector2Int cell))
@@ -878,10 +887,11 @@ public class BattleController : MonoBehaviour
         attackTargets = WeaponChoiceRules.FindTargets(unit, weapon, context.hasMoved);
         ShowAttackTargets(attackTargets);
 
-        // 敵にマウスを重ねると、画面右下に「敵ユニット情報（上）＋戦闘予測（下）」が縦に並ぶ。
+        // 敵にマウスを重ねると、画面右上に敵ユニット情報・右下に戦闘予測が出る
+        // （2026-08-16 にユニット情報が右上へ移ったので、右下での縦積みは不要になった）。
         // 移動したかも渡して、後衛武器の静止撃ち有利を実戦と同じ数字で見せる（2026-07-30 作者仕様）
         forecast.Show(unit, attackTargets, grid, criticalPending, context.hasMoved);
-        unitInfo.Show(attackTargets, "攻撃する相手", grid, () => forecast.PanelRect);
+        unitInfo.Show(attackTargets, "攻撃する相手", grid);
 
         state = State.TargetSelect;
         Debug.Log($"{(criticalPending ? "必殺技" : "攻撃")}の対象を選択（{attackTargets.Count} 体）。" +
@@ -905,9 +915,9 @@ public class BattleController : MonoBehaviour
     }
 
     /// <summary>
-    /// 武器の一覧が避ける矩形＝戦闘予測・ユニット情報（どちらも右下）とデバッグ用パネル（右上）。
+    /// 武器の一覧が避ける矩形＝戦闘予測（右下）とユニット情報（右上）。
     /// 出ていないパネルは Rect.zero が返り、避ける対象から自然に外れる
-    /// （武器選択中に右下の2枚が出ることは無いが、窓口を1つにしておく）。
+    /// （武器選択中に戦闘予測が出ることは無いが、窓口を1つにしておく）。
     /// 呼ばれるのは一覧を開いた最初の描画の1回だけ＝以後この結果でパネルが動いても一覧は動かない
     /// （ItemListMenu が位置を覚える。動かすとクリックの最中に行が逃げて押せなくなる）。
     /// ※配列は使い回して余計なゴミを作らない
@@ -916,7 +926,6 @@ public class BattleController : MonoBehaviour
     {
         avoidPanelBuffer[0] = forecast.PanelRect;
         avoidPanelBuffer[1] = unitInfo.PanelRect;
-        avoidPanelBuffer[2] = debugPanel != null ? debugPanel.PanelRect : new Rect();
         return avoidPanelBuffer;
     }
 
@@ -973,7 +982,7 @@ public class BattleController : MonoBehaviour
         foreach (Unit u in candidates)
             grid.AddHighlight(u.GridPosition, highlight);
 
-        // 相手の能力値・装備武器・持ち物・状態を画面右下に出す（2026-07-26 作者要望）。
+        // 相手の能力値・装備武器・持ち物・状態を画面右上に出す（2026-07-26 作者要望）。
         // 最初の候補から表示し、他の候補にマウスを重ねると切り替わる
         unitInfo.Show(candidates, UnitInfoTitle(purpose), grid);
 
@@ -1082,7 +1091,7 @@ public class BattleController : MonoBehaviour
         if (anchor != context.unit)
             grid.AddHighlight(anchor.GridPosition, HighlightKind.TargetChoice);
 
-        // 貨物の情報を右下に出す（2026-07-26 作者要望）。リストが出るのは貨物が2体以上のときだけで、
+        // 貨物の情報を右上に出す（2026-07-26 作者要望）。リストが出るのは貨物が2体以上のときだけで、
         // 先頭の貨物から表示し、行にマウスを重ねるとその貨物へ切り替わる
         unitInfo.Show(cargoes[0], CargoInfoTitle);
 
@@ -1316,7 +1325,8 @@ public class BattleController : MonoBehaviour
         {
             ItemSlot s = slot; // ラムダが最後の値を掴まないようローカルに退避
             entries.Add(new ItemListMenu.Entry(BuildItemLabel(slot, unit), true,
-                                               () => EnterItemActionSelect(s), BuildItemDetail(s)));
+                                               () => EnterItemActionSelect(s),
+                                               UnitInfoLines.BuildItemDetail(s)));
         }
 
         return entries;
@@ -1328,8 +1338,9 @@ public class BattleController : MonoBehaviour
     /// 装備できるかは、その持ち物の持ち主 owner の兵種で判定する。
     /// 「装備中」は EquippedWeapon で見る＝耐久が尽きていても装備は外れていない（フェーズ31）。
     /// ※武器の耐久はここには出さない。ボタン幅は「傷薬（残り3）」「剣（装備中）」に合わせた
-    ///   170px しかなく、「魔道書（装備中）（耐久6）」のような長い名前で右端が見切れるため。
-    ///   耐久は行にマウスを重ねたときの詳細パネルと、ユニット情報パネルで見る。
+    ///   210px しかなく、「魔道書（装備中）（耐久6）」のような長い名前で右端が見切れるため。
+    ///   耐久は行にマウスを重ねたときの詳細（UnitInfoLines.BuildItemDetail）で見る
+    ///   ＝ユニット情報パネルの持ち物の行にも同じ詳細が出る。
     /// </summary>
     private string BuildItemLabel(ItemSlot slot, Unit owner)
     {
@@ -1458,44 +1469,8 @@ public class BattleController : MonoBehaviour
         else OpenCommandMenu();
     }
 
-    /// <summary>
-    /// 持ち物リストのホバーで出す詳細（1行目＝名前を見出しに、以降＝性能）。
-    /// 武器は種類・前衛/後衛・威力・射程・耐久、道具は効果・使用回数を見せる。
-    /// </summary>
-    private List<string> BuildItemDetail(ItemSlot slot)
-    {
-        var lines = new List<string>();
-        if (slot.Item is WeaponData w)
-        {
-            string cat = w.category == WeaponCategory.Melee ? "前衛" : "後衛";
-            string range = w.minRange == w.maxRange ? $"{w.maxRange}" : $"{w.minRange}〜{w.maxRange}";
-            lines.Add(w.weaponName);
-            lines.Add($"種類: {w.type.DisplayName()}　{cat}");
-            lines.Add($"威力 {w.might}　射程 {range}");
-
-            // 有効・特効の行（2026-08-06）。「特効: 竜」「有効: 重装」のように短い行で足す
-            // ＝どの武器に持ち替えるかを、この詳細だけで判断できるようにする
-            lines.AddRange(EffectiveRules.BuildWeaponEffectLines(w));
-
-            // 詳細パネルは幅220px・余白6pxで文字に使えるのは208pxしかない。
-            // 長い説明を入れると右端で見切れるので、ここは短い注記だけにする（2026-08-03）
-            if (slot.HasDurability)
-            {
-                lines.Add($"耐久: 残り{slot.UsesLeft}／{slot.MaxUses}");
-                if (slot.UsesLeft <= 0) lines.Add("※傷んでいる（攻撃不可）");
-            }
-        }
-        else if (slot.Item is ToolData t)
-        {
-            lines.Add(t.toolName);
-            lines.Add($"効果: HP{t.healAmount}回復");
-            lines.Add($"使用回数: 残り{slot.UsesLeft}／{t.maxUses}回");
-        }
-        return lines;
-    }
-
     // ===== 交換（隣接する味方との持ち物の受け渡し・フェーズ26〜27）=====
-    // 「交換」→ 相手を選ぶ（UnitTargetSelect。右下に相手の情報が出る）→ 交換画面（ExchangeSelect）。
+    // 「交換」→ 相手を選ぶ（UnitTargetSelect。右上に相手の情報が出る）→ 交換画面（ExchangeSelect）。
     // 交換画面は2列：左＝自分の持ち物、右＝相手の持ち物。どちらの行もクリックで反対側へ移る
     // （双方向・1回の交換で何個でも。合意(b)）。受け側がいっぱい（7個）の行は灰色で押せない。
     // 行動は消費しないので、閉じたあとも同じ行動で攻撃・持ち物・待機ができる（合意(a)）。
@@ -1505,8 +1480,8 @@ public class BattleController : MonoBehaviour
     /// <summary>
     /// 交換の相手が決まった：2列の交換画面を開く。
     /// 相手の能力値は列の見出し（名前・HP・持ち物の数・装備武器）で見せるので、
-    /// 画面右下は品の性能詳細（ホバー表示）に譲る＝ユニット情報パネルは消す
-    /// （降ろすマスの選択に移るときと同じ作法）。
+    /// 相手を追う表示（文脈モード）は畳む＝ユニット情報パネルは Hide する
+    /// （降ろすマスの選択に移るときと同じ作法。盤上クリックで見ていたユニットの表示は残る）。
     /// </summary>
     private void EnterExchange(Unit partner)
     {
@@ -1565,7 +1540,8 @@ public class BattleController : MonoBehaviour
             ItemSlot s = slot; // ラムダが最後の値を掴まないようローカルに退避
             Unit f = from, t = to;
             entries.Add(new ItemListMenu.Entry(BuildItemLabel(slot, from), canMove,
-                                               () => TransferItem(s, f, t), BuildItemDetail(slot)));
+                                               () => TransferItem(s, f, t),
+                                               UnitInfoLines.BuildItemDetail(slot)));
         }
 
         return entries;

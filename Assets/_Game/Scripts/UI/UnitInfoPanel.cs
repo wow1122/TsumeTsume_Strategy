@@ -3,104 +3,152 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// 対象ユニット選択中の情報パネル（2026-07-26 作者要望・IMGUI・画面右下）。
-/// 「救出」で貨物にする相手を選ぶときのように、相手ユニットを選ぶ場面で
-/// その相手の能力値・装備武器・持ち物・状態を見えるようにする。
-/// 対象は救出だけでなく、引き受け・乗り込む・代わりに降ろす・杖（回復）も同じ扱い。
+/// ユニット情報パネル（IMGUI・画面右上）。2026-08-16 の刷新で、それまで2枚あったパネル
+/// （右上のデバッグ用 DebugUnitPanel と、右下の対象選択用）を**1枚に統合**したもの。
+/// 中身の描画は UI/UnitInfoView が左右2カラムで行い、ここは「誰の情報を・どこに出すか」を決める。
 ///
-/// 表示の作法は戦闘予測（BattleForecast）と同じ：選択に入った瞬間から最初の候補を表示し、
-/// 別の候補にマウスを重ねるとそちらへ切り替わる（離れても最後の候補を表示し続ける）。
-/// 貨物リスト（CargoListMenu）の行ホバーからも使うため、盤上のユニットを追う「盤面モード」と、
-/// 指定された1体だけを出す「単体モード」の2通りがある（格納中の貨物は盤上にいないため）。
-/// 場所は戦闘予測と同じ画面右下（救出・杖などの相手選択中は戦闘予測が出ないので重ならない）。
-/// 表示内容は UnitInfoLines に集約してあり、デバッグ用パネルと同じ内容になる。
-/// 見るだけのパネルでゲームの状態は一切変えない。
-/// BattleController が自動生成し、対象選択の開始・終了で Show / Hide を呼ぶ。
+/// 2つのモードを持つ:
+///  ・常設モード … 盤上のユニットをクリックすると、そのユニットを出し続ける。空きマスのクリックで閉じる。
+///                 BattleController の操作とは独立に自分でクリックを読むので、敵フェイズ中や
+///                 メニュー表示中でも見られる（旧デバッグ用パネルの挙動をそのまま引き継いでいる）。
+///  ・文脈モード … 相手ユニットを選ぶ場面（救出・引き受け・乗り込む・代わりに降ろす・杖・交換・攻撃）で
+///                 BattleController が Show を呼ぶ。見出しでどのコマンドの相手かが分かり、
+///                 盤上の候補にマウスを重ねると表示が切り替わる（戦闘予測と同じ作法）。
+///                 貨物リストの行ホバーのように盤上にいない相手を出す「単体モード」もある。
+/// 文脈モードが動いているあいだはそちらが優先で、Hide で畳むと常設モードの表示に戻る。
 ///
-/// 縦積み（2026-08-09 作者合意）: 攻撃の対象選択だけは戦闘予測と同時に出る。
-/// このときは stackAbove で戦闘予測パネルの矩形を受け取り、その**上に**積む
-/// （下＝戦闘予測が従来の定位置のまま／上＝敵ユニット情報）。渡されなければ従来どおり右下の定位置。
+/// 見出しの行は**文脈モードのときだけ**出す（2026-08-16 作者の修正案）。
+/// 常設モードの「ユニット情報」という文言は情報として無意味なので消し、中身を上へ詰めている。
+/// 一方で「攻撃する相手」などの見出しは、どのコマンドの相手を選んでいるかを示すので残す。
+///
+/// 見るだけのパネルでゲームの状態は一切変えない。素材差し替え時期に uGUI で作り直す前提の暫定UI。
+/// BattleController が自動生成する（シーンへの追加作業は不要）。
 /// </summary>
 public class UnitInfoPanel : MonoBehaviour
 {
     [Header("見た目")]
-    [Tooltip("パネルの幅（ピクセル）")]
-    public float panelWidth = 340f;
-    [Tooltip("1行の高さ（ピクセル）")]
+    [Tooltip("パネルの幅（ピクセル）。左右2カラムに分けるので、1カラムはこの半分ほどになる")]
+    public float panelWidth = UnitInfoView.DefaultPanelWidth;
+    [Tooltip("1行の高さ（ピクセル）。パネルの高さはこの値から自動で決まる")]
     public float lineHeight = 24f;
-    [Tooltip("パネルの枠と文字の間の余白（ピクセル）")]
+    [Tooltip("パネルの枠と中身の間の余白（ピクセル）")]
     public float padding = 10f;
     [Tooltip("文字の大きさ")]
     public int fontSize = 14;
-    [Tooltip("下に積むパネル（戦闘予測）との隙間（ピクセル）")]
-    public float stackGap = 6f;
 
     /// <summary>
     /// 直近に描いたパネルの矩形（GUI座標。出していなければ Rect.zero）。
     /// 武器の一覧がこのパネルを避けるために公開している（2026-08-09。
-    /// BattleForecast.PanelRect / DebugUnitPanel.PanelRect と同じ作法）。
+    /// BattleForecast.PanelRect と同じ作法）。パネル内クリックの判定にも使う。
     /// </summary>
     public Rect PanelRect { get; private set; }
 
-    private List<Unit> candidates; // 盤面モード: 選択できる相手（null＝盤面モードではない）
-    private GridManager grid;      // 盤面モードでのみ使う（マス→ユニットの割り出し）
-    private bool pinned;           // 単体モード: 呼び出し側が指定した1体だけを出す
-    private string title;
-    private Unit current;          // いま情報を表示している相手（選択直後は最初の候補）
-    private System.Func<Rect> stackAbove; // このパネルを上に積む相手の矩形（null＝右下の定位置）
+    private List<Unit> candidates;   // 文脈モード（盤面）: 選択できる相手（null＝盤面モードではない）
+    private Unit pinnedUnit;         // 文脈モード（単体）: 呼び出し側が指定した1体
+    private string contextTitle;     // 文脈モードの見出し（「救出する相手」など）
+    private Unit current;            // 文脈モードでいま出している相手（選択直後は最初の候補）
+    private Unit inspected;          // 常設モード: 盤上クリックで見ているユニット
+    private GridManager grid;        // マス→ユニットの割り出しと、ガードの判定に使う
+
+    /// <summary>文脈モード（相手選択中）かどうか。</summary>
+    private bool HasContext => pinnedUnit != null || candidates != null;
 
     /// <summary>
-    /// 対象選択の開始時に呼ぶ（盤面モード）。title は見出し（例：「救出する相手」）。
-    /// 盤上の候補にマウスを重ねると表示が切り替わる。
-    /// stackAbove を渡すと、その矩形（戦闘予測パネル）の上に積む（2026-08-09。
-    /// 描画のたびに評価するので、予測パネルの行数が相手ごとに変わっても追随する）。
+    /// いまパネルに出しているユニット（出していなければ null）。文脈モードが優先で、
+    /// 無ければ盤上クリックで見ているユニット。画面左下の敵AIパネル（UI/AIDebugPanel）が読む。
     /// </summary>
-    public void Show(List<Unit> candidates, string title, GridManager grid,
-                     System.Func<Rect> stackAbove = null)
+    public Unit DisplayedUnit
+    {
+        get
+        {
+            Unit unit = (HasContext && current != null && current.IsAlive) ? current : inspected;
+            return (unit != null && unit.IsAlive) ? unit : null;
+        }
+    }
+
+    void Start()
+    {
+        if (grid == null) grid = FindAnyObjectByType<GridManager>();
+    }
+
+    /// <summary>
+    /// 対象選択の開始時に呼ぶ（文脈モード・盤面）。title は見出し（例：「救出する相手」）。
+    /// 盤上の候補にマウスを重ねると表示が切り替わる。
+    /// </summary>
+    public void Show(List<Unit> candidates, string title, GridManager grid)
     {
         this.candidates = candidates;
-        this.title = title;
-        this.grid = grid;
-        this.stackAbove = stackAbove;
-        pinned = false;
+        this.contextTitle = title;
+        if (grid != null) this.grid = grid;
+        pinnedUnit = null;
         current = (candidates != null && candidates.Count > 0) ? candidates[0] : null;
     }
 
     /// <summary>
-    /// 指定した1体の情報を出す（単体モード。2026-07-26）。貨物リストの行ホバーのように、
+    /// 指定した1体の情報を出す（文脈モード・単体。2026-07-26）。貨物リストの行ホバーのように、
     /// 盤上にいないユニット（格納中の貨物）を出したいときに使う。
     /// 切り替えは呼び出し側が都度この関数を呼ぶことで行い、盤面ホバーは見ない。
     /// </summary>
     public void Show(Unit unit, string title)
     {
         candidates = null;
-        grid = null;
-        stackAbove = null;
-        this.title = title;
-        pinned = true;
+        contextTitle = title;
+        pinnedUnit = unit;
         current = unit;
     }
 
-    /// <summary>対象選択の終了時（実行・キャンセル・選択解除）に呼ぶ。</summary>
+    /// <summary>
+    /// 対象選択の終了時（実行・キャンセル・選択解除）に呼ぶ。
+    /// 畳むのは**文脈モードだけ**で、盤上クリックで見ているユニット（常設モード）は残す。
+    /// </summary>
     public void Hide()
     {
         candidates = null;
-        grid = null;
-        stackAbove = null;
-        pinned = false;
+        pinnedUnit = null;
+        contextTitle = null;
         current = null;
-        PanelRect = new Rect(); // 消えたパネルの位置に武器の一覧が引きずられないように戻す
+    }
+
+    /// <summary>
+    /// スクリーン座標（左下原点＝Mouse.current.position と同じ）がパネルの上かどうか。
+    /// BattleController が「パネルへのクリックを盤面に流さない」ために読む。
+    /// </summary>
+    public bool ContainsScreenPoint(Vector2 screenPos)
+    {
+        if (PanelRect.width <= 0f) return false;
+        return PanelRect.Contains(new Vector2(screenPos.x, Screen.height - screenPos.y));
+    }
+
+    void Update()
+    {
+        if (Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame) return;
+
+        Vector2 screenPos = Mouse.current.position.ReadValue();
+
+        // パネルの内側のクリックは、盤面の処理にも表示中ユニットの切り替えにも使わない
+        // （パネルが盤面に重なったときに、押したつもりのない場所が反応するのを防ぐ）
+        if (ContainsScreenPoint(screenPos)) return;
+
+        // クリックしたマスのユニットを常設モードの表示対象にする（BattleController と同じ座標変換の手順）。
+        // 盤外クリックは無視して表示を保ち、空きマスのクリックで閉じる
+        // ※IMGUIのボタン（行動メニューなど）はクリックを横取りしないため、
+        //   ボタンの下のマスにも反応して表示が変わることがある（見るだけのUIなので許容）
+        if (grid == null || Camera.main == null) return;
+
+        Vector3 world = Camera.main.ScreenToWorldPoint(screenPos);
+        if (!grid.TryWorldToCell(world, out Vector2Int cell)) return;
+
+        TileData tile = grid.GetTile(cell);
+        inspected = tile != null ? tile.Occupant : null;
     }
 
     void OnGUI()
     {
         PanelRect = new Rect(); // 描かなかったときは「避ける相手は無い」扱いに戻す
 
-        if (!pinned && (candidates == null || grid == null)) return;
-
-        // 盤面モードでは、マウスの下に別の候補がいればそちらへ切り替える
+        // 文脈モードでは、マウスの下に別の候補がいればそちらへ切り替える
         // （離れても最後の候補を表示し続ける）。単体モードは呼び出し側が切り替える
-        if (!pinned && Mouse.current != null && Camera.main != null)
+        if (candidates != null && grid != null && Mouse.current != null && Camera.main != null)
         {
             Vector3 world = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());
             if (grid.TryWorldToCell(world, out Vector2Int cell))
@@ -111,24 +159,18 @@ public class UnitInfoPanel : MonoBehaviour
             }
         }
 
-        if (current == null || !current.IsAlive) return;
+        // 文脈モード（相手選択中）が優先。相手がいなければ、盤上クリックで見ているユニットに戻る
+        bool showContext = HasContext && current != null && current.IsAlive;
+        Unit unit = showContext ? current : inspected;
+        if (unit == null || !unit.IsAlive) return; // 倒れて Destroy されたら自動で閉じる
 
-        List<string> lines = UnitInfoLines.BuildBasic(current);
+        // 見出しの行は文脈モードのときだけ確保する（常設モードは中身を上へ詰める・2026-08-16）
+        float titleHeight = showContext ? lineHeight : 0f;
+        float contentHeight = UnitInfoView.ContentHeight(lineHeight);
+        float panelHeight = contentHeight + titleHeight + padding * 2f;
 
-        // 画面右下に描く（盤面の下の地形情報と重ならない位置。
-        // 行数は持ち物の数で変わるので、下端を固定して上へ伸ばす）
-        // 文字行の下にマナ・気勢のゲージバー2本ぶんの高さを足す（フェーズ28）
-        float panelHeight = (lines.Count + 1) * lineHeight + padding * 2f + GaugeBars.TotalHeight; // +1 は見出しの行
-        float bottom = Screen.height - 12f;
-
-        // 攻撃の対象選択では戦闘予測と同時に出るので、その上に積む（2026-08-09 作者合意）。
-        // 戦闘予測が出ていなければ（Rect.zero）従来どおり右下の定位置
-        Rect below = stackAbove != null ? stackAbove() : new Rect();
-        if (below.height > 0f) bottom = below.yMin - stackGap;
-
-        var rect = new Rect(Screen.width - panelWidth - 12f, bottom - panelHeight,
-                            panelWidth, panelHeight);
-        PanelRect = rect; // 武器の一覧の重なり回避に使う（2026-08-09）
+        var rect = new Rect(Screen.width - panelWidth - 12f, 10f, panelWidth, panelHeight);
+        PanelRect = rect;
 
         var boxStyle = new GUIStyle(GUI.skin.box)
         {
@@ -136,21 +178,11 @@ public class UnitInfoPanel : MonoBehaviour
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.UpperCenter,
         };
-        GUI.Box(rect, title, boxStyle);
+        if (showContext) GUI.Box(rect, contextTitle, boxStyle);
+        else GUI.Box(rect, GUIContent.none);
 
-        var lineStyle = new GUIStyle(GUI.skin.label) { fontSize = fontSize };
-        for (int i = 0; i < lines.Count; i++)
-        {
-            GUI.Label(new Rect(rect.x + padding,
-                               rect.y + padding + (i + 1) * lineHeight,
-                               panelWidth - padding * 2f, lineHeight),
-                      lines[i], lineStyle);
-        }
-
-        // 文字行の下にマナ・気勢のゲージバーを描く（フェーズ28。デバッグ用パネルと同じ部品）
-        GaugeBars.Draw(new Rect(rect.x + padding,
-                                rect.y + padding + (lines.Count + 1) * lineHeight,
-                                panelWidth - padding * 2f, GaugeBars.TotalHeight),
-                       current, fontSize);
+        var content = new Rect(rect.x + padding, rect.y + padding + titleHeight,
+                               panelWidth - padding * 2f, contentHeight);
+        UnitInfoView.Draw(content, unit, grid, fontSize, lineHeight);
     }
 }
