@@ -12,13 +12,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df93f8370db448debb8878ead1266772, type: 3}
   m_Name: Class_Gladiator
   m_EditorClassIdentifier: Assembly-CSharp::ClassData
-  className: "剣闘士"
+  className: "\u5263\u95D8\u58EB"
   tier: 0
   moveType: 0
   move: 3
-  usableWeapons:
-  - 0
+  flightMove: 0
+  usableWeapons: 00000000
   tags: 0
   promotions:
   - {fileID: 11400000, guid: 2428efb63f99415dbbd0c137dbf05be1, type: 2}
   - {fileID: 11400000, guid: ada06778a5984dc7b5ae8d83dc720e07, type: 2}
+  playerMapSprite: {fileID: -4417181637876986054, guid: 7065eb338dca95149ad178de84458dfb, type: 3}
+  enemyMapSprite: {fileID: 506086550446223485, guid: d5a68ecb6448c6e44b9d11c31fde3852, type: 3}

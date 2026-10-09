@@ -12,10 +12,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df93f8370db448debb8878ead1266772, type: 3}
   m_Name: Class_Transporter
   m_EditorClassIdentifier: Assembly-CSharp::ClassData
-  className: "輸送隊"
+  className: "\u8F38\u9001\u968A"
   tier: 0
   moveType: 3
   move: 5
-  usableWeapons: []
+  flightMove: 0
+  usableWeapons: 
   tags: 1
   promotions: []
+  playerMapSprite: {fileID: -2837692822281652526, guid: 3a09e4db7d1bbed46b74d7471c88f841, type: 3}
+  enemyMapSprite: {fileID: 0}

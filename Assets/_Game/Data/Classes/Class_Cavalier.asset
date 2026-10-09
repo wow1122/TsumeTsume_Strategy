@@ -23,3 +23,5 @@ MonoBehaviour:
   promotions:
   - {fileID: 11400000, guid: ca403a82c2074181b9791f60a5805cb8, type: 2}
   - {fileID: 11400000, guid: 43588ead58c04ad390881779f4b31900, type: 2}
+  playerMapSprite: {fileID: -1797044410243885571, guid: 5ee4c8323f9758f49a0edb02e03a6fad, type: 3}
+  enemyMapSprite: {fileID: -2847912047964532083, guid: 3967e389ea8501d47829b0ba56707db2, type: 3}

@@ -12,13 +12,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df93f8370db448debb8878ead1266772, type: 3}
   m_Name: Class_Swordsman
   m_EditorClassIdentifier: Assembly-CSharp::ClassData
-  className: "剣士"
+  className: "\u5263\u58EB"
   tier: 0
   moveType: 0
   move: 4
-  usableWeapons:
-  - 0
+  flightMove: 0
+  usableWeapons: 00000000
   tags: 0
   promotions:
   - {fileID: 11400000, guid: 28563673aee642138135c7d5ac39ee1c, type: 2}
   - {fileID: 11400000, guid: 06c6b67a04d34ec783ab547a37b8cad2, type: 2}
+  playerMapSprite: {fileID: 580103783892825870, guid: b7934cbd090332f4e89e854dc6b5bdb0, type: 3}
+  enemyMapSprite: {fileID: 9025275461934781232, guid: acc9c8cbf91f58842badef7beb870569, type: 3}
