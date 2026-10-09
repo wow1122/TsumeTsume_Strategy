@@ -46,6 +46,21 @@ public class ClassData : ScriptableObject
     [Tooltip("昇格先の兵種（下級職のみ・最大2つ）")]
     public List<ClassData> promotions = new List<ClassData>();
 
+    // マップ上のユニットの絵（2026-10-10）。陣営で色が違うので味方用・敵用の2枠。
+    // 未設定なら従来の色付き四角（味方=青／敵=赤）で表示される。
+    [Header("見た目")]
+    [Tooltip("味方ユニットのマップ上の絵（未設定＝青い四角）")]
+    public Sprite playerMapSprite;
+
+    [Tooltip("敵ユニットのマップ上の絵（未設定＝赤い四角）")]
+    public Sprite enemyMapSprite;
+
+    /// <summary>陣営に応じたマップ上の絵。未設定なら null。</summary>
+    public Sprite GetMapSprite(Faction faction)
+    {
+        return faction == Faction.Player ? playerMapSprite : enemyMapSprite;
+    }
+
     /// <summary>この兵種で武器種 type を装備できるか。</summary>
     public bool CanUse(WeaponType type)
     {

@@ -381,6 +381,9 @@ public class Unit : MonoBehaviour
         IsProvoked = true;
     }
 
+    // マップ上の絵のキャンバスの一辺（ピクセル）。試運転用スプライトは全て 32×32。
+    private const float MapSpriteCanvasPixels = 32f;
+
     private SpriteRenderer spriteRenderer;
     private Color baseColor;   // 行動済みで暗くする前の、元の色
     private GridManager grid;  // 戦闘不能時にマスの占有を外すため保持
@@ -429,19 +432,32 @@ public class Unit : MonoBehaviour
                 $"武器「{EquippedWeapon.weaponName}」を装備できません（警告のみ・動作は続行）。");
         }
 
-        // 見た目：陣営で色分け（自軍=青 / 敵=赤）。スプライトはグリッドのものを流用。
+        // 見た目：兵種データに絵があればそれを、無ければ陣営で色分けした四角（自軍=青 / 敵=赤）。
         spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
-        spriteRenderer.sprite = grid.SquareSprite;
-        spriteRenderer.color = (data.faction == Faction.Player)
-            ? new Color(0.30f, 0.50f, 1.00f)   // 青
-            : new Color(1.00f, 0.40f, 0.40f);  // 赤
-        spriteRenderer.sortingOrder = 1;       // マス(0)より手前に表示
-        baseColor = spriteRenderer.color;      // 元の色を覚えておく
-        HasActed = false;
-
-        // 盤上の位置とサイズ（マスより少し小さく）
+        Sprite mapSprite = data.classData != null ? data.classData.GetMapSprite(data.faction) : null;
         transform.position = grid.CellToWorld(cell);
-        transform.localScale = Vector3.one * grid.cellSize * 0.7f;
+        if (mapSprite != null)
+        {
+            // 絵は無着色。キャンバス（32×32px）が1マスにぴったり収まる大きさにする。
+            // Aseprite の取り込みは透明部分を切り詰めるので bounds ではなくキャンバスの寸法で測る
+            // （基準点はキャンバス中央＝取り込み設定の Pivot Alignment: Center。マスの中心に絵の中心が来る）
+            spriteRenderer.sprite = mapSprite;
+            spriteRenderer.color = Color.white;
+            float canvasWorldSize = MapSpriteCanvasPixels / mapSprite.pixelsPerUnit;
+            transform.localScale = Vector3.one * (grid.cellSize / canvasWorldSize);
+        }
+        else
+        {
+            // 四角はグリッドのものを流用し、マスより少し小さく
+            spriteRenderer.sprite = grid.SquareSprite;
+            spriteRenderer.color = (data.faction == Faction.Player)
+                ? new Color(0.30f, 0.50f, 1.00f)   // 青
+                : new Color(1.00f, 0.40f, 0.40f);  // 赤
+            transform.localScale = Vector3.one * grid.cellSize * 0.7f;
+        }
+        spriteRenderer.sortingOrder = 1;       // マス(0)より手前に表示
+        baseColor = spriteRenderer.color;      // 元の色を覚えておく（行動済みの暗転の基準）
+        HasActed = false;
 
         // このマスの「占有者」として登録（後の移動・戦闘判定で使う）
         TileData tile = grid.GetTile(cell);

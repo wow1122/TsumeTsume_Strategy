@@ -33,6 +33,11 @@ public class ClassDataEditor : Editor
         Draw("tags", "特攻タグ");
         Draw("promotions", "昇格先");
 
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("見た目（未設定＝色付きの四角）", EditorStyles.boldLabel);
+        Draw("playerMapSprite", "マップの絵（味方）");
+        Draw("enemyMapSprite", "マップの絵（敵）");
+
         serializedObject.ApplyModifiedProperties();
     }
 
