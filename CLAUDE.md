@@ -669,6 +669,19 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   重装タグを持つ兵種＝重装兵・大楯鎧兵・鎧騎馬兵。
   この3兵種を使っているユニットアセットは現時点で無い（＝プレイ上の変化は起きない）
 
+**マップ上のユニットの絵（2026-10-10 作者要望）**
+
+- マップ上のユニットの絵は**兵種単位**で、ClassData の playerMapSprite（味方用）／enemyMapSprite（敵用）に持たせる
+  （陣営で絵の色が違うため2枠）。同じ兵種のユニットはダミーや検証用も含めて全員同じ絵になる
+- 未設定の枠は従来どおり**色付きの四角**（味方=青／敵=赤・マスの0.7倍）。行動済みの暗転は絵にも四角にも効く
+- 絵は Assets/_Game/Art/Units/ の .aseprite（試運転用・32×32・Aseprite Importer で直接取り込み）。
+  Unit.Initialize が**キャンバス32px＝1マス**で拡縮する（定数 MapSpriteCanvasPixels。Aseprite の取り込みは
+  透明部分を切り詰めるので sprite.bounds では測らない）。キャンバスが32px以外の絵を足すときはこの定数を見直す
+- 割り当て済み（2026-10-10）: 剣闘士・剣士・斧使・槍兵・弓使・魔導士・修道士・騎馬兵・天馬兵（味方・敵）、
+  輸送隊（味方のみ）。竜騎兵・重装兵・鎧騎馬兵などは絵が無く四角のまま
+- **新しい絵を取り込んだら必ず Pivot Alignment を Center にする**（Inspector の Layer Import 内 → Apply）。
+  既定の Bottom Center のままだと絵が半マス上にずれる。Filter Mode は既定で Point（変更不要）
+
 ### 所持品（インベントリ）の合意仕様（Phase 22〜24・2026-07-19 作者合意。2026-07-20「持ち物」へ改名・操作を2段階UIに刷新）
 
 - 所持品は UnitData.items（List<ItemData>・上限7 = 定数 InventoryCapacity）。一番上の武器が初期装備。
@@ -1419,7 +1432,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   WeaponType(7種+魔法ダメージ判定IsMagicDamage+日本語種類名DisplayName), WeaponCategory(前衛/後衛)
 - Data/ … UnitData(7能力値+兵種データclassData+所持品items※上限InventoryCapacity=7。移動タイプ/移動力は
   EffectiveClass/EffectiveMove、初期所持品/装備は GetInitialItems/GetInitialWeapon で解決・武器不一致はOnValidateで警告),
-  ClassData(兵種1種の定義: 名前・階級・移動タイプ・移動力・装備可能武器・特攻タグ・昇格先),
+  ClassData(兵種1種の定義: 名前・階級・移動タイプ・移動力・装備可能武器・特攻タグ・昇格先・
+  マップの絵 playerMapSprite/enemyMapSprite＋GetMapSprite(faction)※2026-10-10〔未設定＝色付き四角〕),
   ItemData(所持品の抽象基底・DisplayName のみ),
   WeaponData(: ItemData・耐久maxUses※既定0＝耐久なしで既存アセットを壊さない/新規作成時はResetで6・
   標準装備isStandardIssue※フェーズ32の補給を資源なしで受けられるか。既定true・
@@ -1478,6 +1492,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   Classes/ サブフォルダに兵種 ClassData 38種: Class_Tactician（軍師）〜Class_MaligKnight（魔竜騎兵）。
   ※Unit_Player_AxeCavalry / Unit_Enemy_AxeCavalry はファイル名こそ旧名だが中身は槍騎兵（兵種データ導入時に持ち替え））
 シーン: Assets/_Game/Scenes/BattleScene.unity
+絵: Assets/_Game/Art/Units/（マップ上のユニットの .aseprite。「兵種データの合意仕様」の節の「マップ上のユニットの絵」参照）
 
 ## 次にやること
 
