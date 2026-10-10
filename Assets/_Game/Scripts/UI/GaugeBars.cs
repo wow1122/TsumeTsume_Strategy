@@ -7,7 +7,7 @@ using UnityEngine;
 /// 2026-08-16 に、仕様が決まっていないバー（兵種経験値）用の DrawSlim を足した。
 ///
 /// 見た目（作者仕様）:
-///  ・マナ（明るい緑）→ 気勢（明るい青）の順で2本
+///  ・マナ（明るい緑）→ 気勢（明るい黄色）の順で2本
 ///  ・貯まっているぶんだけ、バーの左端から色が伸びる
 ///  ・値10ごとに黒い縦線（目盛り）が入る
 ///  ・バーの右隣に、貯まった本数（ストック）と現在値のカウンターを出す
@@ -46,9 +46,9 @@ public static class GaugeBars
     /// </summary>
     private const float SlimBarHeight = 7f;
 
-    private static readonly Color ManaColor = new Color(0.30f, 0.95f, 0.40f);      // 明るい緑
-    private static readonly Color MomentumColor = new Color(0.35f, 0.70f, 1.00f);  // 明るい青
-    private static readonly Color BackColor = new Color(0.12f, 0.12f, 0.12f, 0.90f);
+    public static readonly Color ManaColor = new Color(0.30f, 0.95f, 0.40f);      // 明るい緑
+    public static readonly Color MomentumColor = new Color(1.00f, 0.90f, 0.25f);  // 明るい黄色（2026-10-10 作者指示で青から変更）
+    public static readonly Color BackColor = new Color(0.12f, 0.12f, 0.12f, 0.90f);
     private static readonly Color FrameColor = new Color(0.65f, 0.65f, 0.65f);
     private static readonly Color TickColor = Color.black;
 
@@ -158,8 +158,8 @@ public static class GaugeBars
         GUI.Label(new Rect(bar.xMax + Spacing, row.y, CounterWidth, row.height), counter, counterStyle);
     }
 
-    /// <summary>単色で矩形を塗る。</summary>
-    private static void FillRect(Rect rect, Color color)
+    /// <summary>単色で矩形を塗る。盤上の HP ゲージ（Unit.OnGUI）からも使う。</summary>
+    public static void FillRect(Rect rect, Color color)
     {
         Color prev = GUI.color;
         GUI.color = color;

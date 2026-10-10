@@ -444,7 +444,7 @@ public class Unit : MonoBehaviour
             spriteRenderer.sprite = mapSprite;
             spriteRenderer.color = Color.white;
             float canvasWorldSize = MapSpriteCanvasPixels / mapSprite.pixelsPerUnit;
-            transform.localScale = Vector3.one * (grid.cellSize / canvasWorldSize);
+            transform.localScale = Vector3.one * (grid.cellSize / canvasWorldSize)*0.9f;
         }
         else
         {
@@ -628,31 +628,41 @@ public class Unit : MonoBehaviour
         UnitRegistry.Unregister(this);
     }
 
-    // 各ユニットの頭上あたりに現在HPを表示する（簡易・Canvas不要）。
+    // ===== 盤上の HP ゲージ（2026-10-10 作者仕様）=====
+    // ユニットのいるマスの最下部に、残りHPの割合を横棒で出す（味方=青／敵=赤）。
+    // HP の数字は出さない（以前はユニットの絵の上に数字を出していたが廃止）。
+    private const float HpBarWidthRatio = 0.85f;    // マスの幅に対するゲージの長さ
+    private const float HpBarHeightRatio = 0.10f;   // マスの高さに対するゲージの太さ
+    private const float HpBarMinHeight = 3f;        // 小さい画面でも見える最低の太さ（ピクセル）
+    private static readonly Color HpBarPlayerColor = new Color(0.30f, 0.55f, 1.00f);  // 青
+    private static readonly Color HpBarEnemyColor = new Color(1.00f, 0.30f, 0.30f);   // 赤
+    private static readonly Color HpBarBackColor = new Color(0.10f, 0.10f, 0.10f, 0.85f);
+
+    // 各ユニットの HP ゲージとマナ・気勢のリングを描く（簡易・Canvas不要）。
+    // 「救」「飛x2」の印も以前はここで絵の上に出していたが、ユニット情報パネルの状態枠
+    // （飛翔の残りターン・救出中の相手の名前）で確認できるので廃止した（2026-10-10 作者合意）。
     void OnGUI()
     {
-        if (Camera.main == null) return;
+        if (Camera.main == null || grid == null) return;
+        if (Camera.main.WorldToScreenPoint(transform.position).z <= 0) return; // カメラの後ろなら描かない
 
-        Vector3 sp = Camera.main.WorldToScreenPoint(transform.position);
-        if (sp.z <= 0) return; // カメラの後ろなら描かない
+        // HP ゲージ：マスの画面上の矩形（GUI 座標）の最下部に置く。
+        // 見えているマスは 0.95 倍（GridManager.CreateCellVisual の隙間）なので、その内側に収める
+        Rect cell = grid.GetCellsScreenRect(GridPosition, GridPosition);
+        float inset = cell.height * 0.025f;
+        float barHeight = Mathf.Max(HpBarMinHeight, Mathf.Round(cell.height * HpBarHeightRatio));
+        float barWidth = Mathf.Round(cell.width * HpBarWidthRatio);
+        var bar = new Rect(Mathf.Round(cell.center.x - barWidth * 0.5f),
+                           Mathf.Round(cell.yMax - inset - barHeight - 1f),
+                           barWidth, barHeight);
+        float ratio = MaxHP > 0 ? Mathf.Clamp01((float)CurrentHP / MaxHP) : 0f;
+        Color fill = Data != null && Data.faction == Faction.Player ? HpBarPlayerColor : HpBarEnemyColor;
 
-        var style = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 14,
-            alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Bold
-        };
-        style.normal.textColor = Color.white;
+        GaugeBars.FillRect(bar, HpBarBackColor);
+        if (ratio > 0f)
+            GaugeBars.FillRect(new Rect(bar.x, bar.y, Mathf.Max(1f, Mathf.Round(bar.width * ratio)), bar.height), fill);
 
-        // GUI座標は左上原点・Y下向きなので、スクリーンYを反転する
-        // 救出中は HP の横に「救」を添える（例: 「20 救」。複数格納中は「救x2」のように数も出す）
-        // 飛翔中は「飛x残りターン数」を添える（例: 「20 飛x2」）
-        string label = CurrentHP.ToString();
-        if (IsRescuing)
-            label += Carried.Count > 1 ? $" 救x{Carried.Count}" : " 救";
-        if (IsFlying)
-            label += $" 飛x{FlightTurnsLeft}";
-        var rect = new Rect(sp.x - 30, Screen.height - sp.y - 12, 60, 22);
-        GUI.Label(rect, label, style);
+        // マナ（左上隅）・気勢（右上隅）のリング状ゲージとストック数（2026-10-10 作者仕様）
+        GaugeRings.Draw(cell, inset, this);
     }
 }
