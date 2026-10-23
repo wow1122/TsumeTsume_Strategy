@@ -631,7 +631,7 @@ public class Unit : MonoBehaviour
     // ===== 盤上の HP ゲージ（2026-10-10 作者仕様）=====
     // ユニットのいるマスの最下部に、残りHPの割合を横棒で出す（味方=青／敵=赤）。
     // HP の数字は出さない（以前はユニットの絵の上に数字を出していたが廃止）。
-    private const float HpBarWidthRatio = 0.85f;    // マスの幅に対するゲージの長さ
+    private const float HpBarWidthRatio = 0.89f;    // マスの幅に対するゲージの長さ
     private const float HpBarHeightRatio = 0.10f;   // マスの高さに対するゲージの太さ
     private const float HpBarMinHeight = 3f;        // 小さい画面でも見える最低の太さ（ピクセル）
     private static readonly Color HpBarPlayerColor = new Color(0.30f, 0.55f, 1.00f);  // 青
@@ -647,11 +647,12 @@ public class Unit : MonoBehaviour
         if (Camera.main.WorldToScreenPoint(transform.position).z <= 0) return; // カメラの後ろなら描かない
 
         // HP ゲージ：マスの画面上の矩形（GUI 座標）の最下部に置く。
-        // 見えているマスは 0.95 倍（GridManager.CreateCellVisual の隙間）なので、その内側に収める
+        // 見えているマスは 0.95 倍（GridManager.CreateCellVisual の隙間）なので、その内側に収める。
+        // 下隅のリングと重ならないよう、リング2つぶんの直径だけ短くして中央に寄せる（2026-10-11 作者仕様）
         Rect cell = grid.GetCellsScreenRect(GridPosition, GridPosition);
         float inset = cell.height * 0.025f;
         float barHeight = Mathf.Max(HpBarMinHeight, Mathf.Round(cell.height * HpBarHeightRatio));
-        float barWidth = Mathf.Round(cell.width * HpBarWidthRatio);
+        float barWidth = Mathf.Max(1f, Mathf.Round(cell.width * HpBarWidthRatio) - GaugeRings.GetDiameter(cell) * 2);
         var bar = new Rect(Mathf.Round(cell.center.x - barWidth * 0.5f),
                            Mathf.Round(cell.yMax - inset - barHeight - 1f),
                            barWidth, barHeight);
@@ -662,7 +663,8 @@ public class Unit : MonoBehaviour
         if (ratio > 0f)
             GaugeBars.FillRect(new Rect(bar.x, bar.y, Mathf.Max(1f, Mathf.Round(bar.width * ratio)), bar.height), fill);
 
-        // マナ（左上隅）・気勢（右上隅）のリング状ゲージとストック数（2026-10-10 作者仕様）
+        // マナ（左下隅）・気勢（右下隅）のリング状ゲージとストック数（2026-10-11 作者仕様）。
+        // HP ゲージより後に描くので、重なってもリングが上になる
         GaugeRings.Draw(cell, inset, this);
     }
 }

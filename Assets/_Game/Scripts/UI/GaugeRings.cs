@@ -7,10 +7,13 @@ using UnityEngine;
 /// Unit.OnGUI から呼ぶ。
 ///
 /// 見た目（作者仕様）:
-///  ・マスの左上隅にマナ、右上隅に気勢。外円の直径はマスの一辺の 1/5
+///  ・マスの左下隅にマナ、右下隅に気勢（2026-10-11 に上隅から変更）。外円の直径はマスの一辺の 1/5
+///  ・HP ゲージはリングと重ならないよう、リング2つぶんの直径だけ短くして中央に置く（Unit.OnGUI）
+///  ・ユニットの絵と重なってもリングが上に見える（OnGUI の描画は常にスプライトより手前）
 ///  ・リングの一番上から**反時計回り**に、貯まったぶんだけ色が伸びる
 ///  ・色はユニット情報のゲージと同じ（GaugeBars.ManaColor / MomentumColor）
-///  ・貯まりきって保持している本数（ストック）は、リングの真下にリングと同じ大きさの数字で出す
+///  ・貯まりきって保持している本数（ストック）は、リングの真上にリングと同じ大きさの数字で出す
+///    （下隅に移したので、真下だとマスの外にはみ出るため 2026-10-11 に真上へ変更）
 ///
 /// 既定として決めたこと（作者に伝達済み・変えるならここの定数）:
 ///  ・リングの太さ＝半径の半分（InnerRadiusRatio）。未蓄積の部分は GaugeBars.BackColor
@@ -42,16 +45,22 @@ public static class GaugeRings
     private static readonly Dictionary<(int diameter, int value, int max, Color32 color), Texture2D> cache =
         new Dictionary<(int, int, int, Color32), Texture2D>();
 
+    /// <summary>cell（マスの画面上の矩形）に描くときのリングの外円の直径（ピクセル）。</summary>
+    public static int GetDiameter(Rect cell)
+    {
+        return Mathf.Max(MinDiameter, Mathf.RoundToInt(cell.width * DiameterRatio));
+    }
+
     /// <summary>
-    /// cell（マスの画面上の矩形・GUI 座標。見えているマスの内側 inset ぶんを除いて使う）の上隅に、
-    /// unit のマナ（左上）と気勢（右上）のリングを描く。
+    /// cell（マスの画面上の矩形・GUI 座標。見えているマスの内側 inset ぶんを除いて使う）の下隅に、
+    /// unit のマナ（左下）と気勢（右下）のリングを描く。
     /// </summary>
     public static void Draw(Rect cell, float inset, Unit unit)
     {
         if (unit == null) return;
 
-        int d = Mathf.Max(MinDiameter, Mathf.RoundToInt(cell.width * DiameterRatio));
-        float top = Mathf.Round(cell.y + inset + CornerMargin);
+        int d = GetDiameter(cell);
+        float top = Mathf.Round(cell.yMax - inset - CornerMargin - d);
         float left = Mathf.Round(cell.x + inset + CornerMargin);
         float right = Mathf.Round(cell.xMax - inset - CornerMargin - d);
 
@@ -59,7 +68,7 @@ public static class GaugeRings
         DrawOne(new Rect(right, top, d, d), unit.Momentum, GaugeBars.MomentumColor);
     }
 
-    /// <summary>リング1つと、その真下のストック数を描く。</summary>
+    /// <summary>リング1つと、その真上のストック数を描く。</summary>
     private static void DrawOne(Rect ring, GaugeState gauge, Color fillColor)
     {
         if (gauge == null) return;
@@ -81,7 +90,7 @@ public static class GaugeRings
             clipping = TextClipping.Overflow,
         };
         // 横はリングより広く取って、2桁でも欠けないようにする（中心はリングと揃える）
-        var label = new Rect(ring.center.x - d, ring.yMax, d * 2f, d);
+        var label = new Rect(ring.center.x - d, ring.y - d, d * 2f, d);
         string text = gauge.Stock.ToString();
 
         style.normal.textColor = Color.black;   // 影（盤面の色に埋もれないように）
