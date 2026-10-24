@@ -26,15 +26,8 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  貨物が複数のとき、「降ろす」「引き受け」「代わりに降ろす」は貨物リスト【CargoSelect】から
 ///  対象を選ぶ（1体だけなら自動選択でリストは出ない）。
 ///
-/// Phase 14（飛翔・作者仕様 2026-07-12 改訂）で追加された流れ：
-///  「飛翔」→ 飛行兵が非飛翔中ならいつでも選べる（移動前・移動後・救出後も）。行動は消費せず、
-///  飛翔状態のまま「残り移動力」で移動選択へ戻る（飛翔→移動→攻撃/待機まで1行動でできる）。
-///  取り消しは1段階ずつ：メニュー →（飛翔後の再移動を取り消し＝飛翔した位置へ）→ 飛翔解除 →
-///  （飛翔前の移動を取り消し）→ 選択解除。行動を確定する前に別のマス・別の味方をクリックした
-///  ときも飛翔は取り消される（選択解除できる状況なら解除も同時に。救出後など取り消し不能の
-///  ときは飛翔の取り消しだけが起こり、選択は残る）。確定するには待機・攻撃などで行動を終える。
-///  「着陸」→ 飛翔中の飛行兵が使える（飛翔を発動したターンは不可）。飛翔を解除して即行動終了。
-///  空中で「引き受け」た貨物は降ろせない（降ろすは地上でのみ表示）。
+/// Phase 14 の「飛翔」「着陸」コマンドと、飛翔の段階的な取り消しは 2026-10-24 に撤廃した
+/// （飛行兵は常に地形を無視して飛ぶ兵種になり、コマンドは要らなくなった）。
 ///
 /// Phase 15 の追加：
 ///  攻撃の対象選択中、対象にマウスを重ねると戦闘予測（BattleForecast）が画面右下に出る。
@@ -47,7 +40,7 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  行動は消費しない（持ち物の操作と同じ）ので、そのまま攻撃・持ち物・待機を選べる。
 ///  ただし1個でも動かすと取り消し不能になる（救出・引き受けと同じ。相手の状態を
 ///  変えてしまうため巻き戻せない）。1個も動かさずに閉じたときは何も起きていない扱い。
-///  相手は「隣接・同陣営・盤上（貨物は不可）・飛翔状態が同じ」（判定は ExchangeRules）。
+///  相手は「隣接・同陣営・盤上（貨物は不可）」（判定は ExchangeRules）。
 ///
 /// 2026-08-09 の追加（攻撃は「武器を選んでから相手を選ぶ」順）：
 ///  「攻撃」→【武器選択】どの武器で殴るかを選ぶ（武器1本でも必ず通る）→
@@ -271,20 +264,14 @@ public class BattleController : MonoBehaviour
                 }
                 else if (!context.committed && IsSelectablePlayer(clickedUnit))
                 {
-                    CancelAll(); // 未確定の移動・飛翔を巻き戻してから
+                    CancelAll(); // 未確定の移動を巻き戻してから
                     EnterMoveSelect(clickedUnit); // 別の味方へ選択切替
                 }
                 else if (!context.committed)
                 {
-                    CancelAll(); // 範囲外クリック＝選択解除（未確定の飛翔もここで取り消される）
+                    CancelAll(); // 範囲外クリック＝選択解除
                 }
-                else if (context.usedFlight)
-                {
-                    // 取り消し不能（救出済みなど）でも、確定前の飛翔だけは範囲外クリックで
-                    // 取り消せる（作者仕様 2026-07-12）。選択解除はされず、飛翔前の状態に戻る
-                    CancelFlightAndReturn();
-                }
-                // 取り消し不能で飛翔もしていないときは範囲外クリックを無視
+                // 取り消し不能（救出済みなど）のときは範囲外クリックを無視
                 break;
 
             case State.TargetSelect:
@@ -450,9 +437,7 @@ public class BattleController : MonoBehaviour
                 break;
 
             case State.MoveSelect:
-                if (context.usedFlight)
-                    CancelFlightAndReturn(); // 飛翔の解除（1段階戻る）
-                else if (context.committed)
+                if (context.committed)
                     OpenCommandMenu(); // 救出済みなどで選択解除はできない → メニューへ
                 else
                     CancelAll(); // 選択解除（まだ何もしていないので取り消すものは無い）
@@ -498,7 +483,7 @@ public class BattleController : MonoBehaviour
     /// 「再行動」が選ばれた（フェーズ30）：気勢を1本使って行動済みを解除し、移動選択へ戻す。
     /// 同じユニットは1ターンに1回しか使えない（MarkRefreshUsed）。
     /// 移動力は新しい ActionContext ができることで全回復する（＝まっさらな1行動として扱う。
-    /// 救出済み・飛翔済みなどの制限もすべて解けるので、前の行動を引きずらない）。
+    /// 救出済みなどの制限もすべて解けるので、前の行動を引きずらない）。
     /// </summary>
     private void ExecuteRefresh()
     {
@@ -568,10 +553,9 @@ public class BattleController : MonoBehaviour
     {
         Unit unit = context.unit;
 
-        // 行動メニューは必ず閉じる（2026-07-30 修正）。飛翔のように「メニューの項目から
-        // そのまま移動選択へ戻る」コマンドがあり、閉じ忘れると飛翔前に作ったメニューが
-        // 残ってしまう（飛翔中は使えないはずの救出・引き受けの項目が見えるうえ、押せてしまう）。
-        // 移動選択の最中にメニューを出す場面は無いので、ここで一括して閉じる。
+        // 行動メニューは必ず閉じる（2026-07-30 修正）。「メニューの項目からそのまま移動選択へ戻る」
+        // コマンドで閉じ忘れると、前に作ったメニューが残って押せてしまう（当時は飛翔で起きた。
+        // 飛翔は 2026-10-24 に撤廃）。移動選択の最中にメニューを出す場面は無いので、ここで一括して閉じる。
         menu.Hide();
 
         unitInfo.Hide(); // 相手選択から移動選択へ移る（救出の直後など）ときは相手情報を消す
@@ -650,61 +634,42 @@ public class BattleController : MonoBehaviour
 
     /// <summary>
     /// いまの文脈（context）で実行できるコマンドの一覧を作る。
-    /// Phase 14 のコマンド（飛翔）はここに項目を足していく。
     /// </summary>
     private List<ActionMenu.Entry> BuildCommands()
     {
         var commands = new List<ActionMenu.Entry>();
         Unit unit = context.unit;
 
-        // 救出を使った後は「再移動 → 待機」だけ（仕様：使用していない移動力分の再移動のみ）。
-        // ただし飛行兵は救出の後にも飛翔できる（作者仕様変更 2026-07-12）
+        // 救出を使った後は「再移動 → 待機」だけ（仕様：使用していない移動力分の再移動のみ）
         if (context.usedRescue)
         {
-            if (CanUseFlightCommand(unit))
-                commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
         }
 
         // 降ろすを使った後は「再移動 → 待機」だけ（2026-07-26 作者仕様：降ろしても残りの移動力は使える）。
-        // 救出の後と同じ扱いで、飛行兵は飛翔もできる（飛翔は行動を消費しないため）。
         // 引き受けの後に降ろした場合もここに来るので、usedTakeOver より先に判定する
         if (context.usedDrop)
         {
-            if (CanUseFlightCommand(unit))
-                commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
         }
 
-        // 引き受けを使った後は「降ろす / 飛翔・着陸 / 待機」だけ。
+        // 引き受けを使った後は「降ろす / 待機」だけ。
         // 降ろせるのは引き受けを実行したマスの上にいるときだけ（2026-07-26 作者仕様：
-        // 引き受けた後に移動した先では降ろせない。引き受けたマスへ戻れば また降ろせる）。
-        // 空中（飛翔中）で引き受けた場合は降ろせない（作者仕様 2026-07-12）。
-        // 飛翔・着陸は行動を消費しないので、引き受けの後でも使える（2026-07-30 作者仕様変更。
-        // 救出後・降ろす後と同じ扱いに揃えた。貨物を抱えたまま飛翔できるのは飛翔の合意仕様どおり）
+        // 引き受けた後に移動した先では降ろせない。引き受けたマスへ戻れば また降ろせる）
         if (context.usedTakeOver)
         {
-            if (context.IsAtTakeOverCell && unit.IsRescuing && !unit.IsFlying
+            if (context.IsAtTakeOverCell && unit.IsRescuing
                 && RescueRules.GetDroppableCargoes(unit, grid).Count > 0)
                 commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
-
-            if (CanUseFlightCommand(unit))
-                commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
-
-            // 着陸を出すのはこの分岐だけでよい（救出・降ろすは飛翔中には実行できないので、
-            // その後に飛翔したなら usedFlight で着陸不可＝出しても必ず条件から外れる）。
-            // ここに来るのは「前のターンから飛翔中のまま空中で引き受けた」場合
-            if (unit.IsFlying && !context.usedFlight)
-                commands.Add(new ActionMenu.Entry("着陸", ExecuteLanding));
 
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
         }
 
         // 攻撃コマンドを出す条件は「持っている武器のどれかで届く敵がいるか」（2026-08-09 の合意。
-        // 装備中の武器基準ではない＝飛翔中の相手も、対空の特効武器を持っていれば攻撃できる）
+        // 装備中の武器基準ではない＝別の武器でしか届かない敵も対象になる）
         attackTargets = FindAttackTargets(unit, context.hasMoved);
         if (attackTargets.Count > 0)
         {
@@ -735,17 +700,6 @@ public class BattleController : MonoBehaviour
                     () => EnterUnitTargetSelect(UnitSelectPurpose.Heal, healTargets, HighlightKind.HealRange)));
         }
 
-        // 飛翔：飛行兵が非飛翔中ならいつでも使える（移動前でも移動後でも。作者仕様変更 2026-07-12）。
-        // 行動は消費せず、残り移動力ぶんの飛行移動ができる
-        //（攻撃→行動終了の流れがあるので、戦闘後の飛翔は起こらない）
-        if (CanUseFlightCommand(unit))
-            commands.Add(new ActionMenu.Entry("飛翔", ExecuteFlight));
-
-        // 着陸：飛翔中の飛行兵が使える。飛翔を発動したその行動（発動ターン）では使えない。
-        // 使うと飛翔が解除され、即行動済みになる（作者仕様 2026-07-12）
-        if (unit.IsFlying && !context.usedFlight)
-            commands.Add(new ActionMenu.Entry("着陸", ExecuteLanding));
-
         // 救出：騎乗ユニットが、隣接する同陣営の徒歩ユニットを格納する（救出中の攻撃は可＝合意(d)。
         // 輸送隊は騎乗ユニットも救出できる＝Phase 12）
         List<Unit> rescueTargets = RescueRules.FindRescueTargets(unit, grid);
@@ -759,9 +713,8 @@ public class BattleController : MonoBehaviour
 
         // 降ろす：救出中で、貨物を降ろせる隣接マスがあるとき（救出と同一行動では不可＝合意(e)。
         // usedRescue のときは上で分岐済みなので、ここに来るのは前のターンに救出した場合）。
-        // 飛翔中は降ろせない（空中では乗り降りできない。着地後に降ろせる。Phase 14）。
         // 降ろせるかは貨物の兵種ごとに判定する（Phase 15）
-        if (unit.IsRescuing && !unit.IsFlying && RescueRules.GetDroppableCargoes(unit, grid).Count > 0)
+        if (unit.IsRescuing && RescueRules.GetDroppableCargoes(unit, grid).Count > 0)
             commands.Add(new ActionMenu.Entry("降ろす", EnterDropCargoSelect));
 
         // 引き受け：隣接する救出中の味方から貨物をもらう
@@ -890,7 +843,7 @@ public class BattleController : MonoBehaviour
     /// **装備はここで切り替わる**（作者合意・FE準拠）＝この後キャンセルしてもその武器のまま。
     /// 装備変更は行動を消費しないので、そのまま別のコマンドへ進んでも構わない
     /// （既存の「装備変更に取り消しは無い」合意どおり）。
-    /// 威力・三すくみ・特効・対空（撃墜）・挟撃の資格は、装備を変えた時点で
+    /// 威力・三すくみ・特効・挟撃の資格は、装備を変えた時点で
     /// 既存の Unit.Weapon 窓口を通じて全部この武器のものになる。
     /// </summary>
     private void EnterTargetSelect(WeaponData weapon)
@@ -951,7 +904,7 @@ public class BattleController : MonoBehaviour
 
     /// <summary>
     /// 攻撃を実行する（敵をクリックした瞬間。2026-08-09 から「実行」の確認は無い）。
-    /// 武器はもう装備してあるので、威力・三すくみ・特効・対空（撃墜）・挟撃の資格は
+    /// 武器はもう装備してあるので、威力・三すくみ・特効・挟撃の資格は
     /// すべて選んだ武器で決まる。装備は攻撃の後もそのまま＝敵フェイズもこの武器で受ける（FE準拠）。
     /// 武器のメモリ消費を払ってその武器を払えなくなっても持ち替えない（2026-10-24 作者仕様の見直し。
     /// 次に攻撃するときに、武器の一覧で払える武器を選ぶ）。
@@ -1275,64 +1228,6 @@ public class BattleController : MonoBehaviour
         Debug.Log($"{unit.Data.unitName} は {target.Data.unitName} を杖で回復した" +
                   $"（HP{healed}回復 → {target.CurrentHP}／{target.MaxHP}）");
         FinishAction();
-    }
-
-    // ===== 飛翔（Phase 14）=====
-
-    /// <summary>
-    /// 「飛翔」コマンドを出せるか。飛行兵で・いま飛翔しておらず・撃墜による飛翔禁止も無いこと
-    /// （撃墜は 2026-08-05 作者仕様。撃墜された次の自分のターンは飛べない）。
-    /// BuildCommands の4か所（通常・救出後・降ろす後・引き受け後）が同じこの関数を見る
-    /// ＝条件を足すときに分岐を取りこぼさないため
-    /// （2026-07-30 に引き受け後の飛翔を緩めたとき、1分岐だけガードが漏れた前例がある）。
-    /// </summary>
-    private static bool CanUseFlightCommand(Unit unit)
-    {
-        return unit.Class == UnitClass.Flier && !unit.IsFlying && !unit.IsFlightBlocked;
-    }
-
-    /// <summary>
-    /// 飛翔を実行：飛翔状態になり、行動は消費せず「残り移動力」で移動選択へ戻る。
-    /// 移動前でも移動後でも使える（移動後なら残りの移動力ぶんだけ飛行移動できる）。
-    /// 行動を確定する前なら右クリック/ESC で1段階ずつ取り消せる（OnCancelPressed）。
-    /// </summary>
-    private void ExecuteFlight()
-    {
-        Unit unit = context.unit;
-        unit.StartFlight();
-        context.MarkFlight(); // いまの位置を「取り消しの中間点」として記録
-
-        Debug.Log($"{unit.Data.unitName} は飛翔した（発動ターンを含めて {unit.FlightTurnsLeft} ターン持続。" +
-                  $"残り移動力 {context.RemainingMove}。行動確定前なら右クリック/ESCで取り消し可）");
-
-        ShowMoveRange(); // 飛翔状態の移動範囲（コスト1・すり抜け）を残り移動力で表示
-        if (reachableCells.Count == 0)
-            OpenCommandMenu(); // 動けるマスが無ければそのままメニューへ（攻撃・待機など）
-    }
-
-    /// <summary>着陸を実行：飛翔状態を解除し、即行動済みになる（作者仕様 2026-07-12）。</summary>
-    private void ExecuteLanding()
-    {
-        Unit unit = context.unit;
-        unit.CancelFlight();
-        Debug.Log($"{unit.Data.unitName} は着陸した（行動終了）");
-        FinishAction();
-    }
-
-    /// <summary>
-    /// 確定前の飛翔を取り消して、飛翔する前の状態へ1段階戻る。
-    /// 飛翔の前に移動していたならその位置のメニューへ、移動する前に飛翔していたなら
-    /// 地上の移動範囲の表示へ戻る。右クリック/ESC と範囲外クリックの両方から呼ばれる
-    /// （救出後の取り消し不能状態でも、飛翔だけはこの方法で取り消せる）。
-    /// </summary>
-    private void CancelFlightAndReturn()
-    {
-        context.unit.CancelFlight();
-        context.UnmarkFlight();
-        Debug.Log($"{context.unit.Data.unitName} は飛翔を取りやめた");
-
-        if (context.hasMoved) OpenCommandMenu();
-        else ShowMoveRange();
     }
 
     /// <summary>
@@ -1709,20 +1604,10 @@ public class BattleController : MonoBehaviour
 
     /// <summary>
     /// 行動を中断して選択を解除する（移動していれば元の位置へ戻す）。
-    /// 確定前の飛翔もここで取り消される（作者仕様 2026-07-12：クリックでの選択解除＝飛翔もキャンセル）。
     /// </summary>
     private void CancelAll()
     {
-        if (context != null)
-        {
-            if (context.usedFlight)
-            {
-                context.unit.CancelFlight();
-                context.UnmarkFlight(); // 先に中間点を破棄 → RevertMove が行動開始位置まで戻す
-                Debug.Log($"{context.unit.Data.unitName} は飛翔を取りやめた");
-            }
-            context.RevertMove(grid);
-        }
+        if (context != null) context.RevertMove(grid);
         ClearSelection();
     }
 
@@ -1762,7 +1647,7 @@ public class BattleController : MonoBehaviour
     /// それぞれから武器の射程で届くマスを集め、立てるマス自体は除く（そこは青で見せる）。
     /// 射程は実戦と同じ CombatRules.TryGetAttackRange を使うので、
     /// 「後衛武器は移動すると最小射程ちょうどに縮む」ルールも正しく反映される。
-    /// 表示用の下見なので、相手ごとの可否（飛翔の相性 CanEngage）までは見ない。
+    /// 表示用の下見なので、そこに敵がいるかまでは見ない。
     /// 誰も立ち入れない壁マス（通行不可かつ飛行も不可）は塗らない。非武装なら空を返す。
     /// 2026-08-09 から、持っている武器ぶんを合算する（攻撃の対象を「全武器で届く敵」に
     /// した合意に表示を合わせるため）。敵は装備中の1本だけが候補なので、
@@ -1813,7 +1698,7 @@ public class BattleController : MonoBehaviour
     /// 杖が届くマス（緑表示）の集合を作る（Phase 25・ComputeAttackCells の杖版）。
     /// 「立てるマス（現在地＋移動できるマス）」それぞれから杖の射程で届くマスを集め、
     /// 立てるマス自体は除く（そこは青で見せる）。杖は攻撃と違い、移動しても射程は縮まない。
-    /// 表示用の下見なので、そこに回復対象がいるか・飛翔の高さの相性までは見ない。
+    /// 表示用の下見なので、そこに回復対象がいるかまでは見ない。
     /// 誰も立ち入れない壁マスは塗らない。杖を装備していなければ空を返す。
     /// </summary>
     private HashSet<Vector2Int> ComputeHealCells(Unit unit, HashSet<Vector2Int> reachable)
@@ -1856,7 +1741,7 @@ public class BattleController : MonoBehaviour
     /// unit がいまの位置から「持っている武器のどれかで」攻撃できる敵ユニットの一覧を返す。
     /// 「攻撃」「必殺技」「被ダメ確認」を出すかどうかの判定と、被ダメ確認の相手がこれを使う
     /// （どの武器で殴るかは、この後の武器選択で決める）。
-    /// 中身は WeaponChoiceRules に集約してある（射程・飛翔の相性の判定は CombatRules 共通＝敵AIと同じルール）。
+    /// 中身は WeaponChoiceRules に集約してある（射程の判定は CombatRules 共通＝敵AIと同じルール）。
     /// 敵は候補が装備中の1本だけなので、敵の行動範囲プレビューの見た目は従来と変わらない。
     /// メモリで払えない武器は数えない。extraCost は必殺技の1本など、一緒に払う量（2026-10-24）。
     /// </summary>

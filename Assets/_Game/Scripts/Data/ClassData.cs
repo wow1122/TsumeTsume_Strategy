@@ -20,20 +20,13 @@ public class ClassData : ScriptableObject
     public ClassTier tier = ClassTier.Base;
 
     [Header("移動")]
-    [Tooltip("移動タイプ。地形・救出・飛翔・積載など既存ルールはすべてこの値で判定する")]
+    [Tooltip("移動タイプ。地形・救出・積載など既存ルールはすべてこの値で判定する（飛行兵は地形を無視して飛ぶ）")]
     public UnitClass moveType = UnitClass.Infantry;
 
-    [Tooltip("1ターンに移動できるマス数（地上を歩くときの値）")]
+    // ※飛行兵の「地上／飛翔」の2本立て（flightMove。2026-08-10）の欄は、
+    //   2026-10-24 の飛翔の撤廃で取り除いた（飛行兵6兵種はすべて移動6）。
+    [Tooltip("1ターンに移動できるマス数")]
     public int move = 3;
-
-    // 飛行兵は「地上を歩くとき」と「飛翔中」で移動力が違う（2026-08-10 作者仕様）。
-    // 天馬兵系は地上4/飛翔6、竜騎兵系は地上3/飛翔7。飛ばないと本来の脚が出ない。
-    // 0 のときは上の移動力と同じ＝飛行兵以外の32兵種はここを触らなくてよい（既存アセットは全て0）。
-    [Tooltip("飛翔中の移動力（飛行兵のみ。0＝上の移動力と同じ）")]
-    public int flightMove = 0;
-
-    /// <summary>飛翔中の移動力。0（未設定）なら地上の移動力と同じ。</summary>
-    public int EffectiveFlightMove => flightMove > 0 ? flightMove : move;
 
     [Header("武器")]
     [Tooltip("この兵種が装備できる武器種の一覧")]

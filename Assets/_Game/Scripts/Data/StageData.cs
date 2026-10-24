@@ -18,9 +18,6 @@ public class StageData : ScriptableObject
         public UnitData unitData;   // 配置するユニットの能力値
         public Vector2Int cell;     // 配置するマス（x, y）
 
-        [Tooltip("開始時から飛翔状態にする残りターン数（0=地上から開始。飛行兵のみ有効。Phase 14）")]
-        public int initialFlightTurns = 0;
-
         [Tooltip("敵AIの性格（敵のみ有効。Phase 17）。\n" +
                  "突撃型=従来どおり攻める／待ち伏せ型=挑発（被弾 または 攻撃できる相手の出現）まで動かない")]
         public EnemyAIProfile aiProfile = EnemyAIProfile.Assault;

@@ -5,7 +5,7 @@ using UnityEngine;
 /// 盤面から「次の相手フェイズにどんな危険があるか」を読み取る道具集（Phase 19〜）。
 /// 判定の部品は CombatRules / MovementCalculator / DamageCalculator にあるものを使い、
 /// ここではそれを組み合わせるだけ（一元化の方針）。
-/// 扱う脅威は「挟撃の脅威」（Phase 19）と「対空射程マス」（Phase 20）。
+/// 扱う脅威は「挟撃の脅威」（Phase 19）。Phase 20 の「対空射程マス」は 2026-10-24 に飛翔ごと撤廃した。
 /// </summary>
 public static class ThreatMap
 {
@@ -23,7 +23,6 @@ public static class ThreatMap
     /// 「ガードで防げる最大ダメージ」の一覧（Phase 19・守り配置AI用）。
     ///
     /// 味方1体ごとの判定（すべて満たすと「脅威あり」）：
-    ///   ・飛翔中でない（飛翔中は挟撃されないし、地上のガードでは守れない。Phase 14）
     ///   ・自分以外のガード役がまだ付いていない
     ///     （先に動いた敵が守った味方は自動でここから外れる＝重複ガードの防止）
     ///   ・上下 または 左右 の対マスの両側それぞれに「前衛のプレイヤーが既に立っている か、
@@ -57,7 +56,7 @@ public static class ThreatMap
 
         foreach (Unit ally in UnitRegistry.GetUnits(self.Faction))
         {
-            if (ally == self || ally.IsFlying) continue;
+            if (ally == self) continue;
             if (HasGuardOtherThan(ally, self, grid)) continue;
 
             int prevented = 0;
@@ -88,7 +87,7 @@ public static class ThreatMap
     ///   ・盤外 → 誰も挟めない
     ///   ・誰かが立っている → 前衛のプレイヤー本人ならその1人が脅威。それ以外のユニットは
     ///     「栓」になっていて挟めない（自分 self のマスだけは、今から動くので空き扱い）
-    ///   ・空きマス → 移動でそこへ立てる前衛プレイヤー全員（飛翔の制限 CanEngage も確認）
+    ///   ・空きマス → 移動でそこへ立てる前衛プレイヤー全員
     /// </summary>
     private static List<Unit> FindSideAttackers(
         GridManager grid, Vector2Int cell, Unit ally, Unit self,
@@ -103,16 +102,13 @@ public static class ThreatMap
         if (occupant != null && !selfHere)
         {
             if (occupant.Faction != ally.Faction
-                && CombatRules.IsPincerCapable(occupant)
-                && CombatRules.CanEngage(occupant, ally))
+                && CombatRules.IsPincerCapable(occupant))
                 list.Add(occupant); // 前衛のプレイヤーが既に片側に立っている
             return list;
         }
 
         for (int i = 0; i < attackers.Count; i++)
         {
-            if (!CombatRules.CanEngage(attackers[i], ally)) continue; // 飛翔の制限（Phase 14）
-
             bool reachable = selfHere
                 ? CanReachIfSelfLeaves(reaches[i], cell)
                 : reaches[i].Contains(cell);
@@ -133,65 +129,6 @@ public static class ThreatMap
         foreach (Vector2Int dir in Directions)
             if (reach.Contains(cell + dir)) return true;
         return false;
-    }
-
-    // ===== 対空射程マス（Phase 20・飛翔AI用）=====
-
-    /// <summary>
-    /// self（飛翔中／これから飛翔する敵）から見て「次のプレイヤーフェイズに、空中の自分を
-    /// 攻撃されうるマス」の集合（Phase 20・空中巡航の停止マス選び用）。
-    ///
-    /// 空中のユニットを攻撃できるのは「後衛武器（弓・魔法の対空）」か「飛翔中のユニット」だけ
-    /// （CombatRules.CanEngage）。そこで相手陣営のその2種について、
-    ///   ・静止して撃つ … 今いるマスから武器の上限射程まで
-    ///   ・移動して撃つ … 移動で立てる各マスから（後衛武器は最小射程ちょうどに縮む）
-    /// の届くマスを全部集める。移動後の射程短縮は TryGetAttackRange がそのまま反映する。
-    ///
-    /// ※相手の飛行兵が「次のターンに飛翔コマンドで飛び上がる」可能性までは読まない
-    ///   （今飛翔中の相手だけを数える。v1 の割り切り）。
-    /// </summary>
-    public static HashSet<Vector2Int> GetAirThreatCells(GridManager grid, Unit self)
-    {
-        var result = new HashSet<Vector2Int>();
-        if (self == null) return result;
-
-        Faction opponentFaction = self.Faction == Faction.Player ? Faction.Enemy : Faction.Player;
-        foreach (Unit p in UnitRegistry.GetUnits(opponentFaction))
-        {
-            // self（空を飛ぼうとしている本人）を攻撃できるユニットか（対空できる相手 or 飛翔中。
-            // 杖・非武装は対空できない。判定は CombatRules.IsAntiAirCapable に一元化。Phase 25）
-            // ※対空は相手によって変わる（2026-08-08）。竜殺しの剣を持つ敵は、竜には対空だが
-            //   天馬兵には対空でない＝天馬兵から見た対空圏には入らない。だから self を渡す
-            if (!CombatRules.IsAntiAirCapable(p, self) && !p.IsFlying) continue;
-
-            // 静止して撃つ（武器の上限射程まで届く）
-            AddAttackRing(result, grid, p, p.GridPosition, hasMoved: false);
-
-            // 移動して撃つ（後衛武器は最小射程ちょうどに縮む）
-            foreach (Vector2Int cell in MovementCalculator.GetReachableCells(grid, p))
-                AddAttackRing(result, grid, p, cell, hasMoved: true);
-        }
-        return result;
-    }
-
-    /// <summary>unit が center に立って（移動有無 hasMoved で）撃てるマスを result に足す。</summary>
-    private static void AddAttackRing(
-        HashSet<Vector2Int> result, GridManager grid, Unit unit, Vector2Int center, bool hasMoved)
-    {
-        if (!CombatRules.TryGetAttackRange(unit, hasMoved, out int min, out int max)) return;
-
-        for (int dx = -max; dx <= max; dx++)
-        {
-            for (int dy = -max; dy <= max; dy++)
-            {
-                int d = Mathf.Abs(dx) + Mathf.Abs(dy);
-                if (d < min || d > max) continue;
-
-                var cell = new Vector2Int(center.x + dx, center.y + dy);
-                if (grid.GetTile(cell) == null) continue; // 盤外
-                result.Add(cell);
-            }
-        }
     }
 
     /// <summary>ally に self 以外のガード役が既に付いているか（FindPincerGuard の self 除外版）。</summary>

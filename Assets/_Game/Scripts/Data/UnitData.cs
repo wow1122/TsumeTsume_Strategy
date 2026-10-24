@@ -64,14 +64,8 @@ public class UnitData : ScriptableObject
     /// <summary>実効の移動タイプ。兵種データがあればそちら、無ければ旧 unitClass（フォールバック）。</summary>
     public UnitClass EffectiveClass => classData != null ? classData.moveType : unitClass;
 
-    /// <summary>実効の移動力（地上）。兵種データがあればそちら、無ければ旧 move（フォールバック）。</summary>
+    /// <summary>実効の移動力。兵種データがあればそちら、無ければ旧 move（フォールバック）。</summary>
     public int EffectiveMove => classData != null ? classData.move : move;
-
-    /// <summary>
-    /// 実効の移動力（飛翔中）。兵種データに飛翔時の移動力があればそちら、
-    /// 無ければ地上と同じ（2026-08-10。飛行兵以外はここを気にしなくてよい）。
-    /// </summary>
-    public int EffectiveFlightMove => classData != null ? classData.EffectiveFlightMove : move;
 
     /// <summary>
     /// 実効の特攻タグ（このユニットが受ける有効・特効の種類）。兵種データ由来で、

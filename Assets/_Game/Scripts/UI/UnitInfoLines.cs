@@ -20,15 +20,12 @@ public static class UnitInfoLines
     }
 
     /// <summary>
-    /// クラス名の行の右に出す移動力（2026-08-10 の地上／飛翔の2本立て）。
-    /// 2026-08-16 の修正でステータス枠の外に出て1行を丸ごと使えるようになったので、
-    /// 以前の短縮形「4(飛6)」をやめて読みやすい形にした。
-    /// 値が同じ兵種（飛行兵以外の全部）は数字1つだけ。
+    /// クラス名の行の右に出す移動力。
+    /// 2026-08-10〜10-24 は飛行兵だけ「移動力 : 4（飛翔6）」の形だったが、飛翔の撤廃で数字1つに戻した。
     /// </summary>
     public static string MoveLine(Unit unit)
     {
-        if (unit.FlightMove == unit.GroundMove) return $"移動力 : {unit.GroundMove}";
-        return $"移動力 : {unit.GroundMove}（飛翔{unit.FlightMove}）";
+        return $"移動力 : {unit.Move}";
     }
 
     /// <summary>
@@ -84,7 +81,7 @@ public static class UnitInfoLines
 
     /// <summary>
     /// 「状態」枠の行を組み立てる（2026-08-16 作者仕様・同日の修正案で3行に絞った）。並びは
-    ///  1行目 … 「状態 : 」＋ 前衛/後衛・地上/飛翔（陣中/孤立は 2026-10-24 に補給ごと撤廃）
+    ///  1行目 … 「状態 : 」＋ 前衛/後衛（地上/飛翔と陣中/孤立は 2026-10-24 に飛翔・補給ごと撤廃）
     ///  2行目 … ガードを受けているか（〇×と、その条件を括弧書き）
     ///  3行目 … 救出中の相手（運んでいるときだけ）
     /// 刷新の初版にあった「隣接した味方をガード中」「未行動／行動済み」の行は作者の指示で削除
@@ -124,10 +121,10 @@ public static class UnitInfoLines
         return rows;
     }
 
-    /// <summary>状態の1行目の中身。前衛/後衛・地上/飛翔を「・」でつなぐ。</summary>
+    /// <summary>状態の1行目の中身（前衛/後衛。2026-10-24 までは「・地上/飛翔」も続けていた）。</summary>
     private static string BuildConditionRow(Unit unit)
     {
-        return RangeText(unit) + "・" + FlightText(unit);
+        return RangeText(unit);
     }
 
     /// <summary>前衛／後衛。武器を装備していなければ（輸送隊・外した後など）「非武装」と出す。</summary>
@@ -136,14 +133,6 @@ public static class UnitInfoLines
         WeaponData w = unit.EquippedWeapon;
         if (w == null) return "非武装";
         return w.category == WeaponCategory.Melee ? "前衛" : "後衛";
-    }
-
-    /// <summary>地上／飛翔。撃墜されて飛べない1ターンは区別して出す（2026-08-05）。</summary>
-    private static string FlightText(Unit unit)
-    {
-        if (unit.IsFlying) return $"飛翔{unit.FlightTurnsLeft}";
-        if (unit.IsFlightBlocked) return "地上×";   // 撃墜され飛翔できない
-        return "地上";
     }
 
     /// <summary>
@@ -180,7 +169,7 @@ public static class UnitInfoLines
             // 1回攻撃するたびに払うメモリ（2026-10-24）。消費0の武器も「0」と出す＝いつでも使えることが分かる
             lines.Add($"メモリ消費: {WeaponMemoryRules.CostOf(w)}");
 
-            // 有効・特効の行（2026-08-06）。「特効: 竜」「有効: 重装」のように短い行で足す
+            // 有効・特効の行（2026-08-06）。「特効: 竜・竜騎」「有効: 重装」のように短い行で足す
             // ＝どの武器に持ち替えるかを、この詳細だけで判断できるようにする
             lines.AddRange(EffectiveRules.BuildWeaponEffectLines(w));
 
@@ -206,6 +195,7 @@ public static class UnitInfoLines
     /// <summary>
     /// 三すくみ逆転の行（「三すくみ逆転: 槍の騎馬」。逆転を持たない武器は null）。
     /// 「槍の」は、三すくみでこの武器に勝つ武器種（剣なら槍）＝逆転が起きる相手の武器。
+    /// 武器の説明の行なので、属性名は短い呼び名で出す（竜騎兵 → 竜騎。2026-10-24 作者指示）。
     /// </summary>
     private static string BuildReversalLine(WeaponData weapon)
     {
@@ -213,7 +203,7 @@ public static class UnitInfoLines
 
         WeaponType? counter = CombatRules.TriangleCounterOf(weapon.type);
         string holder = counter != null ? $"{counter.Value.DisplayName()}の" : "";
-        return $"三すくみ逆転: {holder}{weapon.triangleReversalTags.DisplayName()}";
+        return $"三すくみ逆転: {holder}{weapon.triangleReversalTags.DisplayName(shortForm: true)}";
     }
 
     /// <summary>兵種限定の行（「弓聖専用」。限定の無い武器は null）。長くなりすぎたら「…」で切る。</summary>

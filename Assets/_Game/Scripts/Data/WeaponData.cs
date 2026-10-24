@@ -41,14 +41,14 @@ public class WeaponData : ItemData
 
     [Header("装備付与（2026-10-24）")]
     [Tooltip("魔法武器。力ではなく魔力で攻撃し、相手は守備ではなく魔防で受ける（魔導書と同じ計算）。\n" +
-             "三すくみ・有効・特効・対空は武器種のまま（ソニックソードなら剣として扱う）")]
+             "三すくみ・有効・特効は武器種のまま（ソニックソードなら剣として扱う）")]
     public bool magicDamage = false;
 
-    [Tooltip("装備しているあいだ、速さがユニットの移動力（地上）ぶん下がる（鋼の武器・中級魔導）。0未満にはならない")]
+    [Tooltip("装備しているあいだ、速さがユニットの移動力ぶん下がる（鋼の武器・中級魔導）。0未満にはならない")]
     public bool reducesSpeedByMove = false;
 
     [Tooltip("三すくみ逆転の相手。このタグを持ち、かつ三すくみでこの武器に勝つ武器（剣なら槍）を装備した相手とは、\n" +
-             "有利と不利が入れ替わる（アーマーキラー＝重装・斬馬刀＝騎馬・風薙ぎの剣＝天馬）")]
+             "有利と不利が入れ替わる（アーマーキラー＝重装・斬馬刀＝騎馬・風薙ぎの剣＝白翼）")]
     public ClassTag triangleReversalTags = ClassTag.None;
 
     [Tooltip("この武器を装備できる兵種の限定。空なら限定なし（兵種の装備可能武器どおり）。例：長弓は弓聖だけ")]
@@ -56,14 +56,14 @@ public class WeaponData : ItemData
 
     [Header("特効（2026-08-06）")]
 
-    // 武器種そのものが持つ相性（槍→騎馬・天馬など）はアセットではなく EffectiveRules の表が持つので、
+    // 武器種そのものが持つ相性（槍→騎馬・白翼など）はアセットではなく EffectiveRules の表が持つので、
     // ここに書くのは「その1本だけが持つ特効」（ドラゴンキラー・斬馬刀など）だけ。
 
     [Tooltip("この武器だけが持つ特効（武器威力3倍）の相手。\n武器種そのものの相性（槍→騎馬など）はここに書かない＝コード側の表が持つ")]
     public ClassTag effectiveTags = ClassTag.None;
 
-    [Tooltip("対空状態を付与する武器か（飛翔中の相手に届き、当てると撃墜する）。\n前衛武器では「特効の相手」にだけ対空として働くので、上の特効の相手も必ず指定すること")]
-    public bool grantsAntiAir = false;
+    // ※対空状態（grantsAntiAir。2026-08-06〜）の欄は、2026-10-24 の飛翔と対空の撤廃で取り除いた
+    //   （ドラゴンキラー・風薙ぎの剣・ドラゴンアクスは特効だけが残る）。
 
     /// <summary>所持品リストでの表示名（武器名。ItemData の窓口）。</summary>
     public override string DisplayName => weaponName;
@@ -105,15 +105,6 @@ public class WeaponData : ItemData
     private void OnValidate()
     {
         if (memoryCost < 0) memoryCost = 0;
-
-        // 前衛の対空武器は「特効の相手」にだけ対空として働く（2026-08-08 作者仕様）。
-        // 特効の相手が空のままだと、対空にチェックを入れても誰にも効かない設定になってしまう
-        if (grantsAntiAir && effectiveTags == ClassTag.None && category == WeaponCategory.Melee)
-        {
-            Debug.LogWarning(
-                $"武器「{weaponName}」({name}): 対空にチェックが入っていますが、特効の相手が空です。" +
-                "前衛武器の対空は特効が効く相手にだけ働くので、このままでは誰にも対空になりません。");
-        }
 
         // 三すくみ逆転は前衛武器どうしの相性表を入れ替えるルールなので、後衛武器に付けても働かない
         if (triangleReversalTags != ClassTag.None && category != WeaponCategory.Melee)

@@ -22,13 +22,14 @@ using UnityEngine.InputSystem;
 /// 確定した数字を出す。被ダメモードでは敵が動くかどうかを確定できないので、
 /// 相手が後衛武器のときだけ「移動して撃つ場合／静止して撃つ場合」の両方を並べて見せる。
 ///
-/// 撃墜（2026-08-05 作者仕様）: 対空武器で飛翔中の相手を撃つと相手は着地する。
-/// 攻撃する前に分かるように、その組み合わせのときだけ注記を1行足す（BuildShootDownNote）。
+/// 飛行兵の地形防御（2026-10-24 作者仕様）: 飛行兵は地形防御を受けない。地形情報の帯にはマスの
+/// 地形防御が出ているので、防御側の飛行兵が地形防御のあるマスにいるときだけ理由を1行添える
+/// （BuildFlierTerrainNote。以前の撃墜の注記は、飛翔と対空の撤廃で取り除いた）。
 ///
 /// 武器の行（2026-08-09 作者仕様）: 攻撃は「武器を選んでから相手を選ぶ」順になり、
 /// 対象選択に入る時点で武器はもう装備されている。どの武器で殴るのかを
 /// 1行目に添える（BuildWeaponLine）。予測はいつも装備中の武器で組み立てるので、
-/// 内訳・三すくみ・静止撃ち・特効・挟撃・撃墜は何もしなくてもその武器の数字になる。
+/// 内訳・三すくみ・静止撃ち・特効・挟撃は何もしなくてもその武器の数字になる。
 ///
 /// 置き場所（2026-08-17 作者指示）: **盤上の4隅のどれか**。
 /// 「攻撃するユニット自身と、選べる相手が乗っているマス」を囲む範囲（と地形情報の枠）に
@@ -190,6 +191,10 @@ public class BattleForecast : MonoBehaviour
         lines.Add(BuildTriangleLine(main.triangle, "有利", "不利"));
         lines.Add($"防御力　{main.DefenseTotal}");
 
+        // 相手が飛行兵なら、地形防御が入っていない理由を添える（2026-10-24）
+        string flierNote = BuildFlierTerrainNote(defender, grid);
+        if (flierNote != null) lines.Add(flierNote);
+
         // 後衛武器なら「静止撃ちの有利が付いたか」を1行で添える（数字の理由が分かるように）
         string standNote = BuildStandingShotNote(attacker, attackerHasMoved);
         if (standNote != null) lines.Add(standNote);
@@ -220,13 +225,6 @@ public class BattleForecast : MonoBehaviour
         // 剣で倒し切るなら、攻撃の後に1マス再移動できる（2026-10-24 作者仕様。判定は CombatRules と共通）
         if (hpAfter == 0 && CombatRules.GrantsStepAfterKill(attacker.Weapon))
             lines.Add("※剣で倒すと、攻撃の後に1マス再移動できる");
-
-        // 撃墜（2026-08-05 作者仕様）。倒し切るなら着地は起きないので、生き残るときだけ出す
-        if (hpAfter > 0)
-        {
-            string shootDownNote = BuildShootDownNote(attacker, defender, incoming: false);
-            if (shootDownNote != null) lines.Add(shootDownNote);
-        }
 
         DrawPanel(lines, critical ? "戦闘予測（必殺技）" : "戦闘予測");
     }
@@ -291,8 +289,6 @@ public class BattleForecast : MonoBehaviour
         string blocked = null;
         if (enemy.Weapon == null)
             blocked = "この相手は非武装のため攻撃してこない";
-        else if (!CombatRules.CanEngage(enemy, incomingDefender))
-            blocked = "この相手からは攻撃を受けない（飛翔の制限）";
 
         if (blocked != null)
         {
@@ -317,6 +313,9 @@ public class BattleForecast : MonoBehaviour
         lines.Add(BuildTriangleLine(main.triangle, "相手が有利", "相手が不利"));
         lines.Add($"防御力　{main.DefenseTotal}");
 
+        string incomingFlierNote = BuildFlierTerrainNote(incomingDefender, grid);
+        if (incomingFlierNote != null) lines.Add(incomingFlierNote);
+
         string incomingReversalNote = BuildReversalNote(enemy, incomingDefender);
         if (incomingReversalNote != null) lines.Add(incomingReversalNote);
 
@@ -326,9 +325,6 @@ public class BattleForecast : MonoBehaviour
         lines.Add(hpAfter == 0
             ? $"自分のHP {incomingDefender.CurrentHP} → 0　倒される！"
             : $"自分のHP {incomingDefender.CurrentHP} → {hpAfter}");
-
-        string shootDownNote = BuildShootDownNote(enemy, incomingDefender, incoming: true);
-        if (shootDownNote != null) lines.Add(shootDownNote);
 
         lines.Add("※相手の位置どり・挟撃の追加は含まない");
 
@@ -358,6 +354,9 @@ public class BattleForecast : MonoBehaviour
         lines.Add($"三すくみ　移動時 {Signed(moved.triangle)} ／ 静止時 {Signed(stand.triangle)}（相手が有利）");
         lines.Add($"防御力　{moved.DefenseTotal}");
 
+        string flierNote = BuildFlierTerrainNote(incomingDefender, grid);
+        if (flierNote != null) lines.Add(flierNote);
+
         // 有効・特効は移動したかに関係なく同じだけ乗るので、両方の場合に共通の1行として出す
         string effectiveNote = BuildEffectiveNote(enemy, incomingDefender, incoming: true);
         if (effectiveNote != null) lines.Add(effectiveNote);
@@ -365,9 +364,6 @@ public class BattleForecast : MonoBehaviour
         string hpLine = $"自分のHP {hp} → {hpMoved}（移動時）／ {hpStand}（静止時）";
         if (hpStand == 0) hpLine += hpMoved == 0 ? "　どちらでも倒される！" : "　静止して撃たれると倒される！";
         lines.Add(hpLine);
-
-        string shootDownNote = BuildShootDownNote(enemy, incomingDefender, incoming: true);
-        if (shootDownNote != null) lines.Add(shootDownNote);
 
         lines.Add("※弓・魔法はマスから動かずに撃つと三すくみ有利（静止時）");
         lines.Add("※相手の位置どり・挟撃の追加は含まない");
@@ -431,18 +427,19 @@ public class BattleForecast : MonoBehaviour
     }
 
     /// <summary>
-    /// 撃墜の注記（2026-08-05 作者仕様）。対空武器（弓・魔導書・光魔法）の攻撃が
-    /// 飛翔中の相手に当たると、相手はその場に着地する（落下ダメージなし）。
-    /// 与ダメ・被ダメどちらのモードでも、その組み合わせのときだけ1行足す。
-    /// 判定は戦闘本体と同じ CombatRules.ShootsDown を使うので、表示と実際の結果は必ず一致する。
+    /// 飛行兵の地形防御の注記（2026-10-24 作者仕様：飛行兵は地形防御を受けない）。
+    /// 防御側が飛行兵で、いるマスに地形防御（森+1・砦+3 など）があるときだけ1行足す。
+    /// 地形情報の帯にはそのマスの地形防御が出ているので、防御力に入っていない理由をここで見せる。
+    /// 与ダメ・被ダメどちらのモードでも同じ文言（判定は DamageCalculator と同じ IsFlier）。
     /// </summary>
-    private static string BuildShootDownNote(Unit attacker, Unit defender, bool incoming)
+    private static string BuildFlierTerrainNote(Unit defender, GridManager grid)
     {
-        if (!CombatRules.ShootsDown(attacker, defender)) return null;
+        if (defender == null || grid == null || !defender.Class.IsFlier()) return null;
 
-        return incoming
-            ? "※当たると着地させられる（この後は近接にも狙われる）"
-            : "※当てると着地させる（飛翔が解除される）";
+        TileData tile = grid.GetTile(defender.GridPosition);
+        if (tile == null || tile.DefenseBonus <= 0) return null;
+
+        return "※飛行兵は地形防御を受けない";
     }
 
     /// <summary>

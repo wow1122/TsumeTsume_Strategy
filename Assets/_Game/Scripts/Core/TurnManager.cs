@@ -7,7 +7,7 @@ public enum TurnPhase { Player, Enemy }
 
 /// <summary>
 /// ターンとフェイズを管理する。
-///  ・自軍フェイズ開始時に、味方全員の「行動済み」をリセット（飛翔の残りターンもここで減る）。
+///  ・自軍フェイズ開始時に、味方全員の「行動済み」をリセット。
 ///    メモリの自然増加（フェーズ28）もここで行う（フェーズ32の輸送隊からの補給は 2026-10-24 に撤廃）
 ///  ・味方が全員行動したら自動で敵フェイズへ。敵フェイズは EnemyAI が1体ずつ行動する
 ///  ・勝敗判定：敵全滅で勝利／味方全滅・味方輸送隊の死亡で敗北。
@@ -63,8 +63,6 @@ public class TurnManager : MonoBehaviour
 
         foreach (Unit u in UnitRegistry.GetUnits(Faction.Player))
         {
-            u.TickFlight();      // 飛翔の残りターンを1減らす（0になったら自動着地。Phase 14）
-            u.TickFlightBlock(); // 撃墜による飛翔禁止の残りを1減らす（2026-08-05）
             u.SetActed(false);   // 全味方を「未行動」に戻す
             u.ResetRefresh();    // 再行動の「1ターン1回」を戻す（フェーズ30）
         }
@@ -88,8 +86,6 @@ public class TurnManager : MonoBehaviour
 
         foreach (Unit u in UnitRegistry.GetUnits(Faction.Enemy))
         {
-            u.TickFlight();      // 敵側の飛翔もフェイズ開始で数える（Phase 20 から敵AIも自分で離陸する）
-            u.TickFlightBlock(); // 撃墜による飛翔禁止も敵味方対称に数える（2026-08-05）
             u.ResetRefresh();    // 敵は再行動を使わないが、状態は味方と対称に保つ
         }
 

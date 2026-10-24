@@ -8,7 +8,7 @@ using UnityEngine;
 ///
 /// ここにあるルール：
 ///  ・杖の射程   … 装備している杖の minRange〜maxRange（攻撃の後衛武器と違い、移動しても縮まない）
-///  ・回復の対象 … 同陣営・生存・HPが満タン未満・射程内・高さ（飛翔）の関係が合う相手
+///  ・回復の対象 … 同陣営・生存・HPが満タン未満・射程内の相手（飛翔の高さの制限は 2026-10-24 に撤廃）
 ///  ・回復量     … 使用者の魔力 ＋ 杖の威力（キックオフ合意(c)）
 ///
 /// 【重要】武器は EquippedWeapon ではなく Weapon 窓口から読む（フェーズ31から）。
@@ -45,8 +45,8 @@ public static class StaffRules
 
     /// <summary>
     /// user が杖で回復できる味方の一覧を返す（BattleController の「杖」コマンド用）。
-    /// 対象＝同陣営・生存・HPが満タン未満（合意(b)：満タンには使えない）・射程内・
-    /// 高さ（飛翔）の関係が合う相手。自分自身は対象外（自分の回復は傷薬で行う）。
+    /// 対象＝同陣営・生存・HPが満タン未満（合意(b)：満タンには使えない）・射程内の相手。
+    /// 自分自身は対象外（自分の回復は傷薬で行う）。
     /// </summary>
     public static List<Unit> FindHealTargets(Unit user)
     {
@@ -58,7 +58,6 @@ public static class StaffRules
             if (ally == user) continue;                  // 自分は対象外
             if (!ally.IsAlive) continue;
             if (ally.CurrentHP >= ally.MaxHP) continue;  // 満タンは対象外（合意(b)）
-            if (!CanReach(user, ally)) continue;         // 飛翔の高さの関係（下記）
 
             int d = CombatRules.Manhattan(user.GridPosition, ally.GridPosition);
             if (d < min || d > max) continue;
@@ -74,18 +73,5 @@ public static class StaffRules
         WeaponData staff = user.Weapon;
         if (staff == null || staff.type != WeaponType.Staff) return 0;
         return user.Magic + staff.might;
-    }
-
-    /// <summary>
-    /// 杖が対象に「届く」高さの関係か（飛翔の扱い。CombatRules.CanEngage のミラー）。
-    /// 杖は後衛武器なので、地上からでも空中の味方に届く（対空と同じ「空に届く」考え方）。
-    /// 逆に使用者が飛翔中なら、地上の味方には届かない（空から地上へは届かない）。
-    /// ※現状の杖の担い手は歩兵の修道士だけなので user.IsFlying は常に false だが、
-    ///   将来 飛行できる杖ユニットが出ても正しく働くようにミラーで書いておく。
-    /// </summary>
-    private static bool CanReach(Unit user, Unit ally)
-    {
-        if (ally.IsFlying) return true;   // 空中の味方には地上からでも届く（後衛武器）
-        return !user.IsFlying;            // 使用者が飛翔中なら地上の味方には届かない
     }
 }

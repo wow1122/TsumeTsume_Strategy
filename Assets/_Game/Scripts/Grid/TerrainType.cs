@@ -12,7 +12,7 @@ public enum TerrainType
     Mountain, // 山
     Fort,     // 砦
     Wall,     // 壁（屋内壁。通行不可・飛行でも通過不可）
-    Rampart,  // 城壁（屋外壁。地上は通行不可だが、飛翔中は通過・停止できる。Phase 14）
+    Rampart,  // 城壁（屋外壁。地上は通行不可だが、飛行兵は通過・停止できる。Phase 14）
 }
 
 /// <summary>
@@ -31,23 +31,23 @@ public class TerrainDef
     [Tooltip("ステージの文字マップ（terrainRows）で使う記号1文字（例: F）")]
     public string symbol = ".";
 
-    [Tooltip("通行できるか（壁・城壁は false）")]
+    [Tooltip("地上のユニットが通行できるか（壁・城壁は false。飛行兵は下の canFlyOver を見る）")]
     public bool isWalkable = true;
 
-    [Tooltip("飛翔状態のユニットが入れるか（屋内壁だけ false。地上ユニットには関係しない）")]
+    [Tooltip("飛行兵が入れるか（屋内壁だけ false。飛行兵は地形を無視して飛ぶので、これ以外の項目は見ない）")]
     public bool canFlyOver = true;
 
     [Tooltip("このマスに入るのに必要な移動コスト")]
     public int moveCost = 1;
 
-    [Tooltip("騎乗ユニット（騎兵・輸送隊・地上の飛行兵）が通行できるか。\n" +
-             "山を徒歩専用にする等（isWalkable が false なら全員通行不可なので、ここは見ない）。Phase 15")]
+    [Tooltip("騎兵・輸送隊が通行できるか（飛行兵は関係しない）。\n" +
+             "山を徒歩専用にする等（isWalkable が false なら地上の全員が通行不可なので、ここは見ない）。Phase 15")]
     public bool mountedWalkable = true;
 
-    [Tooltip("騎乗ユニットの移動コスト（0なら moveCost と同じ。森=3 など騎乗だけ重くできる）。Phase 15")]
+    [Tooltip("騎兵・輸送隊の移動コスト（0なら moveCost と同じ。森=3 など騎兵だけ重くできる）。Phase 15")]
     public int mountedCost = 0;
 
-    [Tooltip("このマスにいる防御側が得る地形防御（物理・魔法の両方に加算）")]
+    [Tooltip("このマスにいる防御側が得る地形防御（物理・魔法の両方に加算。飛行兵は受けない）")]
     public int defenseBonus = 0;
 
     [Tooltip("マスの表示色（仮素材）")]

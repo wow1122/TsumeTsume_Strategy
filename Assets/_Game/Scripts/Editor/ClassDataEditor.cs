@@ -21,8 +21,7 @@ public class ClassDataEditor : Editor
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("移動", EditorStyles.boldLabel);
         Draw("moveType", "移動タイプ");
-        Draw("move", "移動力（地上）");
-        Draw("flightMove", "移動力（飛翔中・0＝地上と同じ）");
+        Draw("move", "移動力");
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("武器", EditorStyles.boldLabel);

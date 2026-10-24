@@ -16,33 +16,36 @@ public class TileData
     /// </summary>
     public TerrainDef Terrain;
 
-    /// <summary>通行可能かどうか（壁・城壁は false）。</summary>
+    /// <summary>地上のユニットが通行可能かどうか（壁・城壁は false）。</summary>
     public bool IsWalkable => Terrain == null || Terrain.isWalkable;
 
-    /// <summary>飛翔状態のユニットが入れるか（屋内壁だけ false。Phase 14）。</summary>
+    /// <summary>飛行兵が入れるか（屋内壁だけ false。城壁も入れる。Phase 14 の地形・2026-10-24 から飛行兵は常にこちら）。</summary>
     public bool CanFlyOver => Terrain == null || Terrain.canFlyOver;
 
     /// <summary>このマスに入るのに必要な移動コスト（平地1・森2など）。</summary>
     public int MoveCost => Terrain != null ? Terrain.moveCost : 1;
 
     /// <summary>
-    /// この兵種が（地上移動で）通行できるか（Phase 15）。
-    /// 騎乗ユニット（騎兵・輸送隊・地上の飛行兵）は騎乗通行可否（mountedWalkable）も見る。
-    /// 飛翔中の判定はここではなく CanFlyOver を使うこと。
+    /// この兵種が通行できるか（Phase 15）。移動・配置・降ろす先・死亡時の解放先がすべてここを見る。
+    /// 飛行兵は地形を無視して飛ぶ＝飛行で入れるマスならどこでも可（屋内壁だけ不可。2026-10-24 作者仕様）。
+    /// 騎兵・輸送隊は騎乗通行可否（mountedWalkable）も見る（山は通れない等）。
     /// </summary>
     public bool IsWalkableFor(UnitClass unitClass)
     {
+        if (unitClass.IsFlier()) return CanFlyOver;
         if (!IsWalkable) return false;
         if (unitClass.IsMounted() && Terrain != null && !Terrain.mountedWalkable) return false;
         return true;
     }
 
     /// <summary>
-    /// この兵種が（地上移動で）このマスに入る移動コスト（Phase 15）。
-    /// 騎乗ユニット用のコスト指定（mountedCost）があればそちらを使う。
+    /// この兵種がこのマスに入る移動コスト（Phase 15）。
+    /// 飛行兵は地形に関係なく常に1（2026-10-24 作者仕様）。
+    /// 騎兵・輸送隊は騎乗用のコスト指定（mountedCost）があればそちらを使う。
     /// </summary>
     public int MoveCostFor(UnitClass unitClass)
     {
+        if (unitClass.IsFlier()) return 1;
         if (unitClass.IsMounted() && Terrain != null && Terrain.mountedCost > 0)
             return Terrain.mountedCost;
         return MoveCost;

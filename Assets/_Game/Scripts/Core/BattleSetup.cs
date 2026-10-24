@@ -42,14 +42,10 @@ public class BattleSetup : MonoBehaviour
                 continue;
             }
 
-            // 開始時から飛翔状態にする指定か（飛行兵のみ有効。Phase 14）
-            bool flyingStart = entry.initialFlightTurns > 0
-                && entry.unitData.EffectiveClass == UnitClass.Flier;
-
             TileData tile = grid.GetTile(entry.cell);
             // その兵種が立てない地形には置けない（山は徒歩のみ等の兵種制限も見る。Phase 15）。
-            // ただし開始時から飛翔する飛行兵は、飛行で入れるマス（城壁など）なら置ける
-            if (tile != null && !tile.IsWalkableFor(entry.unitData.EffectiveClass) && !(flyingStart && tile.CanFlyOver))
+            // 飛行兵は飛行で入れるマス（城壁・山など）ならどこでも置ける（TileData.IsWalkableFor）
+            if (tile != null && !tile.IsWalkableFor(entry.unitData.EffectiveClass))
             {
                 Debug.LogWarning($"マス {entry.cell} は {entry.unitData.unitName} が立てない地形です。スキップします。");
                 continue;
@@ -70,14 +66,6 @@ public class BattleSetup : MonoBehaviour
                 Debug.LogWarning($"{entry.unitData.unitName} は敵ではないため、AI性格の指定を無視しました。");
             else
                 unit.SetAIProfile(entry.aiProfile);
-
-            if (entry.initialFlightTurns > 0)
-            {
-                if (flyingStart)
-                    unit.StartFlight(entry.initialFlightTurns);
-                else
-                    Debug.LogWarning($"{entry.unitData.unitName} は飛行兵ではないため、開始時飛翔の指定を無視しました。");
-            }
         }
     }
 }

@@ -9,7 +9,7 @@ using System.Collections.Generic;
 /// （現行の武器は威力5なので、有効で+5点・特効で+10点）。
 ///
 /// 判定の相手は移動タイプ（UnitClass）ではなく、兵種データの特攻タグ（ClassTag）。
-/// 飛行兵の中に天馬と亜竜の両方がいるように、移動タイプでは書き分けられないため。
+/// 飛行兵の中に白翼と竜騎兵の両方がいるように、移動タイプでは書き分けられないため。
 ///
 /// ここにあるルール：
 ///  ・武器種そのものが持つ相性 … 前衛（槍・斧）は「有効」、後衛（弓・魔導書）は「特効」。
@@ -55,7 +55,7 @@ public static class EffectiveRules
 
     /// <summary>
     /// この武器が「特効」（武器威力3倍）を持つ相手のタグ。
-    /// 武器種そのものの相性（弓→天馬・魔導書→竜）と、その武器だけが持つ特効の両方を合わせたもの。
+    /// 武器種そのものの相性（弓→白翼・魔導書→竜）と、その武器だけが持つ特効の両方を合わせたもの。
     /// </summary>
     public static ClassTag GetSuperEffectiveTargets(WeaponData weapon)
     {
@@ -64,9 +64,11 @@ public static class EffectiveRules
     }
 
     /// <summary>
-    /// 実際に当てはまったタグ（表示用。当てはまらなければ None）。
-    /// 出るのは「武器が狙っているタグ」の側。亜竜の相手を竜狩り武器で殴ると「竜」と出るが、
-    /// これは包含関係（亜竜は竜に含まれる）どおりの正しい表示。
+    /// 実際に当てはまったタグ（戦闘予測の注記用。当てはまらなければ None）。
+    /// 出るのは「相手自身が持っている属性」の側（2026-10-24 作者指摘で変更）。
+    /// 魔導書でドラゴンナイトを撃つと「竜騎兵」と出る（以前は武器が狙う側の「竜」と出ていて、
+    /// 竜騎兵属性が竜に含まれる決まりを知らないとドラゴンナイトに効くと読み取れなかった）。
+    /// 包含関係は武器が狙うタグを Cover で広げてから相手のタグと重ねることで反映する。
     /// </summary>
     public static ClassTag GetMatchedTags(WeaponData weapon, Unit defender)
     {
@@ -77,15 +79,18 @@ public static class EffectiveRules
             ? GetSuperEffectiveTargets(weapon)
             : GetEffectiveTargets(weapon);
 
-        return defender.Tags.Expand() & targets;
+        return defender.Tags & targets.Cover();
     }
 
     /// <summary>
     /// 武器の相性の説明（0〜2行。相手を問わない「この武器は何に強いか」の表示用）。
-    /// 例：蜻蛉切 →「特効: 天馬（対空）」「有効: 騎馬」／竜狩りの槌 →「特効: 竜（対空）」「有効: 重装」。
-    /// 特効で拾える相手は有効の行から外す（竜狩りの槌の亜竜のように、包含関係で
+    /// 例：初級魔導 →「特効: 竜・竜騎」／鉄の斧 →「有効: 重装・竜騎」／
+    ///     ドラゴンアクス →「特効: 竜・竜騎」「有効: 重装」。
+    /// 竜を狙う武器は、竜に含まれる竜騎兵属性まで並べて出す（Cover。2026-10-24 作者指摘：
+    /// 「特効: 竜」だけだとドラゴンナイトに効くと読み取れない）。
+    /// 特効で拾える相手は有効の行から外す（ドラゴンアクスの竜騎兵のように、包含関係で
     /// 特効側に含まれる相手を「有効」と書いてしまわないように Cover を通す）。
-    /// 対空は特効の相手にだけ働く（2026-08-08）ので、独立した行にせず特効の行に添える。
+    /// 武器の説明は幅が狭いので、属性名は短い呼び名で出す（竜騎兵 → 竜騎。ClassTagExtensions.DisplayName）。
     /// 幅の狭いパネルにも入るよう、1行にまとめず短い行に分けて返す。
     /// </summary>
     public static List<string> BuildWeaponEffectLines(WeaponData weapon)
@@ -93,28 +98,13 @@ public static class EffectiveRules
         var lines = new List<string>();
         if (weapon == null) return lines;
 
-        ClassTag super = GetSuperEffectiveTargets(weapon);
-        ClassTag effective = GetEffectiveTargets(weapon) & ~super.Cover();
+        ClassTag super = GetSuperEffectiveTargets(weapon).Cover();
+        ClassTag effective = GetEffectiveTargets(weapon) & ~super;
 
-        if (super != ClassTag.None)
-            lines.Add($"特効: {super.DisplayName()}{(weapon.grantsAntiAir ? "（対空）" : "")}");
-
-        if (effective != ClassTag.None) lines.Add($"有効: {effective.DisplayName()}");
+        if (super != ClassTag.None) lines.Add($"特効: {super.DisplayName(shortForm: true)}");
+        if (effective != ClassTag.None) lines.Add($"有効: {effective.DisplayName(shortForm: true)}");
 
         return lines;
-    }
-
-    /// <summary>
-    /// 対空状態を付ける前衛武器（竜殺しの剣など）が、この相手に対して対空として働くか
-    /// （2026-08-08 作者仕様変更：**特効が効く相手にだけ**対空になる）。
-    /// 竜殺しの剣は飛翔中の竜には届くが、飛翔中の天馬兵には届かない、ということ。
-    /// 後衛の攻撃武器（弓・魔導書・光魔法）は相手を問わず対空なので、ここでは扱わない
-    /// （その判定は CombatRules.IsAntiAirCapable が持つ）。
-    /// </summary>
-    public static bool GrantsAntiAirAgainst(WeaponData weapon, Unit target)
-    {
-        if (weapon == null || !weapon.grantsAntiAir || target == null) return false;
-        return ClassTagExtensions.Matches(target.Tags, GetSuperEffectiveTargets(weapon));
     }
 
     /// <summary>倍率の日本語名（1＝なし・2＝有効・3＝特効）。</summary>
@@ -127,30 +117,30 @@ public static class EffectiveRules
 
     /// <summary>
     /// 武器種そのものが持つ「有効」（武器威力2倍）の相手。
-    ///   槍 … 騎馬・天馬（馬と天馬を止める）
-    ///   斧 … 重装・亜竜（硬い相手と飛竜を叩き割る。竜そのものには効かない）
+    ///   槍 … 騎馬・白翼（馬と白翼を止める）
+    ///   斧 … 重装・竜騎兵（硬い相手と飛竜を叩き割る。竜そのものには効かない）
     /// </summary>
     private static ClassTag GetTypeEffectiveTargets(WeaponType type)
     {
         switch (type)
         {
-            case WeaponType.Lance: return ClassTag.Horse | ClassTag.Pegasus;
-            case WeaponType.Axe:   return ClassTag.Armor | ClassTag.SubDragon;
+            case WeaponType.Lance: return ClassTag.Horse | ClassTag.WhiteWing;
+            case WeaponType.Axe:   return ClassTag.Armor | ClassTag.DragonRider;
             default:               return ClassTag.None;
         }
     }
 
     /// <summary>
     /// 武器種そのものが持つ「特効」（武器威力3倍）の相手。
-    ///   弓     … 天馬（空の的を落とす）
-    ///   魔導書 … 竜（亜竜も含む。竜の鱗を貫く）
+    ///   弓     … 白翼（空の的を落とす）
+    ///   魔導書 … 竜（竜騎兵も含む。竜の鱗を貫く）
     /// 光魔法は当面なし（武器アセットを作るときに一緒に決める）。
     /// </summary>
     private static ClassTag GetTypeSuperEffectiveTargets(WeaponType type)
     {
         switch (type)
         {
-            case WeaponType.Bow:   return ClassTag.Pegasus;
+            case WeaponType.Bow:   return ClassTag.WhiteWing;
             case WeaponType.Magic: return ClassTag.Dragon;
             default:               return ClassTag.None;
         }

@@ -41,7 +41,6 @@ public class WeaponDataEditor : Editor
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("特効", EditorStyles.boldLabel);
         Draw("effectiveTags", "この武器だけの特効（威力3倍）");
-        Draw("grantsAntiAir", "対空（前衛は特効の相手にだけ）");
 
         serializedObject.ApplyModifiedProperties();
     }

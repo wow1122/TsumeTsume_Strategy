@@ -9,8 +9,6 @@ using UnityEngine;
 /// 作者と合意済みのルール（2026-07-26）：
 ///  ・相手は「上下左右に隣接する同陣営の盤上ユニット」のみ（斜めは対象外）
 ///  ・行動済みの味方も相手にできる（救出の合意(h)と同じ理屈。受け取る側は受け身）
-///  ・飛翔状態が同じ相手同士でのみ交換できる（空中↔空中・地上↔地上。空中↔地上は不可）
-///    ＝「引き受けは同じ飛翔状態同士のみ」（飛翔の合意仕様）と同じ整理
 ///  ・格納中の貨物とは交換できない。運び手を経由して貨物の持ち物に触ることもできない
 ///    （貨物は盤上から外れていて隣接マスの占有者にならないので、自然に除外される）
 ///  ・所持数の上限は UnitData.InventoryCapacity（7）。いっぱいの相手へは渡せない
@@ -52,7 +50,7 @@ public static class ExchangeRules
 
     /// <summary>
     /// giver が receiver へ1個渡せるか（持ち物が1つ以上あり、受け側に空きがある）。
-    /// 相手として成立するか（隣接・同陣営・飛翔状態）は IsExchangeablePair が見る。
+    /// 相手として成立するか（隣接・同陣営）は IsExchangeablePair が見る。
     /// </summary>
     public static bool CanGive(Unit giver, Unit receiver)
     {
@@ -67,7 +65,8 @@ public static class ExchangeRules
 
     /// <summary>
     /// そもそも交換の相手として成立する組み合わせか（持ち物の中身は見ない）。
-    /// 同陣営・生存・自分以外・盤上にいる（格納中でない）・飛翔状態が同じ。
+    /// 同陣営・生存・自分以外・盤上にいる（格納中でない）。
+    /// （2026-07-26〜10-24 は「飛翔状態が同じ」も条件だったが、飛翔の撤廃で外した）
     /// ※隣接しているかは呼び出し側（隣接マスの占有者を列挙する側）が保証する。
     /// </summary>
     public static bool IsExchangeablePair(Unit user, Unit partner)
@@ -76,7 +75,6 @@ public static class ExchangeRules
         if (!partner.IsAlive) return false;
         if (partner.Faction != user.Faction) return false;
         if (partner.IsCarried || user.IsCarried) return false; // 格納中の貨物とはやり取りできない
-        if (partner.IsFlying != user.IsFlying) return false;   // 空中と地上の間では手渡しできない
         return true;
     }
 

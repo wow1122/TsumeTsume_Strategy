@@ -123,8 +123,8 @@ public static class DamageCalculator
             mightMultiplier = EffectiveRules.GetMultiplier(weapon, defender),
             triangle = CombatRules.GetTriangleModifier(attacker, defender, attackerHasMoved),
             guardPower = isMagic ? defender.Resistance : defender.Defense,
-            // 飛翔中はタイルの効果を受けない（地形防御なし。Phase 14）
-            terrainDefense = (defTile != null && !defender.IsFlying) ? defTile.DefenseBonus : 0,
+            // 飛行兵は地形防御を受けない（2026-10-24 作者仕様。地形を無視して飛べる代わりに守りも得られない）
+            terrainDefense = (defTile != null && !defender.Class.IsFlier()) ? defTile.DefenseBonus : 0,
             multiplier = damageMultiplier,
         };
     }

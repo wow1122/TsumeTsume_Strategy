@@ -12,16 +12,16 @@ using System.Collections.Generic;
 ///  ・その武器で攻撃できるか … いまのメモリで払えるか（WeaponMemoryRules）を見たうえで、
 ///    一時的にその武器を装備して、既存の CombatRules.CanAttack を呼ぶ
 ///  ・その武器で狙える敵の一覧 … FindTargets（武器1本ぶん）と FindAllTargets（持っている武器の合算）
-///  ・使えない理由 … 一覧の灰色の行に添える短い注記（メモリ不足／空中不可／届く敵なし）
+///  ・使えない理由 … 一覧の灰色の行に添える短い注記（メモリ不足／届く敵なし）
 ///  ・extraCost … 武器の消費とは別に一緒に払う量（必殺技の1本＝30）。必殺技では
 ///    「1本＋武器の消費」を両方払える武器だけが選べる（2026-10-24 の既定）
 ///
 /// 【probe（お試し装備）方式について】
-/// 射程・三すくみ・特効・対空・挟撃・撃墜は、どれも Unit.Weapon 窓口を見て決まる。
+/// 射程・三すくみ・特効・挟撃は、どれも Unit.Weapon 窓口を見て決まる。
 /// 武器ごとの判定のために共有関数すべてに「武器」引数を足すのではなく、
 /// 一時的に装備を差し替えて評価し、必ず元へ戻す（WithWeapon）。
-/// Phase 20 の敵AIが飛翔の損得を StartFlight/CancelFlight で試すのと同じ手口で、
-/// 戦闘予測の数字と実戦の結果がズレないことが構造的に保証される
+/// これで戦闘予測の数字と実戦の結果がズレないことが構造的に保証される
+/// （Phase 20 の敵AIが飛翔の損得を試していた手口と同じ。飛翔は 2026-10-24 に撤廃）
 /// （※そのため Unit.Equip / Unequip には副作用を足さないこと。Unit.cs 側にも警告あり）。
 /// </summary>
 public static class WeaponChoiceRules
@@ -94,7 +94,7 @@ public static class WeaponChoiceRules
     /// <summary>
     /// unit がいまの位置から weapon で target を攻撃できるか。
     /// まず「いまのメモリで払えるか」（extraCost は必殺技の1本など、一緒に払う量）を見て、
-    /// 判定の残りは既存の CombatRules.CanAttack（射程＋飛翔の相性）に任せる。
+    /// 判定の残りは既存の CombatRules.CanAttack（射程）に任せる。
     /// </summary>
     public static bool CanAttackWith(Unit unit, WeaponData weapon, Unit target, bool hasMoved, int extraCost = 0)
     {
@@ -162,19 +162,8 @@ public static class WeaponChoiceRules
         if (!WeaponMemoryRules.CanAfford(unit, weapon, extraCost)) return "メモリ不足";   // 2026-10-24
         if (FindTargets(unit, weapon, hasMoved, extraCost).Count > 0) return null;      // 狙える敵がいる＝押せる行
 
-        // 射程には敵がいるのに戦えないなら、原因は飛翔の相性（対空でない等）。
-        // それ以外は単に届く敵がいない（射程外・敵が遠い）
-        return WithWeapon(unit, weapon, () =>
-        {
-            if (!CombatRules.TryGetAttackRange(unit, hasMoved, out int min, out int max)) return "届く敵なし";
-
-            foreach (Unit other in UnitRegistry.GetUnits(OpponentOf(unit)))
-            {
-                int distance = CombatRules.Manhattan(unit.GridPosition, other.GridPosition);
-                if (distance >= min && distance <= max) return "空中不可";
-            }
-            return "届く敵なし";
-        });
+        // 射程外・敵が遠い（以前は飛翔の相性による「空中不可」もあったが、2026-10-24 に飛翔ごと撤廃）
+        return "届く敵なし";
     }
 
     /// <summary>その陣営の相手側（プレイヤー↔敵）。対象さがしで名簿を引くのに使う。</summary>

@@ -398,11 +398,11 @@ public class GridManager : MonoBehaviour
 
     /// <summary>
     /// カーソルが指しているマスの地形を、**盤面のすぐ下の帯**に1行で出す。
-    /// 左に 地形名・移動コスト（騎乗との差があれば併記）・地形防御、**右端に座標**。
+    /// 左に 地形名・移動コスト（騎兵との差があれば併記）・地形防御、**右端に座標**。
     ///
     /// 帯は**盤面の真下に固定**で、大きさも一定（**横幅は盤面と同じ**・高さは1行）。
     /// カーソルでも他のUIでも動かない。盤面いっぱいの幅があるので、
-    /// 一番長い「山　移動コスト 3（騎乗は通行不可）　地形防御 +2」でも切れない。
+    /// 一番長い「山　移動コスト 3（騎兵は通行不可）　地形防御 +2」でも切れない。
     /// 盤上のメニュー（行動メニュー・コマンド一覧・持ち物・貨物）は UI/MenuPlacement によって
     /// 盤面の中に収まるので、帯と重なることはない（2026-08-17 作者指示）。
     ///
@@ -491,8 +491,9 @@ public class GridManager : MonoBehaviour
 
     /// <summary>
     /// 帯に出す地形情報を1行で作る（Phase 15 の形に戻したもの）。
-    /// 地形名・移動コスト（騎乗との差があれば括弧で併記）・地形防御。
-    /// 誰も立てない壁は地形防御に意味が無いので出さない。座標は出さない（2026-08-17 作者指示）。
+    /// 地形名・移動コスト（騎兵との差があれば括弧で併記）・地形防御。
+    /// 地上のユニットが立てない壁・城壁は地形防御を出さない（城壁に立てる飛行兵は地形防御を受けない。2026-10-24）。
+    /// 飛行兵はどの地形もコスト1なので、ここには書かない。座標は出さない（2026-08-17 作者指示）。
     /// </summary>
     private static string BuildTerrainInfo(TileData tile)
     {
@@ -501,16 +502,16 @@ public class GridManager : MonoBehaviour
         if (!tile.IsWalkable)
         {
             return tile.CanFlyOver
-                ? $"{name}　通行不可（飛行は可）　地形防御 +{tile.DefenseBonus}"
+                ? $"{name}　通行不可（飛行兵は可）"
                 : $"{name}　通行不可";
         }
 
-        // 騎乗ユニットだけ通れない・コストが違う地形は、その差も表示する
+        // 騎兵（輸送隊も）だけ通れない・コストが違う地形は、その差も表示する
         string cost;
         if (!tile.IsWalkableFor(UnitClass.Cavalry))
-            cost = $"移動コスト {tile.MoveCost}（騎乗は通行不可）";
+            cost = $"移動コスト {tile.MoveCost}（騎兵は通行不可）";
         else if (tile.MoveCostFor(UnitClass.Cavalry) != tile.MoveCost)
-            cost = $"移動コスト {tile.MoveCost}（騎乗 {tile.MoveCostFor(UnitClass.Cavalry)}）";
+            cost = $"移動コスト {tile.MoveCost}（騎兵 {tile.MoveCostFor(UnitClass.Cavalry)}）";
         else
             cost = $"移動コスト {tile.MoveCost}";
 

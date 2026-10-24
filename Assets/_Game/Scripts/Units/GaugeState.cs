@@ -9,7 +9,7 @@
 /// （ItemSlot・Unit のランタイム能力値と同じ考え方）。
 ///
 /// 【警告】ここは「純粋な状態変更」に保つこと。ログ・演出・行動消費は呼び出し側に置く
-/// （理由は Unit.cs の飛翔まわりの警告コメントと同じ。敵AIが状態を試算する probe を壊さないため）。
+/// （理由は Unit.cs の Equip / Unequip の警告コメントと同じ。状態を試しに変えて評価する probe を壊さないため）。
 /// </summary>
 public class GaugeState
 {

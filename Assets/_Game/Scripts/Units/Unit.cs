@@ -22,18 +22,12 @@ public class Unit : MonoBehaviour
     public int BaseSpeed { get; private set; }    // 速さ（能力値そのもの。実際に使う値は下の Speed）
     public int Defense { get; private set; }      // 守備（物理防御）
     public int Resistance { get; private set; }   // 魔防（魔法防御）
-    public int GroundMove { get; private set; }   // 移動力（地上を歩くとき）
-    public int FlightMove { get; private set; }   // 移動力（飛翔中。飛行兵以外は地上と同じ値）
-
     /// <summary>
-    /// いまの移動力。飛翔中は飛翔用の値を返す（2026-08-10 作者仕様。天馬兵は地上4/飛翔6、
-    /// 竜騎兵は地上3/飛翔7）。移動力を読む側はこの窓口だけを見る約束で、
-    /// これ1箇所で 移動範囲・再移動の残り予算・敵AI・情報パネルの表示が自動で追随する
-    /// （装備武器を Weapon 窓口へ集めたのと同じ手口）。
-    /// 【注意】「地上を歩いたときの距離」を測りたい場所（敵AIの着陸判断・陸路のターン数）は、
-    /// 飛翔中に呼ばれても地上の値が要るので、この窓口ではなく GroundMove を読むこと。
+    /// 移動力（兵種データ優先。Initialize で決まる）。
+    /// 2026-08-10〜10-24 は飛行兵だけ「地上／飛翔」の2本を持っていたが、飛翔の撤廃で1本に戻した
+    /// （飛行兵6兵種はすべて6。2026-10-24 作者仕様）。
     /// </summary>
-    public int Move => IsFlying ? FlightMove : GroundMove;
+    public int Move { get; private set; }
 
     /// <summary>
     /// 速さ（実際に使う値）。鋼の武器・中級魔導のように「装備すると速さが移動力ぶん下がる」武器を
@@ -44,11 +38,10 @@ public class Unit : MonoBehaviour
     public int Speed => Mathf.Max(0, BaseSpeed - SpeedPenalty);
 
     /// <summary>
-    /// 装備中の武器による速さの減少量（reducesSpeedByMove の武器なら地上の移動力、それ以外は0）。
-    /// 飛行兵でも地上の移動力で数える＝飛翔の切り替えで速さが上下しない（2026-10-24 の既定）。
+    /// 装備中の武器による速さの減少量（reducesSpeedByMove の武器なら移動力ぶん、それ以外は0）。
     /// </summary>
     public int SpeedPenalty =>
-        EquippedWeapon != null && EquippedWeapon.reducesSpeedByMove ? GroundMove : 0;
+        EquippedWeapon != null && EquippedWeapon.reducesSpeedByMove ? Move : 0;
 
     /// <summary>陣営（UnitData から取得）。</summary>
     public Faction Faction => Data.faction;
@@ -58,7 +51,7 @@ public class Unit : MonoBehaviour
 
     /// <summary>
     /// 特攻タグ（このユニットが受ける有効・特効の種類。兵種データ由来）。
-    /// 判定は EffectiveRules が行う（包含関係＝亜竜は竜、は ClassTagExtensions.Matches が受け持つ）。
+    /// 判定は EffectiveRules が行う（包含関係＝竜騎兵は竜、は ClassTagExtensions.Matches が受け持つ）。
     /// </summary>
     public ClassTag Tags => Data.EffectiveTags;
 
@@ -67,10 +60,10 @@ public class Unit : MonoBehaviour
     /// フェーズ22からはランタイム装備 EquippedWeapon を指す）。
     /// CombatRules / DamageCalculator / EnemyAI は全てこの窓口だけを見ているので、
     /// 「この武器では戦えない」という条件を足すときは、ここで null（＝非武装扱い）を返す1箇所で済む
-    /// （攻撃不可・三すくみで不利・挟撃やガードの資格を失う・対空でなくなる・静止撃ち有利が消える、が自動で成立する。
+    /// （攻撃不可・三すくみで不利・挟撃やガードの資格を失う・静止撃ち有利が消える、が自動で成立する。
     ///  フェーズ31の武器の耐久はこの手口で入れていた。耐久は 2026-10-24 に撤廃）。
     /// 【2026-10-24】メモリで払えない武器も、ここではそのまま返す（作者仕様の見直し：
-    /// 払えない武器も装備でき、攻撃を受けたときの三すくみ・挟撃のガード役・飛行兵の足止めは
+    /// 払えない武器も装備でき、攻撃を受けたときの三すくみ・挟撃のガード役は
     /// 装備している武器どおりに働く。メモリが要るのは攻撃と挟撃の支援だけ）。
     /// 「払えない武器では攻撃できない」は CombatRules.TryGetAttackRange、
     /// 「払えなければ挟撃の支援をしない」は CombatRules.FindPincerAlly が受け持つ。
@@ -101,8 +94,7 @@ public class Unit : MonoBehaviour
     /// 呼び出し側（BattleController）が所持品の中の装備可能な武器だけを渡すので、
     /// ここでは所持や兵種の可否は確認しない。読む側は従来どおり Weapon 窓口で自動追随する。
     ///
-    /// 【警告】飛翔（StartFlight/CancelFlight）と同じ理由で、Equip / Unequip は
-    /// 「純粋な状態変更」のまま保つこと（2026-08-09）。攻撃対象の計算と戦闘予測が
+    /// 【警告】Equip / Unequip は「純粋な状態変更」のまま保つこと（2026-08-09）。攻撃対象の計算と戦闘予測が
     /// probe（一時的に装備を差し替えて評価し、必ず元へ戻す。WeaponChoiceRules.WithWeapon）を
     /// 使っており、ここに副作用（ログ・演出・行動消費・メモリの増減など）を足すと、
     /// 予測を1回描くたびにそれが実行されて壊れる。ログや演出は呼び出し側に置くこと。
@@ -189,89 +181,6 @@ public class Unit : MonoBehaviour
     public int CarryCapacity =>
         Class == UnitClass.Transporter ? 4 : (Class.IsMounted() ? 1 : 0);
 
-    // ── 飛翔（Phase 14）──
-    // 飛行兵専用の状態。飛翔中は地形（コスト・防御・通行不可）を無視して移動でき、
-    // 戦闘は「飛翔中の相手」との間か「後衛武器による対空」しか成立しない（CombatRules.CanEngage）。
-    // すり抜けの例外（飛翔中の敵・対空武器の敵は通れない）は MovementCalculator 参照。
-    // 持続は発動ターンを含めて3ターン。自軍フェイズ開始ごとに TickFlight で数え、0で自動着地する。
-    // 「着陸」コマンドで早めに降りることもできる（発動したターンは不可・着陸すると行動終了）。
-    //
-    // 【警告】StartFlight / CancelFlight は「純粋な状態変更」のまま保つこと（Phase 20）。
-    // 敵AIが「飛んだら得か」を probe（お試し飛翔・お試し着地→評価→復元）で判定しており、
-    // ここに副作用（ログ・演出・行動消費・占有の変更など）を足すと評価のたびに
-    // それが実行されて probe が壊れる。演出やログは呼び出し側に置くこと。
-
-    /// <summary>飛翔状態か。</summary>
-    public bool IsFlying { get; private set; }
-
-    /// <summary>飛翔状態の残りターン数（自軍フェイズ開始ごとに1減る）。</summary>
-    public int FlightTurnsLeft { get; private set; }
-
-    /// <summary>飛翔状態を開始する（発動ターンを1ターン目と数える）。</summary>
-    public void StartFlight(int turns = 3)
-    {
-        IsFlying = true;
-        FlightTurnsLeft = turns;
-    }
-
-    /// <summary>
-    /// 飛翔状態を解除する。取り消し（発動した行動の中でのやり直し）と、
-    /// 「着陸」コマンド（Phase 14・行動終了を伴う）の両方から呼ばれる。
-    /// </summary>
-    public void CancelFlight()
-    {
-        IsFlying = false;
-        FlightTurnsLeft = 0;
-    }
-
-    /// <summary>自軍フェイズ開始時に呼ぶ。残りターンを減らし、0になったら自動着地する。</summary>
-    public void TickFlight()
-    {
-        if (!IsFlying) return;
-
-        FlightTurnsLeft--;
-        if (FlightTurnsLeft <= 0)
-        {
-            IsFlying = false;
-            FlightTurnsLeft = 0;
-            Debug.Log($"{Data.unitName} は着地した");
-        }
-    }
-
-    // ── 撃墜（2026-08-05 作者仕様）──
-    // 対空武器（弓・魔導書・光魔法）の攻撃を受けた飛翔中のユニットは、その場に着地する。
-    // 落下ダメージは無し。落ちた後は「次の自分のターンだけ飛翔できない」制限が付く
-    // （飛翔は行動を消費しないコマンドなので、制限が無いと自分のターンにタダで飛び直せてしまい、
-    //  撃墜された側の損失がほぼゼロになるため。作者合意）。
-    // 撃墜されるかどうかの判定は CombatRules.ShootsDown に一元化してある。
-
-    /// <summary>
-    /// 撃墜されて飛翔できない残りフェイズ数。撃墜の瞬間に2が入り、
-    /// 自陣営のフェイズ開始ごとに TickFlightBlock で1ずつ減る
-    /// （次の自分のフェイズのあいだは1のまま＝そのターンは飛べない。その次の開始で0＝また飛べる）。
-    /// </summary>
-    public int FlightBlockedTurns { get; private set; }
-
-    /// <summary>撃墜された直後で「飛翔」が使えない状態か。</summary>
-    public bool IsFlightBlocked => FlightBlockedTurns > 0;
-
-    /// <summary>
-    /// 対空攻撃で撃墜される。飛翔を解除し、次の自分のターンは飛翔できない状態にする。
-    /// 呼ぶのは CombatSystem.ResolveAttack だけ（ログは呼び出し側に置く）。
-    /// ※StartFlight / CancelFlight と違い、敵AIの probe からは呼ばれないので副作用を持ってよい
-    /// </summary>
-    public void ShootDown()
-    {
-        CancelFlight();
-        FlightBlockedTurns = 2;
-    }
-
-    /// <summary>自陣営フェイズ開始時に呼ぶ。撃墜による飛翔禁止の残りを1減らす。</summary>
-    public void TickFlightBlock()
-    {
-        if (FlightBlockedTurns > 0) FlightBlockedTurns--;
-    }
-
     // ── メモリゲージ・気勢ゲージ（フェーズ28。2026-10-24 にマナゲージをメモリゲージへ改名）──
     // 技と速さが三すくみ補正でしか使われていなかったので、この2つに独自の役割を与えるための仕組み。
     //  ・メモリ … マップ開始時に「技」ぶん貯まっており、自陣営のフェイズ開始ごとに「魔力」に応じて増える。
@@ -280,8 +189,8 @@ public class Unit : MonoBehaviour
     //             1本（100）で再行動（フェーズ30）。
     // 蓄積量・可否のルール本体は Combat/GaugeRules に集約してある（CombatRules と同じ方針）。
     //
-    // 【警告】飛翔と同じ理由で、ここは「純粋な状態変更」に保つこと。
-    // ログ・演出・行動消費は呼び出し側（TurnManager / BattleController）に置く。
+    // 【警告】Equip / Unequip と同じく、ここは「純粋な状態変更」に保つこと（戦闘予測や敵AIの見積りが
+    // 状態を読むだけで済むように）。ログ・演出・行動消費は呼び出し側（TurnManager / BattleController）に置く。
 
     /// <summary>メモリゲージ（必殺技用）。Initialize で構築される。</summary>
     public GaugeState Memory { get; private set; }
@@ -380,8 +289,7 @@ public class Unit : MonoBehaviour
         BaseSpeed = data.speed;
         Defense = data.defense;
         Resistance = data.resistance;
-        GroundMove = data.EffectiveMove;         // 移動力は兵種データ優先（無ければ旧 move）
-        FlightMove = data.EffectiveFlightMove;   // 飛翔中の移動力（未設定なら地上と同じ）
+        Move = data.EffectiveMove;               // 移動力は兵種データ優先（無ければ旧 move）
         CurrentHP = MaxHP;
 
         // ゲージを用意する（フェーズ28）。メモリの初期値は技の値そのもので、
@@ -620,7 +528,7 @@ public class Unit : MonoBehaviour
 
     // 各ユニットの HP ゲージとメモリ・気勢のリングを描く（簡易・Canvas不要）。
     // 「救」「飛x2」の印も以前はここで絵の上に出していたが、ユニット情報パネルの状態枠
-    // （飛翔の残りターン・救出中の相手の名前）で確認できるので廃止した（2026-10-10 作者合意）。
+    // （救出中の相手の名前）で確認できるので廃止した（2026-10-10 作者合意。飛翔は 2026-10-24 に撤廃）。
     void OnGUI()
     {
         if (Camera.main == null || grid == null) return;

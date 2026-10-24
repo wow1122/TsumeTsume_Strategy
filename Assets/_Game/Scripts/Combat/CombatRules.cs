@@ -14,10 +14,8 @@ using UnityEngine;
 ///  ・挟撃の資格 … 前衛武器の装備者だけが挟撃に参加できる
 ///  ・挟撃の無効化（ガード）… 防御側の隣に「前衛武器の徒歩ユニット（歩兵・重装歩兵）」の
 ///    味方がいれば挟撃されない
-///  ・飛翔（Phase 14）… 飛翔中の相手と戦えるのは「飛翔中のユニット」か「対空できる相手」だけ
-///    （Phase 25・IsAntiAirCapable）。対空は 後衛の攻撃武器（弓・魔導書・光魔法。杖は不可）が
-///    相手を問わず、前衛の特効武器（竜殺しの剣など）は特効が効く相手にだけ（2026-08-08 作者仕様）。
-///    飛翔中のユニットは地上の相手を攻撃できない（CanEngage）。挟撃・ガードも同じ制限に従う
+/// ※飛翔の戦闘制限（CanEngage）・対空（IsAntiAirCapable）・撃墜（ShootsDown）は 2026-10-24 に撤廃した。
+///   飛行兵も含めて、射程に入れば誰とでも戦える
 /// </summary>
 public static class CombatRules
 {
@@ -35,9 +33,9 @@ public static class CombatRules
     ///   移動した後 … 最小射程ちょうど（基本の2マス）しか撃てない
     ///   静止したまま… 最小射程〜武器の最大射程（弓3・魔法2）まで届く
     /// 【2026-10-24】いまのメモリで払えない武器も false（装備はできるが、攻撃には使えない＝作者仕様）。
-    /// 呼び出し側（CanAttack・GetAttackFromCells・赤い攻撃範囲・敵AIの対空圏・武器一覧の理由）は
+    /// 呼び出し側（CanAttack・GetAttackFromCells・赤い攻撃範囲・武器一覧の理由）は
     /// どれも「攻撃できるか」を知りたい場面なので、ここ1か所で判定がそろう。
-    /// 攻撃を受けたときの三すくみ・ガード役・対空（飛行兵の足止め）はこの関数を通らない＝装備どおりに働く。
+    /// 攻撃を受けたときの三すくみ・ガード役はこの関数を通らない＝装備どおりに働く。
     /// </summary>
     public static bool TryGetAttackRange(Unit unit, bool hasMoved, out int minRange, out int maxRange)
     {
@@ -64,13 +62,11 @@ public static class CombatRules
     }
 
     /// <summary>
-    /// attacker が fromCell に立って（移動有無 hasMoved で）target を攻撃できるか。
-    /// 射程に加えて、飛翔の戦闘制限（CanEngage）も見る。
+    /// attacker が fromCell に立って（移動有無 hasMoved で）target を攻撃できるか（射程で決まる）。
     /// </summary>
     public static bool CanAttack(Unit attacker, Vector2Int fromCell, Unit target, bool hasMoved)
     {
         if (target == null || !target.IsAlive) return false;
-        if (!CanEngage(attacker, target)) return false; // 飛翔の制限（Phase 14）
         if (!TryGetAttackRange(attacker, hasMoved, out int min, out int max)) return false;
 
         int distance = Manhattan(fromCell, target.GridPosition);
@@ -79,7 +75,7 @@ public static class CombatRules
 
     /// <summary>
     /// target を攻撃できる「立ち位置」の一覧（盤内のマスのみ。Phase 16・敵AIの接近目標用）。
-    /// 射程と飛翔の制限（CanEngage）だけで判定する。そのマスに立てる地形か・空いているかは
+    /// 射程だけで判定する。そのマスに立てる地形か・空いているかは
     /// 移動側（MovementCalculator の距離マップ）の役割なので、ここでは見ない。
     /// hasMoved は「そこへ移動してから撃つ」想定なら true（後衛武器は最小射程ちょうどになる）。
     /// </summary>
@@ -87,7 +83,6 @@ public static class CombatRules
     {
         var cells = new List<Vector2Int>();
         if (target == null || !target.IsAlive) return cells;
-        if (!CanEngage(attacker, target)) return cells;
         if (!TryGetAttackRange(attacker, hasMoved, out int min, out int max)) return cells;
 
         // target を中心に、マンハッタン距離が min〜max のマス（ひし形の輪）を集める
@@ -105,56 +100,6 @@ public static class CombatRules
             }
         }
         return cells;
-    }
-
-    /// <summary>
-    /// 飛翔を考慮して「そもそも戦闘が成立する組み合わせか」（Phase 14）。
-    ///   防御側が飛翔中 → 攻撃側も飛翔中か、対空できる相手（弓・魔導書・光魔法）のみ可
-    ///   攻撃側だけ飛翔中 → 地上の相手とは戦闘できない
-    ///   どちらも地上（または着地後） → 制限なし
-    /// </summary>
-    public static bool CanEngage(Unit attacker, Unit defender)
-    {
-        if (defender.IsFlying)
-            return attacker.IsFlying || IsAntiAirCapable(attacker, defender);
-
-        return !attacker.IsFlying; // 攻撃側だけ飛翔中なら不成立
-    }
-
-    /// <summary>
-    /// unit が「飛翔中の target」に手を出せる対空ユニットか（Phase 25。2026-08-08 に相手依存へ変更）。
-    ///   後衛の攻撃武器（弓・魔導書・光魔法）… 相手を問わず対空
-    ///   前衛の特効武器（竜殺しの剣など）    … その武器の**特効が効く相手にだけ**対空（作者仕様変更）
-    /// 杖は後衛だが攻撃できない武器なので対空ではない（修道士は敵飛行兵の頭上を塞がず、
-    /// AIの対空圏回避の対象にもならない）。非武装も対空ではない。
-    /// 【重要】相手によって変わるので target を必ず渡す。竜殺しの剣は飛翔中の竜には届くが、
-    /// 飛翔中の天馬兵には届かない＝同じユニットでも相手次第で対空かどうかが変わる。
-    /// 攻撃の可否（CanEngage）・撃墜（ShootsDown）・すり抜け判定（MovementCalculator）・
-    /// 対空圏（ThreatMap）の4か所が、この1つの判定を共有する。
-    /// </summary>
-    public static bool IsAntiAirCapable(Unit unit, Unit target)
-    {
-        WeaponData w = unit != null ? unit.Weapon : null;
-        if (w == null) return false;
-
-        if (w.category == WeaponCategory.Ranged && w.type != WeaponType.Staff) return true;
-
-        return EffectiveRules.GrantsAntiAirAgainst(w, target);
-    }
-
-    /// <summary>
-    /// 撃墜になる攻撃か＝この攻撃が当たると防御側の飛翔が解除されるか（2026-08-05 作者仕様）。
-    /// 条件は「防御側が飛翔中」かつ「攻撃側が対空武器を持っている」の2つだけ。
-    /// 攻撃側が地上か空中かは問わない（対空武器なら空からでも落とす）。
-    /// 挟撃の追撃は必ず前衛武器なので撃墜にならない。杖は対空ではないので回復では落ちない。
-    /// 戦闘本体（CombatSystem）と戦闘予測・被ダメ確認（BattleForecast）が同じこの関数を見る。
-    /// ※戦闘の後で装備が変わると Unit.Weapon が別の武器（や null）を返して判定が変わりうるので、
-    ///   判定は攻撃を解決する「前」に行うこと（CombatSystem は攻撃前に控えてから適用している）
-    /// </summary>
-    public static bool ShootsDown(Unit attacker, Unit defender)
-    {
-        if (attacker == null || defender == null) return false;
-        return defender.IsFlying && IsAntiAirCapable(attacker, defender);
     }
 
     // ===== 三すくみ =====
@@ -214,7 +159,7 @@ public static class CombatRules
     /// 三すくみ逆転を起こしている武器（起きていなければ null。2026-10-24 作者仕様）。
     /// 逆転を持つ武器（WeaponData.triangleReversalTags）の使い手が、そのタグに当てはまる相手と戦っていて、
     /// かつ相手の武器が三すくみでその武器に勝つ（剣にとっての槍）とき、その武器を返す。
-    /// 例：アーマーキラー（重装）× 槍の重装兵／斬馬刀（騎馬）× 槍の騎馬兵／風薙ぎの剣（天馬）× 槍の天馬兵。
+    /// 例：アーマーキラー（重装）× 槍の重装兵／斬馬刀（騎馬）× 槍の騎馬兵／風薙ぎの剣（白翼）× 槍のスカイナイト。
     /// 攻める側・攻められる側のどちらの武器でもよい（どちらにしても有利と不利が入れ替わる）。
     /// 前衛武器どうしの戦闘でだけ意味を持つ（後衛・非武装の相手には相性表を使わないため）。
     /// 戦闘本体（GetTriangleModifier）と戦闘予測の注記が同じこの関数を見る。
@@ -261,9 +206,8 @@ public static class CombatRules
     /// 「マスから動かずに撃つと三すくみ有利が付く」武器を装備しているか（2026-07-30 作者仕様）。
     /// ＝後衛の攻撃武器（弓・魔導書・光魔法）。杖は攻撃できないので含まない。非武装も含まない。
     /// 戦闘本体（GetTriangleModifier）と戦闘予測パネルの説明表示が同じ判定を見るために公開している。
-    /// ※かつては対空判定 IsAntiAirCapable と同じ条件だったが、意味の違う別ルールなので分けてあった。
-    ///   2026-08-08 に対空が「相手によって変わる判定」になったので、いまは完全に別物
-    ///   （分けておいたおかげで、前衛の特効武器に静止撃ち有利が付く事故が起きずに済んでいる）。
+    /// ※かつては対空判定（IsAntiAirCapable。2026-10-24 に対空ごと撤廃）と同じ条件だったが、
+    ///   意味の違う別ルールなので分けてあった。
     /// </summary>
     public static bool HasStandingShotAdvantage(Unit unit)
     {
@@ -328,8 +272,8 @@ public static class CombatRules
 
     /// <summary>
     /// guard が guardCell に立ったとき、defender への挟撃を無効化（ガード）できるか。
-    /// 条件：defender が飛翔中でない／同じ陣営／前衛武器を装備した徒歩ユニット
-    ///       （歩兵・重装歩兵）／guardCell が defender の上下左右に隣接。
+    /// 条件：同じ陣営／前衛武器を装備した徒歩ユニット（歩兵・重装歩兵）／
+    ///       guardCell が defender の上下左右に隣接。飛行兵も守られる（2026-10-24 に飛翔ごと例外を撤廃）。
     /// 今いる場所ではなく「仮定の位置」で判定できるのがポイント
     /// （Phase 19 の守り配置AIが「このマスへ動いたら守れるか」を試すために使う。
     ///   現在盤面のガード判定 FindPincerGuard も内部でこれを使う）。
@@ -337,7 +281,6 @@ public static class CombatRules
     public static bool WouldGuardAt(Unit guard, Vector2Int guardCell, Unit defender)
     {
         if (guard == null || defender == null || guard == defender) return false;
-        if (defender.IsFlying) return false; // 飛翔中はガードされない（Phase 14）
         if (guard.Faction != defender.Faction) return false;
         if (!guard.Class.IsFoot()) return false;
         if (!IsPincerCapable(guard)) return false;
@@ -370,7 +313,6 @@ public static class CombatRules
         if (ally == null || ally == attacker || ally.Faction != attacker.Faction) return null;
         if (!IsPincerCapable(ally)) return null;
         if (!WeaponMemoryRules.CanAfford(ally, ally.Weapon)) return null; // 支援役も払えなければ挟撃しない
-        if (!CanEngage(ally, defender)) return null; // 飛翔中の敵を挟めるのは飛翔中の味方だけ（Phase 14）
 
         return ally;
     }
@@ -382,7 +324,6 @@ public static class CombatRules
     /// （細かい判定は WouldGuardAt に一元化。Phase 18 で作り直したが挙動は従来と同じ）。
     /// ※ガード役自身が受ける挟撃は守れない（自分の隣に別のガード役が必要）。
     /// ※行動済みでも有効。敵味方どちらの陣営でも同じルール。
-    /// ※防御側が飛翔中なら不成立（空中戦に地上の徒歩ユニットは届かない。Phase 14・作者合意）。
     /// </summary>
     public static Unit FindPincerGuard(Unit defender, GridManager grid)
     {

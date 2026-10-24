@@ -6,7 +6,7 @@ using UnityEngine;
 ///          └ 重装歩兵
 ///   騎乗兵 ─ 騎兵（輸送隊は騎兵の一種）
 ///          └ 飛行兵
-/// 救出（Phase 11〜）や飛翔（Phase 14）は、この兵種を条件に使えるようになる。
+/// 救出（Phase 11〜）や地形の通行（Phase 13〜）は、この兵種を条件にしている。
 /// 「騎兵向け」のルールを書くときは IsCavalry() を使うと輸送隊にも自動で効く。
 /// 同じように「歩兵向け」のルールは IsFoot()（＝徒歩。歩兵＋重装歩兵）を使う。
 ///
@@ -56,6 +56,16 @@ public static class UnitClassExtensions
     public static bool IsMounted(this UnitClass unitClass)
     {
         return !unitClass.IsFoot();
+    }
+
+    /// <summary>
+    /// 飛行兵か（2026-10-24 作者仕様：飛翔の撤廃後、飛行兵は常に空を飛んで移動する）。
+    /// 飛行兵は地形を無視して動き（全マスコスト1・屋内の壁だけ不可。TileData）、
+    /// 地形防御を受けない（DamageCalculator）。騎乗の一種なので救出（容量1）は従来どおり。
+    /// </summary>
+    public static bool IsFlier(this UnitClass unitClass)
+    {
+        return unitClass == UnitClass.Flier;
     }
 
     /// <summary>騎兵系か（騎兵と、その一種である輸送隊。飛行兵は含まない）。</summary>

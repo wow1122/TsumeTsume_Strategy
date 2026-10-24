@@ -15,8 +15,6 @@ using UnityEngine;
 ///    必殺技のメモリの消費は呼び出し側（BattleController）が行う。
 ///  ・静止撃ち有利（2026-07-30 作者仕様）：後衛武器（弓・魔法）が「マスから動かずに」攻撃すると
 ///    三すくみ有利が付く。攻撃側が移動したかは呼び出し側しか知らないので attackerHasMoved で受け取る。
-///  ・撃墜（2026-08-05 作者仕様）：対空武器（弓・魔導書・光魔法）で飛翔中の相手を攻撃すると、
-///    当たった相手はその場に着地する（落下ダメージなし）。判定は攻撃の前に控え、解除は最後に行う。
 ///  ・メモリの支払い（2026-10-24 作者仕様）：攻撃した側と挟撃の支援役が、使った武器のメモリ消費を払う
 ///    （WeaponMemoryRules.PayForAttack。払えなくなっても味方は装備したまま、敵だけ安い武器へ自動で持ち替える）。
 ///    払うのは「この戦闘が全部終わってから」＝その一撃の中で武器が変わり、挟撃の成立判定や
@@ -33,12 +31,8 @@ public static class CombatSystem
     {
         if (attacker == null || defender == null) return;
 
-        // 0) 撃墜になる組み合わせか（2026-08-05 作者仕様）を、攻撃を解決する「前」に控えておく。
-        //    最後にメモリを払うと、敵は自動の持ち替えで Unit.Weapon が別の武器（や null）に変わり、
-        //    後から見ると「対空武器ではない」へ判定がひっくり返ってしまうため（フェーズ31の耐久と同じ罠）
-        bool shootsDown = CombatRules.ShootsDown(attacker, defender);
-
-        //    同じ理由で、メモリを払う「実際に使った武器」も先に控えておく（2026-10-24）
+        // 0) メモリを払う「実際に使った武器」を、攻撃を解決する「前」に控えておく（2026-10-24）。
+        //    最後にメモリを払うと、敵は自動の持ち替えで Unit.Weapon が別の武器（や null）に変わるため
         WeaponData attackerWeapon = attacker.Weapon;
 
         // 1) 攻撃側 → 防御側（内訳付きログ）
@@ -75,17 +69,6 @@ public static class CombatSystem
         //    この戦闘の判定（ダメージ・挟撃・気勢）が全部終わってから払う＝その一撃の中で武器は変わらない
         WeaponMemoryRules.PayForAttack(attacker, attackerWeapon);
         WeaponMemoryRules.PayForAttack(pincerAlly, pincerWeapon);
-
-        // 6) 撃墜（2026-08-05 作者仕様）：対空武器で撃たれた飛翔中の相手はその場に着地する。
-        //    解除するのはこの戦闘の判定が全部終わってから（途中で解除すると
-        //    挟撃の成立判定や地形防御の有無が、この一撃の中で変わってしまう）。
-        //    倒したときは何もしない（死亡が優先）
-        if (shootsDown && defender != null && defender.IsAlive)
-        {
-            defender.ShootDown();
-            Debug.Log($"撃墜！ {defender.Data.unitName} は対空攻撃で飛翔を解かれ、その場に着地した" +
-                      "（次の自分のターンは飛翔できない）");
-        }
     }
 
     /// <summary>
