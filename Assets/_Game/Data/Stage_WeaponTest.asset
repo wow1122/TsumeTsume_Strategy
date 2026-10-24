@@ -1,0 +1,110 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45f9520dc1ea40fd9d7d3841adf2a689, type: 3}
+  m_Name: Stage_WeaponTest
+  m_EditorClassIdentifier: Assembly-CSharp::StageData
+  placements:
+  - unitData: {fileID: 11400000, guid: 02b7a653b6c54ac5a00a942a40e6b240, type: 2}
+    cell: {x: 0, y: 1}
+    initialFlightTurns: 0
+    aiProfile: 0
+  - unitData: {fileID: 11400000, guid: b82e78d548634c9194311374b87fc3d4, type: 2}
+    cell: {x: 1, y: 1}
+    initialFlightTurns: 0
+    aiProfile: 0
+  - unitData: {fileID: 11400000, guid: e310c45b7d304fd59688b46b07cf2bee, type: 2}
+    cell: {x: 2, y: 1}
+    initialFlightTurns: 0
+    aiProfile: 0
+  - unitData: {fileID: 11400000, guid: 051d1ffbac154cfd974d33f5876abeb5, type: 2}
+    cell: {x: 3, y: 1}
+    initialFlightTurns: 0
+    aiProfile: 0
+  - unitData: {fileID: 11400000, guid: 368ec738ed574137bba4964e791cf384, type: 2}
+    cell: {x: 5, y: 1}
+    initialFlightTurns: 0
+    aiProfile: 0
+  - unitData: {fileID: 11400000, guid: c2a2d0d05e2e44079f047b4ee28475f3, type: 2}
+    cell: {x: 6, y: 1}
+    initialFlightTurns: 0
+    aiProfile: 0
+  - unitData: {fileID: 11400000, guid: 255ea9eff80f4b5792bdeb8132f95845, type: 2}
+    cell: {x: 8, y: 1}
+    initialFlightTurns: 0
+    aiProfile: 0
+  - unitData: {fileID: 11400000, guid: 070a2c8da4474207bb1ca5e8fa7b2e49, type: 2}
+    cell: {x: 6, y: 0}
+    initialFlightTurns: 0
+    aiProfile: 0
+  - unitData: {fileID: 11400000, guid: cad391e817b14a559763152f94268eed, type: 2}
+    cell: {x: 8, y: 0}
+    initialFlightTurns: 0
+    aiProfile: 0
+  - unitData: {fileID: 11400000, guid: e5b7b038267c8961a304071b593ef648, type: 2}
+    cell: {x: 1, y: 3}
+    initialFlightTurns: 0
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: f6a8c149378d9a72b415182c6a40f759, type: 2}
+    cell: {x: 4, y: 3}
+    initialFlightTurns: 0
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: e5b7b038267c8961a304071b593ef648, type: 2}
+    cell: {x: 7, y: 3}
+    initialFlightTurns: 0
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: 2d2074640067438f87453d75e2f17a92, type: 2}
+    cell: {x: 4, y: 5}
+    initialFlightTurns: 0
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
+    cell: {x: 2, y: 6}
+    initialFlightTurns: 0
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: 2b82046b9b4b4da2851d9841425195f6, type: 2}
+    cell: {x: 6, y: 7}
+    initialFlightTurns: 0
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: 43975648fa4e412f9e830d26585ae6ab, type: 2}
+    cell: {x: 1, y: 8}
+    initialFlightTurns: 0
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: b7f9c2cb11f04b2aa6d8e46556e06c77, type: 2}
+    cell: {x: 3, y: 8}
+    initialFlightTurns: 99
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: 6fd6a4f4dc2e4a689fca726a08685521, type: 2}
+    cell: {x: 5, y: 9}
+    initialFlightTurns: 99
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: 6fd6a4f4dc2e4a689fca726a08685521, type: 2}
+    cell: {x: 7, y: 9}
+    initialFlightTurns: 0
+    aiProfile: 1
+  - unitData: {fileID: 11400000, guid: b36af662151b4214a2d0156cfdddcbea, type: 2}
+    cell: {x: 9, y: 9}
+    initialFlightTurns: 0
+    aiProfile: 1
+  terrainTable: {fileID: 11400000, guid: ab7adf8c0ffdbd8e6818d76fdffbee85, type: 2}
+  terrainRows:
+  - '..........'
+  - '..........'
+  - '..........'
+  - '..........'
+  - '..........'
+  - '..........'
+  - '..........'
+  - '..........'
+  - '..........'
+  - '..........'
+  gridWidth: 10
+  gridHeight: 10
+  turnLimit: 0

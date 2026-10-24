@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
+  m_Name: Unit_Test_Memory_Lance
+  m_EditorClassIdentifier: Assembly-CSharp::UnitData
+  unitName: "試験・槍"
+  faction: 0
+  unitClass: 1
+  classData: {fileID: 11400000, guid: 74787bae67984d70b61e3db4eb3c7ada, type: 2}
+  maxHP: 26
+  strength: 7
+  magic: 5
+  skill: 9
+  speed: 5
+  defense: 4
+  resistance: 1
+  move: 6
+  weapon: {fileID: 11400000, guid: 1d9940d7aa0247fd9da63dde54661597, type: 2}
+  items:
+  - {fileID: 11400000, guid: 1d9940d7aa0247fd9da63dde54661597, type: 2}
+  - {fileID: 11400000, guid: f6ec644f25b940bd8cffbf7d6efedc0b, type: 2}
+  - {fileID: 11400000, guid: f500635223014aa381ace1975446c0e0, type: 2}
+  - {fileID: 11400000, guid: 1810b25d39ba4f3ba731a27dacc416cb, type: 2}
+  - {fileID: 11400000, guid: c9f7b534f81e457bb18b74a09a7f5897, type: 2}

@@ -18,5 +18,10 @@ MonoBehaviour:
   might: 10
   minRange: 1
   maxRange: 1
-  maxUses: 6
-  isStandardIssue: 1
+  memoryCost: 0
+  magicDamage: 0
+  reducesSpeedByMove: 0
+  triangleReversalTags: 0
+  exclusiveClasses: []
+  effectiveTags: 0
+  grantsAntiAir: 0

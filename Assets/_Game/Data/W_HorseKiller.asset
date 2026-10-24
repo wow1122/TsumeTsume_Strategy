@@ -15,10 +15,13 @@ MonoBehaviour:
   weaponName: "ホースキラー"
   type: 1
   category: 0
-  might: 5
+  might: 12
   minRange: 1
   maxRange: 1
-  maxUses: 6
-  isStandardIssue: 0
+  memoryCost: 7
+  magicDamage: 0
+  reducesSpeedByMove: 0
+  triangleReversalTags: 0
+  exclusiveClasses: []
   effectiveTags: 1
   grantsAntiAir: 0

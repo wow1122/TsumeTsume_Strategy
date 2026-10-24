@@ -10,15 +10,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 32e55d14b0762954b995b6a4a5afad15, type: 3}
-  m_Name: W_Poleaxe
+  m_Name: W_SilverSword
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
-  weaponName: "ポールアクス"
-  type: 2
+  weaponName: "銀の剣"
+  type: 0
   category: 0
-  might: 5
+  might: 17
   minRange: 1
   maxRange: 1
-  maxUses: 6
-  isStandardIssue: 0
-  effectiveTags: 1
+  memoryCost: 9
+  magicDamage: 0
+  reducesSpeedByMove: 0
+  triangleReversalTags: 0
+  exclusiveClasses: []
+  effectiveTags: 0
   grantsAntiAir: 0

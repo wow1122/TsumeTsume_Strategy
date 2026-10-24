@@ -15,10 +15,13 @@ MonoBehaviour:
   weaponName: "アーマーキラー"
   type: 0
   category: 0
-  might: 5
+  might: 7
   minRange: 1
   maxRange: 1
-  maxUses: 6
-  isStandardIssue: 0
+  memoryCost: 4
+  magicDamage: 0
+  reducesSpeedByMove: 0
+  triangleReversalTags: 8
+  exclusiveClasses: []
   effectiveTags: 8
   grantsAntiAir: 0

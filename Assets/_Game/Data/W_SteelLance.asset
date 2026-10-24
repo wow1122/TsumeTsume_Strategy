@@ -10,15 +10,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 32e55d14b0762954b995b6a4a5afad15, type: 3}
-  m_Name: W_DragonLance
+  m_Name: W_SteelLance
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
-  weaponName: "竜狩りの槍"
+  weaponName: "鋼の槍"
   type: 1
   category: 0
-  might: 5
+  might: 11
   minRange: 1
   maxRange: 1
-  maxUses: 6
-  isStandardIssue: 0
-  effectiveTags: 4
-  grantsAntiAir: 1
+  memoryCost: 5
+  magicDamage: 0
+  reducesSpeedByMove: 1
+  triangleReversalTags: 0
+  exclusiveClasses: []
+  effectiveTags: 0
+  grantsAntiAir: 0

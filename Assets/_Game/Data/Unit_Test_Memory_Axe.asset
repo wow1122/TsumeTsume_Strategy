@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
+  m_Name: Unit_Test_Memory_Axe
+  m_EditorClassIdentifier: Assembly-CSharp::UnitData
+  unitName: "試験・斧"
+  faction: 0
+  unitClass: 0
+  classData: {fileID: 11400000, guid: 7b13a762dcd242c4bd4b2a4e72f2e846, type: 2}
+  maxHP: 28
+  strength: 8
+  magic: 5
+  skill: 12
+  speed: 4
+  defense: 4
+  resistance: 1
+  move: 3
+  weapon: {fileID: 11400000, guid: 315e7dcbc9e44045b190b4ea34fc6f7b, type: 2}
+  items:
+  - {fileID: 11400000, guid: 315e7dcbc9e44045b190b4ea34fc6f7b, type: 2}
+  - {fileID: 11400000, guid: 75a53c07fbb14e18aa9abd71698be891, type: 2}
+  - {fileID: 11400000, guid: cf1d3d3ba8264a638f570d6b743ba49e, type: 2}
+  - {fileID: 11400000, guid: 5747e7dae84a4516b472a98fd890192e, type: 2}
+  - {fileID: 11400000, guid: cc465571cc014f94a324f5f087c75ac2, type: 2}
+  - {fileID: 11400000, guid: a0f6faa61c579d448b3f9bcf09b572cf, type: 2}

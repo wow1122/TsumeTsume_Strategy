@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 32e55d14b0762954b995b6a4a5afad15, type: 3}
+  m_Name: W_Longbow
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponData
+  weaponName: "長弓"
+  type: 3
+  category: 1
+  might: 10
+  minRange: 2
+  maxRange: 4
+  memoryCost: 7
+  magicDamage: 0
+  reducesSpeedByMove: 0
+  triangleReversalTags: 0
+  exclusiveClasses:
+  - {fileID: 11400000, guid: f602c0024f2240aeb00d760ac1f805f2, type: 2}
+  effectiveTags: 0
+  grantsAntiAir: 0

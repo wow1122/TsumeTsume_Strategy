@@ -10,15 +10,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 32e55d14b0762954b995b6a4a5afad15, type: 3}
-  m_Name: W_Tonbokiri
+  m_Name: W_BoltAxe
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
-  weaponName: "蜻蛉切"
-  type: 1
+  weaponName: "ボルトアクス"
+  type: 2
   category: 0
-  might: 5
+  might: 12
   minRange: 1
   maxRange: 1
-  maxUses: 6
-  isStandardIssue: 0
-  effectiveTags: 2
-  grantsAntiAir: 1
+  memoryCost: 7
+  magicDamage: 1
+  reducesSpeedByMove: 0
+  triangleReversalTags: 0
+  exclusiveClasses: []
+  effectiveTags: 0
+  grantsAntiAir: 0

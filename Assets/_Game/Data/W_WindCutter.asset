@@ -12,13 +12,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 32e55d14b0762954b995b6a4a5afad15, type: 3}
   m_Name: W_WindCutter
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
-  weaponName: "風斬りの剣"
+  weaponName: "風薙ぎの剣"
   type: 0
   category: 0
-  might: 5
+  might: 7
   minRange: 1
   maxRange: 1
-  maxUses: 6
-  isStandardIssue: 0
+  memoryCost: 4
+  magicDamage: 0
+  reducesSpeedByMove: 0
+  triangleReversalTags: 2
+  exclusiveClasses: []
   effectiveTags: 2
   grantsAntiAir: 1
