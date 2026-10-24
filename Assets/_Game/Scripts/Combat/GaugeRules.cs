@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// メモリゲージ（技 → 必殺技）と気勢ゲージ（速さ → 再行動）のルールを一元管理する（フェーズ28）。
+/// メモリゲージ（技 → 必殺技）と覚醒ゲージ（速さ → 再行動）のルールを一元管理する（フェーズ28）。
 /// メモリゲージは 2026-10-24 の作者仕様変更でマナゲージから改名した（中身の仕組みは同じ）。
 /// CombatRules / RescueRules / StaffRules / ExchangeRules と同じ「判定は1か所に集める」方針。
 /// UIも敵AIも、ゲージまわりの数値と可否は必ずここを通して読む。
@@ -12,7 +12,7 @@ using UnityEngine;
 ///  ・メモリゲージ … マップ開始時に「技」の値ぶん貯まった状態で始まり、
 ///                   自陣営のフェイズ開始ごとに「魔力」に応じた量だけ増える。
 ///                   1本（30）貯めると必殺技（フェーズ29）が撃てる。
-///  ・気勢ゲージ … 戦闘で敵を連続して倒すと、倒した側の全ユニットに「速さ÷2」ずつ配られる。
+///  ・覚醒ゲージ … 戦闘で敵を連続して倒すと、倒した側の全ユニットに「速さ÷2」ずつ配られる。
 ///                 1本（100）貯めると再行動（フェーズ30）ができる。
 ///
 /// 【注意】現行ユニットの能力値は 技1〜6・速さ1〜7・魔力0〜6 で、下の閾値には届かない。
@@ -56,18 +56,18 @@ public static class GaugeRules
     /// </summary>
     public const int CriticalMemoryCost = MaxMemory;
 
-    // ── 気勢ゲージ（速さ → 再行動）──
+    // ── 覚醒ゲージ（速さ → 再行動）──
 
-    /// <summary>気勢ゲージ1本ぶんの満タン値。</summary>
+    /// <summary>覚醒ゲージ1本ぶんの満タン値。</summary>
     public const int MaxMomentum = 100;
 
-    /// <summary>保持できる気勢の本数。</summary>
+    /// <summary>保持できる覚醒の本数。</summary>
     public const int MaxMomentumStock = 2;
 
-    /// <summary>何連続の撃破から気勢が貯まり始めるか（作者合意：2連続目から）。</summary>
+    /// <summary>何連続の撃破から覚醒が貯まり始めるか（作者合意：2連続目から）。</summary>
     public const int ChainRequired = 2;
 
-    /// <summary>1回ぶんの気勢上昇量＝速さ ÷ この値（切り捨て）。</summary>
+    /// <summary>1回ぶんの覚醒上昇量＝速さ ÷ この値（切り捨て）。</summary>
     public const int MomentumDivisor = 2;
 
     // ===== 連続撃破（連鎖）の管理 =====
@@ -97,7 +97,7 @@ public static class GaugeRules
 
     /// <summary>
     /// 戦闘1回の結果を受け取って連鎖を進める／切る（CombatSystem.ResolveAttack が呼ぶ）。
-    /// 連続撃破が ChainRequired 以上になったら、撃破1回につき1回分の気勢を
+    /// 連続撃破が ChainRequired 以上になったら、撃破1回につき1回分の覚醒を
     /// 倒した側の全生存ユニットに配る。1体目の撃破では配らない。
     /// 結果として貯まるのは「連続で撃破した数 − 1」回分になる
     /// （2体連続なら1回分、3体なら2回分…。作者仕様 2026-07-26）。
@@ -119,12 +119,12 @@ public static class GaugeRules
 
         AwardMomentum(attackerFaction);
 
-        Debug.Log($"気勢！ {chainCount}連続撃破 → {FactionLabel(attackerFaction)}の全ユニットに" +
-                  $"「速さ÷{MomentumDivisor}」の気勢が入った（この連鎖で累計 {chainCount - 1} 回分）");
+        Debug.Log($"覚醒！ {chainCount}連続撃破 → {FactionLabel(attackerFaction)}の全ユニットの覚醒ゲージが" +
+                  $"「速さ÷{MomentumDivisor}」ずつ貯まった（この連鎖で累計 {chainCount - 1} 回分）");
     }
 
     /// <summary>
-    /// 指定陣営の全生存ユニットに気勢を1回分配る。
+    /// 指定陣営の全生存ユニットに覚醒を1回分配る。
     /// 格納中（救出されて盤上にいない）の貨物にも入るので、UnitRegistry.All を使う
     /// （GetUnits は盤上のユニットしか返さない）。
     /// </summary>
@@ -159,7 +159,7 @@ public static class GaugeRules
 
     /// <summary>
     /// 指定陣営の全生存ユニットのメモリを1回ぶん増やす（フェイズ開始時に TurnManager が呼ぶ）。
-    /// 気勢と同じく、格納中の貨物にも入る。
+    /// 覚醒と同じく、格納中の貨物にも入る。
     /// </summary>
     public static void TickMemory(Faction faction)
     {
@@ -170,9 +170,9 @@ public static class GaugeRules
         }
     }
 
-    // ===== 気勢 =====
+    // ===== 覚醒 =====
 
-    /// <summary>1回ぶんの気勢上昇量＝速さ ÷ MomentumDivisor（切り捨て）。</summary>
+    /// <summary>1回ぶんの覚醒上昇量＝速さ ÷ MomentumDivisor（切り捨て）。</summary>
     public static int MomentumGain(Unit unit)
     {
         if (unit == null) return 0;
@@ -192,7 +192,7 @@ public static class GaugeRules
     }
 
     /// <summary>
-    /// 再行動（気勢1本消費）が使える状態か（フェーズ30）。
+    /// 再行動（覚醒1本消費）が使える状態か（フェーズ30）。
     /// 行動済みのユニットだけが対象で、同じターンに2回は使えない。
     /// </summary>
     public static bool CanRefresh(Unit unit)

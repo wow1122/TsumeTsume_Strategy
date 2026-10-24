@@ -222,7 +222,7 @@ public class BattleController : MonoBehaviour
                     ClearEnemyPreview();
                     EnterMoveSelect(clickedUnit);
                 }
-                // 行動済みの味方でも、気勢が1本貯まっていれば「再行動」で動き直せる（フェーズ30）。
+                // 行動済みの味方でも、覚醒が1本貯まっていれば「再行動」で動き直せる（フェーズ30）。
                 // 攻撃の結果を見てから使うかどうか決められるように、行動を終えた後の入口にしてある
                 else if (clickedUnit != null && clickedUnit.Faction == Faction.Player
                          && GaugeRules.CanRefresh(clickedUnit))
@@ -336,7 +336,7 @@ public class BattleController : MonoBehaviour
                 break;
 
             case State.RefreshMenu:
-                // 再行動のメニュー → 何もせず Idle へ（気勢はまだ使っていない。フェーズ30）
+                // 再行動のメニュー → 何もせず Idle へ（覚醒はまだ使っていない。フェーズ30）
                 menu.Hide();
                 refreshCandidate = null;
                 grid.ResetAllHighlights();
@@ -458,7 +458,7 @@ public class BattleController : MonoBehaviour
 
     /// <summary>
     /// 行動済みの味方をクリックしたときに「再行動」だけのメニューを出す（フェーズ30）。
-    /// 気勢を1本使うと未行動に戻り、いつもどおり移動から選び直せる。
+    /// 覚醒を1本使うと未行動に戻り、いつもどおり移動から選び直せる。
     /// 攻撃の結果を見てから使うか決められるように、行動を終えた後の入口にしてある。
     /// この時点ではまだ何も消費していないので、右クリック/ESC でそのままやめられる。
     /// </summary>
@@ -476,11 +476,11 @@ public class BattleController : MonoBehaviour
         menu.Show(grid.CellToWorld(unit.GridPosition), grid.cellSize, commands);
 
         state = State.RefreshMenu;
-        Debug.Log($"{unit.Data.unitName}: 再行動できる（気勢 {unit.Momentum.Stock} 本）。右クリック/ESCでやめる。");
+        Debug.Log($"{unit.Data.unitName}: 再行動できる（覚醒ゲージ {unit.Momentum.Stock} 本）。右クリック/ESCでやめる。");
     }
 
     /// <summary>
-    /// 「再行動」が選ばれた（フェーズ30）：気勢を1本使って行動済みを解除し、移動選択へ戻す。
+    /// 「再行動」が選ばれた（フェーズ30）：覚醒を1本使って行動済みを解除し、移動選択へ戻す。
     /// 同じユニットは1ターンに1回しか使えない（MarkRefreshUsed）。
     /// 移動力は新しい ActionContext ができることで全回復する（＝まっさらな1行動として扱う。
     /// 救出済みなどの制限もすべて解けるので、前の行動を引きずらない）。
@@ -490,7 +490,7 @@ public class BattleController : MonoBehaviour
         Unit unit = refreshCandidate;
         refreshCandidate = null;
 
-        // メニューを出してから状況が変わった場合の保険（気勢を使い切った・倒された等）
+        // メニューを出してから状況が変わった場合の保険（覚醒を使い切った・倒された等）
         if (unit == null || !GaugeRules.CanRefresh(unit))
         {
             menu.Hide();
@@ -503,7 +503,7 @@ public class BattleController : MonoBehaviour
         unit.MarkRefreshUsed();
         unit.SetActed(false); // 行動済みの暗い表示も元に戻る
         Debug.Log($"再行動！ {unit.Data.unitName} がもう一度動けるようになった" +
-                  $"（残りの気勢 {unit.Momentum.Stock} 本・このターンはもう使えない）");
+                  $"（覚醒ゲージの残り {unit.Momentum.Stock} 本・このターンはもう使えない）");
 
         EnterMoveSelect(unit);
     }

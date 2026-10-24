@@ -32,7 +32,7 @@ public class Unit : MonoBehaviour
     /// <summary>
     /// 速さ（実際に使う値）。鋼の武器・中級魔導のように「装備すると速さが移動力ぶん下がる」武器を
     /// 装備しているあいだは、移動力（地上）ぶん下がる。0未満にはならない（2026-10-24 作者仕様）。
-    /// 速さを読む全箇所（三すくみの補正・気勢の貯まり方・ユニット情報の表示）がこの窓口を見るので、ここ1か所で効く
+    /// 速さを読む全箇所（三すくみの補正・覚醒の貯まり方・ユニット情報の表示）がこの窓口を見るので、ここ1か所で効く
     /// （移動力の Move・武器の Weapon と同じ手口）。
     /// </summary>
     public int Speed => Mathf.Max(0, BaseSpeed - SpeedPenalty);
@@ -181,11 +181,11 @@ public class Unit : MonoBehaviour
     public int CarryCapacity =>
         Class == UnitClass.Transporter ? 4 : (Class.IsMounted() ? 1 : 0);
 
-    // ── メモリゲージ・気勢ゲージ（フェーズ28。2026-10-24 にマナゲージをメモリゲージへ改名）──
+    // ── メモリゲージ・覚醒ゲージ（フェーズ28。2026-10-24 にマナゲージをメモリゲージへ改名）──
     // 技と速さが三すくみ補正でしか使われていなかったので、この2つに独自の役割を与えるための仕組み。
     //  ・メモリ … マップ開始時に「技」ぶん貯まっており、自陣営のフェイズ開始ごとに「魔力」に応じて増える。
     //             1本（30）で必殺技（フェーズ29）。
-    //  ・気勢   … 敵を連続撃破すると、倒した側の全ユニットに「速さ÷2」ずつ配られる。
+    //  ・覚醒   … 敵を連続撃破すると、倒した側の全ユニットに「速さ÷2」ずつ配られる。
     //             1本（100）で再行動（フェーズ30）。
     // 蓄積量・可否のルール本体は Combat/GaugeRules に集約してある（CombatRules と同じ方針）。
     //
@@ -195,7 +195,7 @@ public class Unit : MonoBehaviour
     /// <summary>メモリゲージ（必殺技用）。Initialize で構築される。</summary>
     public GaugeState Memory { get; private set; }
 
-    /// <summary>気勢ゲージ（再行動用）。Initialize で構築される。</summary>
+    /// <summary>覚醒ゲージ（再行動用）。Initialize で構築される。</summary>
     public GaugeState Momentum { get; private set; }
 
     /// <summary>このターンすでに再行動を使ったか（1ターン1回まで。フェーズ30）。</summary>
@@ -217,13 +217,13 @@ public class Unit : MonoBehaviour
         return Memory != null && Memory.Spend(amount);
     }
 
-    /// <summary>気勢を増やす（連続撃破の配分）。</summary>
+    /// <summary>覚醒を増やす（連続撃破の配分）。</summary>
     public void AddMomentum(int amount)
     {
         Momentum?.Add(amount);
     }
 
-    /// <summary>気勢を1本使う。使えたら true。</summary>
+    /// <summary>覚醒を1本使う。使えたら true。</summary>
     public bool SpendMomentum()
     {
         return Momentum != null && Momentum.SpendStock();
@@ -526,7 +526,7 @@ public class Unit : MonoBehaviour
     private static readonly Color HpBarEnemyColor = new Color(1.00f, 0.30f, 0.30f);   // 赤
     private static readonly Color HpBarBackColor = new Color(0.10f, 0.10f, 0.10f, 0.85f);
 
-    // 各ユニットの HP ゲージとメモリ・気勢のリングを描く（簡易・Canvas不要）。
+    // 各ユニットの HP ゲージとメモリ・覚醒のリングを描く（簡易・Canvas不要）。
     // 「救」「飛x2」の印も以前はここで絵の上に出していたが、ユニット情報パネルの状態枠
     // （救出中の相手の名前）で確認できるので廃止した（2026-10-10 作者合意。飛翔は 2026-10-24 に撤廃）。
     void OnGUI()
@@ -551,7 +551,7 @@ public class Unit : MonoBehaviour
         if (ratio > 0f)
             GaugeBars.FillRect(new Rect(bar.x, bar.y, Mathf.Max(1f, Mathf.Round(bar.width * ratio)), bar.height), fill);
 
-        // メモリ（左下隅）・気勢（右下隅）のリング状ゲージとストック数（2026-10-11 作者仕様）。
+        // メモリ（左下隅）・覚醒（右下隅）のリング状ゲージとストック数（2026-10-11 作者仕様）。
         // HP ゲージより後に描くので、重なってもリングが上になる
         GaugeRings.Draw(cell, inset, this);
     }

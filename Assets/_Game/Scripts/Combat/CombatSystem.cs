@@ -8,8 +8,8 @@ using UnityEngine;
 ///  ・挟撃（はさみ撃ち）：成立・無効化の判定は CombatRules に一元化してある
 ///  ・PredictTotalDamage は「この攻撃で合計何ダメージ入るか」の予測窓口。
 ///    敵AIの行動評価と、将来の戦闘予測UIが同じ数字を見る。
-///  ・気勢ゲージ（フェーズ28）：戦闘1回ごとに「相手を倒したか」を GaugeRules へ知らせる。
-///    連続撃破が続くと、倒した側の全ユニットに気勢が配られる。
+///  ・覚醒ゲージ（フェーズ28）：戦闘1回ごとに「相手を倒したか」を GaugeRules へ知らせる。
+///    連続撃破が続くと、倒した側の全ユニットに覚醒が配られる。
 ///  ・必殺技（フェーズ29）：critical = true で呼ぶと、本体の一撃だけダメージに倍率がかかる。
 ///    挟撃の追撃は等倍のまま（倍率が乗るのはメモリを使った本人の攻撃だけ）。
 ///    必殺技のメモリの消費は呼び出し側（BattleController）が行う。
@@ -18,7 +18,7 @@ using UnityEngine;
 ///  ・メモリの支払い（2026-10-24 作者仕様）：攻撃した側と挟撃の支援役が、使った武器のメモリ消費を払う
 ///    （WeaponMemoryRules.PayForAttack。払えなくなっても味方は装備したまま、敵だけ安い武器へ自動で持ち替える）。
 ///    払うのは「この戦闘が全部終わってから」＝その一撃の中で武器が変わり、挟撃の成立判定や
-///    気勢の配分がずれることは無い（フェーズ31の武器の耐久の消耗と同じ位置。耐久は撤廃した）。
+///    覚醒の配分がずれることは無い（フェーズ31の武器の耐久の消耗と同じ位置。耐久は撤廃した）。
 /// </summary>
 public static class CombatSystem
 {
@@ -58,7 +58,7 @@ public static class CombatSystem
         Unit pincerAlly = TryPincer(attacker, defender, grid);
         WeaponData pincerWeapon = pincerAlly != null ? pincerAlly.Weapon : null;
 
-        // 4) 気勢ゲージ（フェーズ28）：この戦闘で相手を倒したかを連鎖の判定へ渡す。
+        // 4) 覚醒ゲージ（フェーズ28）：この戦闘で相手を倒したかを連鎖の判定へ渡す。
         //    挟撃のとどめもこの戦闘の結果に含める（誰がとどめを刺したかは問わない＝作者合意）。
         //    倒れた直後の defender は Destroy 済みで「== null」が true になるので、そこも撃破として扱う
         bool killed = defender == null || !defender.IsAlive;
@@ -66,7 +66,7 @@ public static class CombatSystem
 
         // 5) メモリの支払い（2026-10-24 作者仕様）：攻撃側 → 挟撃の支援役の順に、使った武器のぶんを払う。
         //    払えなくなっても味方は装備したまま（次の攻撃で自分で選ぶ）。敵だけ安い武器へ自動で持ち替える。
-        //    この戦闘の判定（ダメージ・挟撃・気勢）が全部終わってから払う＝その一撃の中で武器は変わらない
+        //    この戦闘の判定（ダメージ・挟撃・覚醒）が全部終わってから払う＝その一撃の中で武器は変わらない
         WeaponMemoryRules.PayForAttack(attacker, attackerWeapon);
         WeaponMemoryRules.PayForAttack(pincerAlly, pincerWeapon);
     }

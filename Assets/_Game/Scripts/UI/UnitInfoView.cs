@@ -9,7 +9,7 @@ using UnityEngine;
 /// レイアウト（左右のカラムは同じ幅。これがバーの長さを揃える条件になっている）:
 ///   左カラム … 顔枠（空欄）→ 名前／HP の1行 → クラス名／移動力 の1行 → ステータス枠
 ///              → 使用可能武器の1行 → 兵種経験値バー
-///   右カラム … 状態枠 → スキル枠 → 持ち物枠 → 必殺技の1行 → メモリ・気勢ゲージ
+///   右カラム … 状態枠 → スキル枠 → 持ち物枠 → 必殺技の1行 → メモリ・覚醒ゲージ
 ///
 /// **パネルの高さは右カラムで決まり**、左カラムの顔枠が残りの高さを全部もらって下端を揃える。
 ///
@@ -93,7 +93,7 @@ public static class UnitInfoView
     /// <summary>持ち物の行の右端「消費N」を、いまのメモリで払えない武器のときに塗る色（暗い枠の上で読める明るい赤）。</summary>
     private static readonly Color MemoryShortageColor = new Color(1f, 0.45f, 0.45f);
 
-    /// <summary>兵種経験値バーの色（仕様未定なので見た目だけ。メモリ＝緑・気勢＝青と分ける明るい黄）。</summary>
+    /// <summary>兵種経験値バーの色（仕様未定なので見た目だけ。メモリ＝緑・覚醒＝青と分ける明るい黄）。</summary>
     private static readonly Color ExpColor = new Color(0.95f, 0.80f, 0.35f);
 
     // ===== 高さの計算（数値を変えても崩れないよう、ハードコードせず式で出す）=====
@@ -209,13 +209,13 @@ public static class UnitInfoView
         GUI.Label(usableRow, UnitInfoLines.UsableWeaponsLine(unit), label);
         hover.Track(usableRow, column, mouse);
 
-        // 兵種経験値バー（仕様未定＝レイアウトだけ。メモリ・気勢と同じ長さ・半分の太さ）
+        // 兵種経験値バー（仕様未定＝レイアウトだけ。メモリ・覚醒と同じ長さ・半分の太さ）
         var expRow = new Rect(column.x, usableRow.yMax + SectionGap, column.width, GaugeBars.SlimRowHeight);
         GaugeBars.DrawSlim(expRow, "兵種", 0f, ExpColor, "－", fontSize);
         hover.Track(expRow, column, mouse);
     }
 
-    /// <summary>右カラム：状態枠 → スキル枠 → 持ち物枠 → 必殺技 → メモリ・気勢ゲージ。</summary>
+    /// <summary>右カラム：状態枠 → スキル枠 → 持ち物枠 → 必殺技 → メモリ・覚醒ゲージ。</summary>
     private static void DrawRightColumn(Rect column, Unit unit, GridManager grid, HoverState hover, Vector2 mouse,
                                         GUIStyle label, GUIStyle labelRight, GUIStyle boxTitle,
                                         int fontSize, float lineHeight)
@@ -252,7 +252,7 @@ public static class UnitInfoView
         GUI.Label(critical, "必殺技: －", label);
         hover.Track(critical, column, mouse);
 
-        // メモリ（緑）→ 気勢（黄）の2本。1本ぶんずつホバーできるように矩形を分けて登録する
+        // メモリ（緑）→ 覚醒（黄）の2本。1本ぶんずつホバーできるように矩形を分けて登録する
         var gauges = new Rect(column.x, critical.yMax + SectionGap, column.width, GaugeBars.TotalHeight);
         GaugeBars.Draw(gauges, unit, fontSize);
         float gaugeRow = GaugeBars.TotalHeight * 0.5f;

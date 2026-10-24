@@ -65,7 +65,7 @@ public static class WeaponMemoryRules
     }
 
     /// <summary>
-    /// 攻撃に使った武器のメモリを払う。CombatSystem.ResolveAttack が戦闘の判定（ダメージ・挟撃・気勢）を
+    /// 攻撃に使った武器のメモリを払う。CombatSystem.ResolveAttack が戦闘の判定（ダメージ・挟撃・覚醒）を
     /// すべて終えてから、攻撃側 → 挟撃の支援役の順に呼ぶ。weapon は戦闘の前に控えた「実際に使った武器」。
     /// 払った後にその武器を払えなくなったら、敵だけ自動で持ち替える（味方は装備したまま）。
     /// </summary>
