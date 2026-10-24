@@ -126,12 +126,17 @@ public class UnitData : ScriptableObject
         }
 
         // 開始時のメモリは「技」の値（GaugeRules.InitialMemory）。初期装備の消費がそれを上回ると、
-        // マップ開始時に払える武器へ自動で持ち替わる（無ければ非武装）ので、気づけるように知らせる（2026-10-24）
+        // 味方はマップ開始時にその武器で攻撃できず、敵は払える武器へ自動で持ち替わる（無ければ非武装）。
+        // どちらも配置したときに気づけるように知らせる（2026-10-24。味方と敵の違いは
+        // WeaponChoiceRules.CanChooseWeapon＝武器を選べるのは味方だけ、に合わせている）
         if (initial != null && initial.memoryCost > Mathf.Max(0, skill))
         {
+            string effect = faction == Faction.Player
+                ? "マップ開始時はこの武器で攻撃できません（攻撃のときに払える武器を選ぶことになります）。"
+                : "マップ開始時は払える武器に自動で持ち替わります（無ければ非武装）。";
             Debug.LogWarning(
                 $"ユニット「{unitName}」({name}): 初期装備「{initial.weaponName}」のメモリ消費 {initial.memoryCost} が " +
-                $"開始時のメモリ（技 {skill}）を上回ります。マップ開始時は払える武器に自動で持ち替わります（無ければ非武装）。");
+                $"開始時のメモリ（技 {skill}）を上回ります。{effect}");
         }
     }
 }

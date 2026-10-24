@@ -69,13 +69,14 @@ public class Unit : MonoBehaviour
     /// 「この武器では戦えない」という条件を足すときは、ここで null（＝非武装扱い）を返す1箇所で済む
     /// （攻撃不可・三すくみで不利・挟撃やガードの資格を失う・対空でなくなる・静止撃ち有利が消える、が自動で成立する。
     ///  フェーズ31の武器の耐久はこの手口で入れていた。耐久は 2026-10-24 に撤廃）。
-    /// 【2026-10-24】いまのメモリで払えない武器は null を返す（判定は WeaponMemoryRules.CanAfford）。
-    /// 平時は自動の持ち替えで必ず払える武器を持っているので、これが効くのは主に武器選択の probe
-    /// （お試し装備）のとき＝「払えない武器で狙える敵」が攻撃対象・攻撃範囲・戦闘予測に混ざらない。
-    /// 「挟撃の支援役が払えなければ挟撃は起きない」（作者仕様）もこれで成立する。
+    /// 【2026-10-24】メモリで払えない武器も、ここではそのまま返す（作者仕様の見直し：
+    /// 払えない武器も装備でき、攻撃を受けたときの三すくみ・挟撃のガード役・飛行兵の足止めは
+    /// 装備している武器どおりに働く。メモリが要るのは攻撃と挟撃の支援だけ）。
+    /// 「払えない武器では攻撃できない」は CombatRules.TryGetAttackRange、
+    /// 「払えなければ挟撃の支援をしない」は CombatRules.FindPincerAlly が受け持つ。
     /// 「何を装備しているか」を見せたいだけの表示は EquippedWeapon を読むこと。
     /// </summary>
-    public WeaponData Weapon => WeaponMemoryRules.CanAfford(this, EquippedWeapon) ? EquippedWeapon : null;
+    public WeaponData Weapon => EquippedWeapon;
 
     /// <summary>このターンに行動済みか（移動・攻撃を終えたか）。</summary>
     public bool HasActed { get; private set; }
@@ -300,6 +301,7 @@ public class Unit : MonoBehaviour
     /// <summary>
     /// メモリを amount だけ払う（本数も崩して払う。2026-10-24 作者合意）。払えたら true、足りなければ何もせず false。
     /// 武器のメモリ消費（WeaponMemoryRules.PayForAttack）と必殺技の1本（BattleController）がここを通る。
+    /// 払った後にその武器を払えなくなっても、味方は装備したまま（敵だけ自動で持ち替える）。
     /// </summary>
     public bool SpendMemory(int amount)
     {
@@ -405,9 +407,10 @@ public class Unit : MonoBehaviour
                 $"武器「{EquippedWeapon.weaponName}」を装備できません（警告のみ・動作は続行）。");
         }
 
-        // 開始時のメモリ（＝技）で初期装備を払えないなら、払える武器へ自動で持ち替える
-        // （2026-10-24 作者仕様。無ければ非武装）。メモリはこの上で用意済み
-        WeaponMemoryRules.EnsureEquippable(this);
+        // 開始時のメモリ（＝技）で初期装備を払えないなら、払える武器へ自動で持ち替える（無ければ非武装）。
+        // 持ち替えるのは武器を選ぶ操作を持たない敵だけ。味方は初期装備のまま始め、
+        // 攻撃のときに払える武器を自分で選ぶ（2026-10-24 作者仕様の見直し）。メモリはこの上で用意済み
+        WeaponMemoryRules.AutoSwitchIfUnaffordable(this);
 
         // 見た目：兵種データに絵があればそれを、無ければ陣営で色分けした四角（自軍=青 / 敵=赤）。
         spriteRenderer = gameObject.AddComponent<SpriteRenderer>();

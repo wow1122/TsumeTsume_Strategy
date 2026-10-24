@@ -90,6 +90,9 @@ public static class UnitInfoView
     /// <summary>ホバー詳細の枠と、その元になった項目のあいだの隙間。</summary>
     private const float DetailGap = 2f;
 
+    /// <summary>持ち物の行の右端「消費N」を、いまのメモリで払えない武器のときに塗る色（暗い枠の上で読める明るい赤）。</summary>
+    private static readonly Color MemoryShortageColor = new Color(1f, 0.45f, 0.45f);
+
     /// <summary>兵種経験値バーの色（仕様未定なので見た目だけ。メモリ＝緑・気勢＝青と分ける明るい黄）。</summary>
     private static readonly Color ExpColor = new Color(0.95f, 0.80f, 0.35f);
 
@@ -282,6 +285,11 @@ public static class UnitInfoView
     {
         GUI.Box(box, $"持ち物　{unit.Items.Count}／{UnitData.InventoryCapacity}", boxTitle);
 
+        // いまのメモリで払えない武器の「消費N」は赤字にする（2026-10-24。払えない武器も装備はできるので、
+        // 攻撃に使えるかどうかをここで一目で分かるようにする）
+        var shortageRight = new GUIStyle(labelRight);
+        shortageRight.normal.textColor = MemoryShortageColor;
+
         // 空いているスロットの行はホバーの対象にしない（品が無いところで空欄の枠が出ないように）
         for (int i = 0; i < unit.Items.Count && i < UnitData.InventoryCapacity; i++)
         {
@@ -301,7 +309,11 @@ public static class UnitInfoView
             var nameRect = new Rect(row.x, row.y, row.width - usesWidth, row.height);
             GUI.Label(nameRect, FitText("・" + UnitInfoLines.ItemLabel(slot, unit), label, nameRect.width), label);
 
-            if (!string.IsNullOrEmpty(uses)) GUI.Label(row, uses, labelRight);
+            if (!string.IsNullOrEmpty(uses))
+            {
+                bool shortage = slot.Item is WeaponData weapon && !WeaponMemoryRules.CanAfford(unit, weapon);
+                GUI.Label(row, uses, shortage ? shortageRight : labelRight);
+            }
 
             hover.TrackItem(row, column, slot, mouse);
         }

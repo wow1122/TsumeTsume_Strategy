@@ -3,25 +3,26 @@ using UnityEngine;
 /// <summary>
 /// 武器のメモリ消費の共有ルール集（2026-10-24 作者仕様「メモリゲージ使用による武器仕様改善案」）。
 /// CombatRules / RescueRules / StaffRules / ExchangeRules / WeaponChoiceRules と同じ方針で、
-/// 「この武器を装備できるか・攻撃するといくら払うか・払えなくなったら何に持ち替えるか」を1か所に集める。
+/// 「この武器で攻撃できるか・攻撃するといくら払うか・敵は払えなくなったら何に持ち替えるか」を1か所に集める。
 /// 武器の耐久（フェーズ31）と輸送隊の補給（フェーズ32）を撤廃し、その代わりに入れた仕組み。
 ///
 /// ここにあるルール：
 ///  ・払い方 … 武器で1回攻撃するたびに WeaponData.memoryCost を払う。挟撃の支援役も自分の武器のぶんを払う。
 ///    メモリゲージは本数も崩して払う（1本＋3＝合計33 から5を払うと 0本＋28。作者合意）
-///  ・装備できる条件 … 兵種として装備できる（武器側の兵種限定も含む）＋ いまのメモリで払える
-///  ・自動の持ち替え … 払ったせいで装備中の武器を払えなくなったら、持ち物の中で装備できる武器のうち
-///    メモリ消費の低いもの（同じなら持ち物の上の方）へ持ち替える。1本も無ければ非武装（作者仕様）。
-///    持ち替えが起きるのは「払った直後」と「マップ開始時」だけ。外す・捨てる・渡すでは起きない
-///  ・敵味方対称（作者合意）。メモリは敵にも貯まるので同じルールにそろえる
+///  ・装備 … メモリに関係なく、兵種が扱える武器なら装備できる（CanEquipByClass。武器側の兵種限定も見る）
+///  ・攻撃 … いまのメモリで払えない武器では攻撃できない（攻撃の武器一覧で「メモリ不足」の灰色になる）。
+///    判定そのものは CombatRules.TryGetAttackRange（射程なし）と CombatRules.FindPincerAlly（支援しない）が
+///    CanAfford を呼んで行う。攻撃を受けたときの三すくみ・ガード役・対空は装備どおりに働く（メモリは要らない）
+///  ・持ち替え … 味方は自動で持ち替えない（攻撃のときに払える武器を自分で選ぶ）。
+///    武器を選ぶ操作を持たない敵だけ、払えなくなったら消費の低い武器（同じなら持ち物の上の方）へ
+///    自動で持ち替える（無ければ非武装）
 ///
-/// 「払えない武器では戦えない」ことは、Unit.Weapon 窓口が null を返すことで表す（フェーズ31の耐久と同じ手口）。
-/// これ1か所で、攻撃の可否・挟撃とガードの資格（支援役が払えなければ挟撃は起きない）・対空・敵AI・
-/// 武器選択の probe（お試し装備）がすべて自動で同じ判定になる。
+/// 【経緯】最初（2026-10-24 段階2）は味方も「払えない武器は装備できない・払えなくなったら自動で持ち替える」だった。
+/// 同日、作者が「プレイヤー自身に選ばせて、いま何を装備しているかを自分の操作の結果にした方が
+/// ルールを理解しやすい」と見直し、味方の装備の制限と自動の持ち替えをやめた。
 ///
-/// 【警告】ここで払う・持ち替える処理（PayForAttack / EnsureEquippable）はログを伴う「本番の処理」。
-/// 戦闘予測や敵AIの見積りからは呼ばないこと（見積りには副作用の無い CanAfford / FindAutoEquip /
-/// PredictAfterAttack を使う）。
+/// 【警告】ここで払う・持ち替える処理（PayForAttack / AutoSwitchIfUnaffordable）はログを伴う「本番の処理」。
+/// 戦闘予測や敵AIの見積りからは呼ばないこと（見積りには副作用の無い CanAfford / CostOf / MemoryOf を使う）。
 /// </summary>
 public static class WeaponMemoryRules
 {
@@ -38,7 +39,7 @@ public static class WeaponMemoryRules
     }
 
     /// <summary>
-    /// unit がいまのメモリで weapon を使えるか。extra はほかに一緒に払う量（必殺技の1本＝30 など）。
+    /// unit がいまのメモリで weapon を使える（攻撃できる）か。extra はほかに一緒に払う量（必殺技の1本＝30 など）。
     /// 消費0の武器（鉄の武器・杖）は extra が無ければいつでも使える。武器が無ければ false。
     /// </summary>
     public static bool CanAfford(Unit unit, WeaponData weapon, int extra = 0)
@@ -50,9 +51,9 @@ public static class WeaponMemoryRules
     }
 
     /// <summary>
-    /// 兵種としてこの武器を装備できるか（メモリは見ない）。兵種の装備可能武器（ClassData.CanUse）と、
-    /// 武器側の兵種限定（WeaponData.exclusiveClasses。長弓は弓聖だけ）の両方を見る。
-    /// 兵種データを持たない古いユニットは、限定の無い武器ならこれまでどおり装備できる。
+    /// 兵種としてこの武器を装備できるか（メモリは見ない＝払えない武器も装備できる）。
+    /// 兵種の装備可能武器（ClassData.CanUse）と、武器側の兵種限定（WeaponData.exclusiveClasses。
+    /// 長弓は弓聖だけ）の両方を見る。兵種データを持たない古いユニットは、限定の無い武器ならこれまでどおり装備できる。
     /// </summary>
     public static bool CanEquipByClass(Unit unit, WeaponData weapon)
     {
@@ -63,16 +64,10 @@ public static class WeaponMemoryRules
         return weapon.AllowsClass(cls);
     }
 
-    /// <summary>いま装備できるか＝兵種として装備できて、メモリも払える（持ち物の「装備」が押せる条件）。</summary>
-    public static bool CanEquipNow(Unit unit, WeaponData weapon)
-    {
-        return CanEquipByClass(unit, weapon) && CanAfford(unit, weapon);
-    }
-
     /// <summary>
-    /// 攻撃に使った武器のメモリを払い、払えなくなったらその場で自動で持ち替える。
-    /// CombatSystem.ResolveAttack が戦闘の判定（ダメージ・挟撃・気勢）をすべて終えてから、
-    /// 攻撃側 → 挟撃の支援役の順に呼ぶ。weapon は戦闘の前に控えた「実際に使った武器」。
+    /// 攻撃に使った武器のメモリを払う。CombatSystem.ResolveAttack が戦闘の判定（ダメージ・挟撃・気勢）を
+    /// すべて終えてから、攻撃側 → 挟撃の支援役の順に呼ぶ。weapon は戦闘の前に控えた「実際に使った武器」。
+    /// 払った後にその武器を払えなくなったら、敵だけ自動で持ち替える（味方は装備したまま）。
     /// </summary>
     public static void PayForAttack(Unit unit, WeaponData weapon)
     {
@@ -84,24 +79,25 @@ public static class WeaponMemoryRules
         int before = MemoryOf(unit);
         if (!unit.SpendMemory(cost))
         {
-            // 攻撃の前に払えることを確かめている（払えない武器は Unit.Weapon が null）ので、通常は来ない
+            // 攻撃の前に払えることを確かめている（払えない武器には射程が無い）ので、通常は来ない
             Debug.LogWarning($"{unit.Data.unitName}: {weapon.DisplayName} のメモリ {cost} を払えなかった（残り {before}）");
             return;
         }
 
         Debug.Log($"{unit.Data.unitName} は {weapon.DisplayName} のメモリ {cost} を払った（{before} → {MemoryOf(unit)}）");
-        EnsureEquippable(unit);
+        AutoSwitchIfUnaffordable(unit);
     }
 
     /// <summary>
     /// 装備中の武器をいまのメモリで払えないなら、払える武器へ自動で持ち替える（無ければ非武装）。
+    /// 持ち替えるのは**武器を選ぶ操作を持たない陣営（＝敵。WeaponChoiceRules.CanChooseWeapon が false）だけ**。
+    /// 味方は何もしない＝払えない武器も装備したまま、攻撃のときに自分で選ぶ（2026-10-24 作者仕様の見直し）。
     /// 呼ぶのは「メモリを払った直後」（PayForAttack）と「マップ開始時」（Unit.Initialize）だけ。
-    /// 外す・捨てる・渡すで非武装になったときは呼ばない（作者合意＝従来どおり）。
     /// 持ち替えた（または非武装になった）ら true。
     /// </summary>
-    public static bool EnsureEquippable(Unit unit)
+    public static bool AutoSwitchIfUnaffordable(Unit unit)
     {
-        if (unit == null) return false;
+        if (unit == null || WeaponChoiceRules.CanChooseWeapon(unit)) return false;
 
         WeaponData current = unit.EquippedWeapon;
         if (current == null || CanAfford(unit, current)) return false;
@@ -111,15 +107,15 @@ public static class WeaponMemoryRules
         else unit.Unequip();
 
         Debug.Log(next != null
-            ? $"{unit.Data.unitName} はメモリが足りず {current.DisplayName}（消費{CostOf(current)}）を装備できなくなったので、" +
+            ? $"{unit.Data.unitName} はメモリが足りず {current.DisplayName}（消費{CostOf(current)}）で攻撃できなくなったので、" +
               $"{next.DisplayName} に持ち替えた"
-            : $"{unit.Data.unitName} はメモリが足りず {current.DisplayName}（消費{CostOf(current)}）を装備できなくなった。" +
-              "ほかに装備できる武器が無いので非武装になった");
+            : $"{unit.Data.unitName} はメモリが足りず {current.DisplayName}（消費{CostOf(current)}）で攻撃できなくなった。" +
+              "ほかに払える武器が無いので非武装になった");
         return true;
     }
 
     /// <summary>
-    /// メモリが memory のときに自動で持ち替える先（副作用なし）。
+    /// メモリが memory のときに自動で持ち替える先（副作用なし。敵の持ち替えで使う）。
     /// 候補＝持ち物の武器のうち、兵種として装備できて memory で払えるもの（杖も含む）。
     /// メモリ消費の低い順・同じなら持ち物の上の方（作者仕様）。候補が無ければ null（＝非武装）。
     /// </summary>
@@ -138,21 +134,5 @@ public static class WeaponMemoryRules
             if (best == null || CostOf(weapon) < CostOf(best)) best = weapon;
         }
         return best;
-    }
-
-    /// <summary>
-    /// weapon で攻撃した後のメモリの見込み（戦闘予測用・副作用なし）。extra は必殺技の1本など、一緒に払う量。
-    /// switches が true なら攻撃の後に自動の持ち替えが起き、そのときの持ち替え先が next（null なら非武装）。
-    /// 消費0の武器では持ち替えは起きない（PayForAttack が持ち替えを判定するのは払ったときだけ）。
-    /// </summary>
-    public static int PredictAfterAttack(Unit unit, WeaponData weapon, int extra,
-                                         out bool switches, out WeaponData next)
-    {
-        int cost = CostOf(weapon);
-        int after = MemoryOf(unit) - Mathf.Max(0, extra) - cost;
-
-        switches = cost > 0 && cost > after;
-        next = switches ? FindAutoEquip(unit, after) : weapon;
-        return after;
     }
 }

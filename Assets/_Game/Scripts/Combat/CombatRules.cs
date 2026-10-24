@@ -7,7 +7,8 @@ using UnityEngine;
 /// ルールを追加・変更したときに両者の判断がズレない構造にしている。
 ///
 /// ここにあるルール：
-///  ・攻撃射程   … 前衛=武器の射程どおり／後衛=移動後は最小射程ちょうど、静止時は武器上限まで
+///  ・攻撃射程   … 前衛=武器の射程どおり／後衛=移動後は最小射程ちょうど、静止時は武器上限まで。
+///                 メモリで払えない武器には射程が無い＝攻撃できない（2026-10-24）
 ///  ・三すくみ   … 前衛武器の攻撃（相性表）と、後衛武器の「マスから動かずに撃った攻撃」（常に有利）。
 ///                 補正量はどちらも 技・速さ の差から計算（最低2）
 ///  ・挟撃の資格 … 前衛武器の装備者だけが挟撃に参加できる
@@ -33,15 +34,20 @@ public static class CombatRules
     /// 後衛武器（弓・魔法）の特別ルール：
     ///   移動した後 … 最小射程ちょうど（基本の2マス）しか撃てない
     ///   静止したまま… 最小射程〜武器の最大射程（弓3・魔法2）まで届く
+    /// 【2026-10-24】いまのメモリで払えない武器も false（装備はできるが、攻撃には使えない＝作者仕様）。
+    /// 呼び出し側（CanAttack・GetAttackFromCells・赤い攻撃範囲・敵AIの対空圏・武器一覧の理由）は
+    /// どれも「攻撃できるか」を知りたい場面なので、ここ1か所で判定がそろう。
+    /// 攻撃を受けたときの三すくみ・ガード役・対空（飛行兵の足止め）はこの関数を通らない＝装備どおりに働く。
     /// </summary>
     public static bool TryGetAttackRange(Unit unit, bool hasMoved, out int minRange, out int maxRange)
     {
         WeaponData weapon = unit.Weapon;
-        if (weapon == null || weapon.type == WeaponType.Staff)
+        if (weapon == null || weapon.type == WeaponType.Staff || !WeaponMemoryRules.CanAfford(unit, weapon))
         {
             minRange = 0;
             maxRange = -1;
-            return false; // 非武装は攻撃できない（杖は攻撃できない武器なので同じ扱い）
+            // 非武装は攻撃できない（杖は攻撃できない武器なので同じ扱い）。メモリで払えない武器も同じ
+            return false;
         }
 
         if (weapon.category == WeaponCategory.Ranged)
@@ -345,8 +351,10 @@ public static class CombatRules
     ///   ・攻撃側が前衛武器で、defender の上下左右に隣接している（＝近接攻撃）
     ///   ・defender を挟んだ反対側のマスに、攻撃側と同じ陣営の別ユニットがいる
     ///   ・その味方も前衛武器を装備している（後衛武器・非武装は参加できない）
+    ///   ・その味方がいまのメモリで武器の消費を払える（2026-10-24 作者仕様「払えなければ挟撃は起きない」）
     /// ※attackerCell を引数にしているのは、AI が「このマスに移動したら」という
     ///   仮定の位置で予測できるようにするため。実際の攻撃時は現在地を渡す。
+    /// ※支援役のメモリはここで見る（ガード役の判定 WouldGuardAt はメモリを見ない＝守りに払いは要らない）。
     /// </summary>
     public static Unit FindPincerAlly(Vector2Int attackerCell, Unit attacker, Unit defender, GridManager grid)
     {
@@ -361,6 +369,7 @@ public static class CombatRules
 
         if (ally == null || ally == attacker || ally.Faction != attacker.Faction) return null;
         if (!IsPincerCapable(ally)) return null;
+        if (!WeaponMemoryRules.CanAfford(ally, ally.Weapon)) return null; // 支援役も払えなければ挟撃しない
         if (!CanEngage(ally, defender)) return null; // 飛翔中の敵を挟めるのは飛翔中の味方だけ（Phase 14）
 
         return ally;

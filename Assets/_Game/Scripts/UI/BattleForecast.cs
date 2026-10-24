@@ -181,7 +181,7 @@ public class BattleForecast : MonoBehaviour
         string weaponLine = BuildWeaponLine(attacker.EquippedWeapon);
         if (weaponLine != null) lines.Add(weaponLine);
 
-        // 払うメモリの見込みと、攻撃した後の自動の持ち替え（2026-10-24）
+        // 払うメモリの見込みと、攻撃した後にこの武器を払えなくなるか（2026-10-24）
         lines.AddRange(BuildMemoryLines(attacker.EquippedWeapon));
 
         // 計算式は出さず、攻撃力を与ダメージの下・防御力を三すくみの下に出す（2026-08-17 作者指示）
@@ -246,9 +246,10 @@ public class BattleForecast : MonoBehaviour
 
     /// <summary>
     /// 攻撃で払うメモリの見込み（2026-10-24 作者仕様）。「メモリ 14 → 9」の1行と、払った後に
-    /// その武器を払えなくなるなら「※攻撃後は鉄の剣に持ち替え」／「※攻撃後は非武装になる」の1行。
+    /// この武器の消費を払えなくなるなら「※攻撃後、この武器はメモリ不足で使えなくなる」の1行
+    /// （味方は自動で持ち替えないので、次の攻撃では別の武器を選ぶことになる＝同日の作者仕様の見直し）。
     /// 必殺技なら1本（30）も一緒に数える。払う量が0（消費0の武器の通常攻撃）なら何も足さない。
-    /// 数字は実戦と同じ WeaponMemoryRules の計算（副作用の無い見積り）なので、実際の結果と一致する。
+    /// 引き算は実戦の支払い（必殺技の1本→武器の消費）と同じ順で、WeaponMemoryRules の値をそのまま使う。
     /// </summary>
     private List<string> BuildMemoryLines(WeaponData weapon)
     {
@@ -256,14 +257,14 @@ public class BattleForecast : MonoBehaviour
         if (weapon == null) return result;
 
         int extra = critical ? GaugeRules.CriticalMemoryCost : 0;
-        if (extra + WeaponMemoryRules.CostOf(weapon) <= 0) return result;
+        int cost = WeaponMemoryRules.CostOf(weapon);
+        if (extra + cost <= 0) return result;
 
         int before = WeaponMemoryRules.MemoryOf(attacker);
-        int after = WeaponMemoryRules.PredictAfterAttack(attacker, weapon, extra,
-                                                         out bool switches, out WeaponData next);
+        int after = before - extra - cost;
         result.Add($"メモリ　{before} → {after}");
-        if (switches)
-            result.Add(next != null ? $"※攻撃後は{next.DisplayName}に持ち替え" : "※攻撃後は非武装になる");
+        if (cost > after)
+            result.Add("※攻撃後、この武器はメモリ不足で使えなくなる");
         return result;
     }
 

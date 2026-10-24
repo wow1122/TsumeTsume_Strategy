@@ -60,10 +60,11 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  必殺技のメモリが減るのは敵をクリックした瞬間なので、それまでに戻ればメモリは減らない。
 ///
 /// 2026-10-24 の追加（メモリゲージで払う武器）：
-///  強い武器は攻撃のたびにメモリゲージを払う（判定は WeaponMemoryRules）。武器の一覧と持ち物では、
-///  いまのメモリで払えない武器が「（メモリ不足）」の灰色行になる。必殺技は「1本＋その武器の消費」を
-///  両方払える武器だけ選べる。払ってその武器を払えなくなったら、攻撃の後に安い武器へ自動で持ち替わる
-///  （CombatSystem の中で起きる。無ければ非武装）。
+///  強い武器は攻撃のたびにメモリゲージを払う（判定は WeaponMemoryRules）。払えない武器も装備はでき、
+///  攻撃の武器一覧で「（メモリ不足）」の灰色行になって選べないだけ（持ち物の行にも同じ目印が付く）。
+///  払った後にその武器を払えなくなっても自動では持ち替えない＝次の攻撃のときに払える武器を自分で選ぶ
+///  （同日の作者仕様の見直し。自動で持ち替えるのは武器を選ぶ操作を持たない敵だけ）。
+///  必殺技は「1本＋その武器の消費」を両方払える武器だけ選べる。
 ///  剣で攻撃した戦闘で相手を倒したら、行動を終える前に上下左右の1マスだけ動ける【CantoSelect】。
 ///  青いマスをクリックで移動、自分のマス・右クリック・ESC でその場に留まる。どちらでも行動は終わる。
 ///
@@ -952,8 +953,8 @@ public class BattleController : MonoBehaviour
     /// 攻撃を実行する（敵をクリックした瞬間。2026-08-09 から「実行」の確認は無い）。
     /// 武器はもう装備してあるので、威力・三すくみ・特効・対空（撃墜）・挟撃の資格は
     /// すべて選んだ武器で決まる。装備は攻撃の後もそのまま＝敵フェイズもこの武器で受ける（FE準拠）。
-    /// ただし武器のメモリ消費を払ってその武器を払えなくなったら、CombatSystem の中で
-    /// 安い武器へ自動で持ち替わる（2026-10-24 作者仕様。無ければ非武装）。
+    /// 武器のメモリ消費を払ってその武器を払えなくなっても持ち替えない（2026-10-24 作者仕様の見直し。
+    /// 次に攻撃するときに、武器の一覧で払える武器を選ぶ）。
     /// 必殺技のメモリはここで1本使う（敵をクリックする前に戻ればメモリは減らない）。
     /// 武器の消費は攻撃の後に CombatSystem が払う（武器を選んだ時点で「1本＋消費」を払えることは確認済み）。
     /// </summary>
@@ -968,8 +969,8 @@ public class BattleController : MonoBehaviour
             Debug.Log($"{unit.Data.unitName} がメモリを1本使った（{before} → {WeaponMemoryRules.MemoryOf(unit)}）");
         }
 
-        // 攻撃に使う武器を控えておく。攻撃の後にメモリを払って別の武器へ持ち替わることがあるが、
-        // 剣の「撃破後1マス再移動」は実際に攻撃した武器で決める（2026-10-24）
+        // 攻撃に使う武器を控えておく。剣の「撃破後1マス再移動」は実際に攻撃した武器で決める（2026-10-24）。
+        // 味方は攻撃の後も装備が変わらないが、戦闘の後で装備が変わる仕組みが入っても判定がずれないように先に取る
         WeaponData usedWeapon = unit.Weapon;
 
         // 移動したかも渡す（後衛武器はマスから動かずに撃つと三すくみ有利。2026-07-30 作者仕様）
@@ -1430,7 +1431,8 @@ public class BattleController : MonoBehaviour
         {
             if (weapon == owner.EquippedWeapon) label += "（装備中）";
             else if (!WeaponMemoryRules.CanEquipByClass(owner, weapon)) label += "（装備不可）";
-            else if (!WeaponMemoryRules.CanAfford(owner, weapon)) label += "（メモリ不足）";   // 2026-10-24
+            // 装備はできるが、いまのメモリでは攻撃に使えない目印（2026-10-24）
+            else if (!WeaponMemoryRules.CanAfford(owner, weapon)) label += "（メモリ不足）";
         }
         else if (slot.Item is ToolData)
         {
@@ -1458,14 +1460,15 @@ public class BattleController : MonoBehaviour
                 // 装備中 → 外す（＝非武装になる。従来の最下行のコマンドと同じ機能）
                 entries.Add(new ItemListMenu.Entry("外す", true, UnequipWeapon));
             }
-            else if (WeaponMemoryRules.CanEquipNow(unit, weapon))
+            else if (WeaponMemoryRules.CanEquipByClass(unit, weapon))
             {
+                // メモリが足りない武器も装備できる（攻撃には使えないだけ。2026-10-24 作者仕様の見直し）
                 WeaponData w = weapon;
                 entries.Add(new ItemListMenu.Entry("装備", true, () => EquipWeapon(w)));
             }
             else
             {
-                // 装備不可・メモリ不足 → 「装備」は灰色（押せない）。捨てるはできる（作者合意）
+                // 兵種が装備できない → 「装備」は灰色（押せない）。捨てるはできる（作者合意）
                 entries.Add(new ItemListMenu.Entry("装備", false, null));
             }
         }

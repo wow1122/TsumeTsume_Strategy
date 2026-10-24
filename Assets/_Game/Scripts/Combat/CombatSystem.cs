@@ -18,7 +18,7 @@ using UnityEngine;
 ///  ・撃墜（2026-08-05 作者仕様）：対空武器（弓・魔導書・光魔法）で飛翔中の相手を攻撃すると、
 ///    当たった相手はその場に着地する（落下ダメージなし）。判定は攻撃の前に控え、解除は最後に行う。
 ///  ・メモリの支払い（2026-10-24 作者仕様）：攻撃した側と挟撃の支援役が、使った武器のメモリ消費を払う
-///    （WeaponMemoryRules.PayForAttack。払えなくなったらその場で安い武器へ自動で持ち替える）。
+///    （WeaponMemoryRules.PayForAttack。払えなくなっても味方は装備したまま、敵だけ安い武器へ自動で持ち替える）。
 ///    払うのは「この戦闘が全部終わってから」＝その一撃の中で武器が変わり、挟撃の成立判定や
 ///    気勢の配分がずれることは無い（フェーズ31の武器の耐久の消耗と同じ位置。耐久は撤廃した）。
 /// </summary>
@@ -34,7 +34,7 @@ public static class CombatSystem
         if (attacker == null || defender == null) return;
 
         // 0) 撃墜になる組み合わせか（2026-08-05 作者仕様）を、攻撃を解決する「前」に控えておく。
-        //    最後にメモリを払うと自動の持ち替えで Unit.Weapon が別の武器（や null）に変わり、
+        //    最後にメモリを払うと、敵は自動の持ち替えで Unit.Weapon が別の武器（や null）に変わり、
         //    後から見ると「対空武器ではない」へ判定がひっくり返ってしまうため（フェーズ31の耐久と同じ罠）
         bool shootsDown = CombatRules.ShootsDown(attacker, defender);
 
@@ -71,7 +71,7 @@ public static class CombatSystem
         GaugeRules.NotifyBattleResult(attacker.Faction, killed);
 
         // 5) メモリの支払い（2026-10-24 作者仕様）：攻撃側 → 挟撃の支援役の順に、使った武器のぶんを払う。
-        //    払えなくなったらその場で安い武器へ自動で持ち替える（無ければ非武装）。
+        //    払えなくなっても味方は装備したまま（次の攻撃で自分で選ぶ）。敵だけ安い武器へ自動で持ち替える。
         //    この戦闘の判定（ダメージ・挟撃・気勢）が全部終わってから払う＝その一撃の中で武器は変わらない
         WeaponMemoryRules.PayForAttack(attacker, attackerWeapon);
         WeaponMemoryRules.PayForAttack(pincerAlly, pincerWeapon);
