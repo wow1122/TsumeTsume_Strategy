@@ -248,7 +248,7 @@ public static class EnemyAI
             {
                 if (enemy.HasActed) continue;   // 行動済みの敵は数えない（フェイズ途中の再選定で効く）
                 if (enemy.AIProfile == EnemyAIProfile.Ambush && !enemy.IsProvoked) continue; // 動かない敵は数えない
-                if (enemy.Weapon == null) continue;                  // 武装無しは攻撃できない
+                if (enemy.Weapon == null) continue;                  // 非武装は攻撃できない
                 if (!CombatRules.CanEngage(enemy, player)) continue; // 飛翔の制限（地上の前衛は飛翔中の相手を殴れない等）
 
                 // 単発・挟撃なしの控えめな見積り（後衛武器の静止撃ち有利も数えない。
@@ -347,7 +347,7 @@ public static class EnemyAI
 
             foreach (Unit target in players)
             {
-                if (!CombatRules.CanAttack(enemy, cell, target, hasMoved)) continue; // 射程外・武装無し
+                if (!CombatRules.CanAttack(enemy, cell, target, hasMoved)) continue; // 射程外・非武装
 
                 int score = ScoreAttack(enemy, cell, target, grid, hasMoved, helpers,
                     out bool pincerSetup, out bool guardBreak, out bool focus);
@@ -707,7 +707,7 @@ public static class EnemyAI
         plan = default;
         if (enemy.Class != UnitClass.Flier) return false; // 飛翔は飛行兵専用
         if (enemy.IsFlightBlocked) return false;          // 撃墜された次のターンは飛べない（2026-08-05）
-        if (enemy.Weapon == null) return false;           // 武装無しは攻撃目標を定義できない
+        if (enemy.Weapon == null) return false;           // 非武装は攻撃目標を定義できない
 
         // 陸路の見積もり（今は地上なのでそのまま計算）。
         // 門を塞がれているだけなら、通せんぼを無視した測り直しで「道はある」とみなす（接近の第2段と同じ）

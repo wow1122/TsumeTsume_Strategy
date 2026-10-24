@@ -47,7 +47,7 @@ public static class UnitInfoLines
 
     /// <summary>
     /// 持ち物リストの1行の左側（「鉄の剣（装備中）」「傷薬」）。
-    /// 「装備中」の目印は EquippedWeapon で判定する（傷んでいても装備は外れていないため）。
+    /// 「装備中」の目印は EquippedWeapon で判定する（Weapon 窓口は「いま使えない武器」で null を返すため）。
     /// 残り回数は行の右端に別に出すので（ItemUsesText）、ここには付けない（2026-08-16 作者の修正案2）。
     /// 威力・射程・特効などの詳しい数字はホバー詳細（BuildItemDetail）に送る。
     /// </summary>
@@ -61,20 +61,21 @@ public static class UnitInfoLines
     }
 
     /// <summary>
-    /// 持ち物リストの1行の右端に出す耐久値「残り／最大」（武器＝耐久、道具＝使用回数。2026-08-16 作者指示）。
+    /// 持ち物リストの1行の右端に出す残り回数「残り／最大」（道具の使用回数。2026-08-16 作者指示。
+    /// 当時は武器の耐久もここに出していたが、耐久は 2026-10-24 に撤廃）。
     /// 回数の概念を持たない品は空文字（何も描かない）。
     /// 品の名前と並べると行の幅（212px）ぎりぎりになるので、描く側は実際の幅を測って
     /// 名前のほうを丸めること（UnitInfoView.FitText）。
     /// </summary>
     public static string ItemUsesText(ItemSlot slot)
     {
-        if (slot == null || !slot.HasDurability) return "";
+        if (slot == null || !slot.HasUses) return "";
         return $"{slot.UsesLeft}／{slot.MaxUses}";
     }
 
     /// <summary>
     /// 「状態」枠の行を組み立てる（2026-08-16 作者仕様・同日の修正案で3行に絞った）。並びは
-    ///  1行目 … 「状態 : 」＋ 前衛/後衛・地上/飛翔・陣中/孤立
+    ///  1行目 … 「状態 : 」＋ 前衛/後衛・地上/飛翔（陣中/孤立は 2026-10-24 に補給ごと撤廃）
     ///  2行目 … ガードを受けているか（〇×と、その条件を括弧書き）
     ///  3行目 … 救出中の相手（運んでいるときだけ）
     /// 刷新の初版にあった「隣接した味方をガード中」「未行動／行動済み」の行は作者の指示で削除
@@ -114,24 +115,17 @@ public static class UnitInfoLines
         return rows;
     }
 
-    /// <summary>状態の1行目の中身。前衛/後衛・地上/飛翔・陣中/孤立を「・」でつなぐ。</summary>
+    /// <summary>状態の1行目の中身。前衛/後衛・地上/飛翔を「・」でつなぐ。</summary>
     private static string BuildConditionRow(Unit unit)
     {
-        var parts = new List<string> { RangeText(unit), FlightText(unit) };
-
-        // 輸送隊のいるステージでだけ出す。格納中のユニットは盤上の位置が定まらないので出ない
-        // （運んでいる側が陣中なら一緒に回復する＝上の「格納中」の表示で足りる）
-        if (SupplyRules.HasSupplyLine(unit))
-            parts.Add(SupplyRules.IsSuppliedForDisplay(unit) ? "陣中" : "孤立");
-
-        return string.Join("・", parts);
+        return RangeText(unit) + "・" + FlightText(unit);
     }
 
-    /// <summary>前衛／後衛。武器が無ければ（輸送隊・杖しか持たない状態など）そのことを出す。</summary>
+    /// <summary>前衛／後衛。武器を装備していなければ（輸送隊・外した後など）「非武装」と出す。</summary>
     private static string RangeText(Unit unit)
     {
         WeaponData w = unit.EquippedWeapon;
-        if (w == null) return "武装なし";
+        if (w == null) return "非武装";
         return w.category == WeaponCategory.Melee ? "前衛" : "後衛";
     }
 
@@ -156,7 +150,7 @@ public static class UnitInfoLines
 
     /// <summary>
     /// 持ち物・装備武器にマウスを重ねたときの詳細（1行目＝名前を見出しに、以降＝性能）。
-    /// 武器は種類・前衛/後衛・威力・射程・有効特効・耐久、道具は効果・使用回数。
+    /// 武器は種類・前衛/後衛・威力・射程・有効特効、道具は効果・使用回数。
     /// 持ち物メニュー（右下220px）とユニット情報パネル（列の幅・約全角15文字）の**両方**が使うので、
     /// 1行は短くする。長い説明を足したくなったら行を分けること（2026-08-03 に実際に見切れた）。
     /// </summary>
@@ -176,12 +170,6 @@ public static class UnitInfoLines
             // 有効・特効の行（2026-08-06）。「特効: 竜」「有効: 重装」のように短い行で足す
             // ＝どの武器に持ち替えるかを、この詳細だけで判断できるようにする
             lines.AddRange(EffectiveRules.BuildWeaponEffectLines(w));
-
-            if (slot.HasDurability)
-            {
-                lines.Add($"耐久: 残り{slot.UsesLeft}／{slot.MaxUses}");
-                if (slot.UsesLeft <= 0) lines.Add("※傷んでいる（攻撃不可）");
-            }
         }
         else if (slot.Item is ToolData t)
         {

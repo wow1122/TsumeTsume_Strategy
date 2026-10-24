@@ -26,7 +26,7 @@ using UnityEngine.InputSystem;
 /// 攻撃する前に分かるように、その組み合わせのときだけ注記を1行足す（BuildShootDownNote）。
 ///
 /// 武器の行（2026-08-09 作者仕様）: 攻撃は「武器を選んでから相手を選ぶ」順になり、
-/// 対象選択に入る時点で武器はもう装備されている。どの武器で殴るのかと残り耐久を
+/// 対象選択に入る時点で武器はもう装備されている。どの武器で殴るのかを
 /// 1行目に添える（BuildWeaponLine）。予測はいつも装備中の武器で組み立てるので、
 /// 内訳・三すくみ・静止撃ち・特効・挟撃・撃墜は何もしなくてもその武器の数字になる。
 ///
@@ -176,7 +176,7 @@ public class BattleForecast : MonoBehaviour
             $"{attacker.Data.unitName} → {defender.Data.unitName}",
         };
 
-        // 「いまどの武器で殴ろうとしているか」と残り耐久（2026-08-09。武器を選んでから
+        // 「いまどの武器で殴ろうとしているか」（2026-08-09。武器を選んでから
         // ここへ来るので、選んだ武器がそのまま出る。武器の一覧の行は武器名だけ＝作者合意）
         string weaponLine = BuildWeaponLine(attacker.EquippedWeapon);
         if (weaponLine != null) lines.Add(weaponLine);
@@ -196,7 +196,7 @@ public class BattleForecast : MonoBehaviour
         if (effectiveNote != null) lines.Add(effectiveNote);
 
         if (critical)
-            lines.Add($"必殺技 ×{GaugeRules.CriticalMultiplier:0.#}倍（マナを1本使う。挟撃は等倍）");
+            lines.Add($"必殺技 ×{GaugeRules.CriticalMultiplier:0.#}倍（メモリを1本使う。挟撃は等倍）");
         if (ally != null)
         {
             lines.Add(guard == null
@@ -218,17 +218,14 @@ public class BattleForecast : MonoBehaviour
     }
 
     /// <summary>
-    /// 「武器: 斬馬刀（耐久5／6）」の行。耐久を持たない武器では耐久の部分を出さない。
-    /// 武装無し（＝武器を持たないユニット）のときは null を返して行を足さない。
+    /// 「武器: 斬馬刀」の行（2026-08-09。当時は残り耐久も添えていたが、耐久は 2026-10-24 に撤廃）。
+    /// 非武装（＝武器を持たないユニット）のときは null を返して行を足さない。
     /// </summary>
     private string BuildWeaponLine(WeaponData weapon)
     {
         if (weapon == null) return null;
 
-        ItemSlot slot = WeaponChoiceRules.FindSlot(attacker, weapon);
-        string durability = (slot != null && slot.HasDurability) ? $"（耐久{slot.UsesLeft}／{slot.MaxUses}）" : "";
-
-        return $"武器: {weapon.DisplayName}{durability}";
+        return $"武器: {weapon.DisplayName}";
     }
 
     /// <summary>current の敵から「攻撃を受けたら」の予測を組み立てて描く（被ダメモード）。</summary>
@@ -242,9 +239,7 @@ public class BattleForecast : MonoBehaviour
         // そもそも攻撃が成立しない相手は、その理由だけを出す
         string blocked = null;
         if (enemy.Weapon == null)
-            blocked = enemy.IsEquippedWeaponWorn
-                ? "この相手は武器が傷んでいるため攻撃してこない（装備無し扱い）"
-                : "この相手は武装無しのため攻撃してこない";
+            blocked = "この相手は非武装のため攻撃してこない";
         else if (!CombatRules.CanEngage(enemy, incomingDefender))
             blocked = "この相手からは攻撃を受けない（飛翔の制限）";
 
@@ -349,7 +344,7 @@ public class BattleForecast : MonoBehaviour
     /// <summary>
     /// 後衛武器（弓・魔法）の攻撃にだけ添える注記（2026-07-30 作者仕様・静止撃ち有利）。
     /// 三すくみの行に出た数字が「なぜ付いた／付かなかった」のかを1行で説明する。
-    /// 前衛武器・杖・武装無しでは静止撃ち有利が関係しないので null（行を足さない）。
+    /// 前衛武器・杖・非武装では静止撃ち有利が関係しないので null（行を足さない）。
     /// 対象かどうかの判定は戦闘本体と同じ CombatRules.HasStandingShotAdvantage を使う。
     /// </summary>
     private static string BuildStandingShotNote(Unit attacker, bool hasMoved)
@@ -364,7 +359,7 @@ public class BattleForecast : MonoBehaviour
     /// <summary>
     /// 有効・特効の注記（2026-08-06 作者仕様）。相手の兵種の特攻タグに武器が刺さっているとき、
     /// 「なぜ威力が増えているのか」を1行で説明する（式の中には「威力5×3」としか出ないため）。
-    /// 相性が無ければ null（行を足さない）。武器が傷んでいるときは Weapon が null になるので
+    /// 相性が無ければ null（行を足さない）。武器が使えないときは Weapon が null になるので
     /// 自動的に注記も出ない。判定は戦闘本体と同じ EffectiveRules を使うので、
     /// 表示とダメージが食い違うことはない。
     /// </summary>

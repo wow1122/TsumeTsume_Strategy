@@ -98,7 +98,7 @@ public class UnitData : ScriptableObject
         return list;
     }
 
-    /// <summary>初期装備の武器（所持品の中で一番上にある武器。1つも無ければ null＝武装無し）。</summary>
+    /// <summary>初期装備の武器（所持品の中で一番上にある武器。1つも無ければ null＝非武装）。</summary>
     public WeaponData GetInitialWeapon()
     {
         foreach (ItemData item in GetInitialItems())

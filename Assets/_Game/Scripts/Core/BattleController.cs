@@ -57,7 +57,7 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  行をクリックするとその武器を装備し（＝この時点で持ち替えが確定。行動は消費しない）、対象選択へ進む。
 ///  敵にマウスを重ねると、画面右上に敵ユニット情報・右下に戦闘予測が出る（2026-08-16）。
 ///  右クリック/ESC で1段ずつ戻る（対象選択 → 武器選択 → 行動メニュー）。
-///  必殺技のマナが減るのは敵をクリックした瞬間なので、それまでに戻ればマナは減らない。
+///  必殺技のメモリが減るのは敵をクリックした瞬間なので、それまでに戻ればメモリは減らない。
 ///
 /// 2026-08-15 の追加（コマンド一覧）：
 ///  ユニットがいないマスをクリックすると「状況／設定／終了」のコマンド一覧が出る【SystemMenu】。
@@ -354,7 +354,7 @@ public class BattleController : MonoBehaviour
             case State.TargetSelect:
                 // 攻撃の対象選択 → 武器選択へ1段戻る（2026-08-09）。
                 // 選んだ武器は装備したまま（装備変更に取り消しは無い＝既存合意）だが、
-                // 一覧から別の武器を選び直せる。必殺技のマナはまだ使っていない
+                // 一覧から別の武器を選び直せる。必殺技のメモリはまだ使っていない
                 EnterWeaponSelect(criticalPending);
                 break;
 
@@ -551,18 +551,6 @@ public class BattleController : MonoBehaviour
 
         grid.ResetAllHighlights();
 
-        // 輸送隊を選んでいるあいだは補給圏（陣中）も薄紫で見せる（フェーズ32）。
-        // ハイライトの優先度が一番下なので、移動できるマス・攻撃できるマスの表示は隠さない。
-        // 出すのは「いまいる位置から届く範囲」。移動先を選ぶたびに引き直すことはしない
-        // （移動を確定すると行動メニューへ移り、ハイライトはいったん消える）
-        if (SupplyRules.IsSupplySource(unit))
-        {
-            HashSet<Vector2Int> supplyCells = SupplyRules.GetSupplyCells(grid, unit.Faction);
-            if (supplyCells != null)
-                foreach (Vector2Int c in supplyCells)
-                    grid.AddHighlight(c, HighlightKind.SupplyZone);
-        }
-
         grid.AddHighlight(unit.GridPosition, HighlightKind.Selection);
         foreach (Vector2Int c in reachableCells)
             grid.AddHighlight(c, HighlightKind.MoveRange);
@@ -694,9 +682,9 @@ public class BattleController : MonoBehaviour
         {
             commands.Add(new ActionMenu.Entry("攻撃", () => EnterWeaponSelect(false)));
 
-            // 必殺技（フェーズ29）: マナが1本以上貯まっているときだけ「攻撃」の直後に出る。
+            // 必殺技（フェーズ29）: メモリが1本以上貯まっているときだけ「攻撃」の直後に出る。
             // 武器・対象の選び方は攻撃とまったく同じで、ダメージだけ倍率ぶん増える。
-            // マナは敵をクリックした瞬間に1本減る（それまでに戻れば減らない）
+            // メモリは敵をクリックした瞬間に1本減る（それまでに戻れば減らない）
             if (GaugeRules.CanUseCritical(unit))
                 commands.Add(new ActionMenu.Entry("必殺技", () => EnterWeaponSelect(true)));
 
@@ -757,7 +745,7 @@ public class BattleController : MonoBehaviour
         if (proxyCarriers.Count > 0)
             commands.Add(new ActionMenu.Entry("代わりに降ろす", EnterProxyCarrierSelect));
 
-        // 持ち物：武器の持ち替え・武装解除（外す）・道具の使用・破棄（捨てる）の入口。
+        // 持ち物：武器の持ち替え・外す（非武装になる）・道具の使用・破棄（捨てる）の入口。
         // 持ち物を1つでも持っているときに出す。装備変更・破棄は行動を消費しない。救出・引き受けの
         // 後は上で別メニューに分岐済みなのでここには来ない＝それらの制限（合意）を保つ
         if (unit.Items.Count > 0)
@@ -870,7 +858,7 @@ public class BattleController : MonoBehaviour
     /// **装備はここで切り替わる**（作者合意・FE準拠）＝この後キャンセルしてもその武器のまま。
     /// 装備変更は行動を消費しないので、そのまま別のコマンドへ進んでも構わない
     /// （既存の「装備変更に取り消しは無い」合意どおり）。
-    /// 威力・三すくみ・特効・対空（撃墜）・挟撃の資格・耐久の消費は、装備を変えた時点で
+    /// 威力・三すくみ・特効・対空（撃墜）・挟撃の資格は、装備を変えた時点で
     /// 既存の Unit.Weapon 窓口を通じて全部この武器のものになる。
     /// </summary>
     private void EnterTargetSelect(WeaponData weapon)
@@ -931,9 +919,9 @@ public class BattleController : MonoBehaviour
 
     /// <summary>
     /// 攻撃を実行する（敵をクリックした瞬間。2026-08-09 から「実行」の確認は無い）。
-    /// 武器はもう装備してあるので、威力・三すくみ・特効・対空（撃墜）・挟撃の資格・耐久の消費は
+    /// 武器はもう装備してあるので、威力・三すくみ・特効・対空（撃墜）・挟撃の資格は
     /// すべて選んだ武器で決まる。装備は攻撃の後もそのまま＝敵フェイズもこの武器で受ける（FE準拠）。
-    /// 必殺技のマナはここで1本使う（敵をクリックする前に戻ればマナは減らない）。
+    /// 必殺技のメモリはここで1本使う（敵をクリックする前に戻ればメモリは減らない）。
     /// </summary>
     private void ExecuteAttack(Unit target)
     {
@@ -941,8 +929,8 @@ public class BattleController : MonoBehaviour
 
         if (criticalPending)
         {
-            unit.SpendMana();
-            Debug.Log($"{unit.Data.unitName} がマナを1本使った（残り {unit.Mana.Stock} 本）");
+            unit.SpendMemoryStock();
+            Debug.Log($"{unit.Data.unitName} がメモリを1本使った（残り {unit.Memory.Stock} 本）");
         }
 
         // 移動したかも渡す（後衛武器はマスから動かずに撃つと三すくみ有利。2026-07-30 作者仕様）
@@ -1179,7 +1167,6 @@ public class BattleController : MonoBehaviour
     /// 杖で回復を実行：対象のHPを（使用者の魔力＋杖の威力）回復し、行動を終える。
     /// 道具（傷薬）と同じく「使うと行動終了」（合意(b)）。対象は FindHealTargets で
     /// 満タン未満に絞ってあるので、ここでは実際の回復量を確かめてログに出すだけでよい。
-    /// 杖も武器なので、1回使うと耐久が1減る（フェーズ31）。回復量を決めた後で減らすこと。
     /// </summary>
     private void ExecuteHeal(Unit target)
     {
@@ -1191,7 +1178,6 @@ public class BattleController : MonoBehaviour
 
         Debug.Log($"{unit.Data.unitName} は {target.Data.unitName} を杖で回復した" +
                   $"（HP{healed}回復 → {target.CurrentHP}／{target.MaxHP}）");
-        DurabilityRules.Consume(unit);
         FinishAction();
     }
 
@@ -1286,9 +1272,9 @@ public class BattleController : MonoBehaviour
         FinishAction(); // 降ろしたら行動終了（作者合意）
     }
 
-    // ===== 持ち物（武器の持ち替え・武装解除〔外す〕・道具の使用・破棄〔捨てる〕）=====
+    // ===== 持ち物（武器の持ち替え・外す〔非武装になる〕・道具の使用・破棄〔捨てる〕）=====
     // 操作は2段階：持ち物リスト（ItemSelect）で1つ選ぶ → 行動サブメニュー（ItemActionSelect）で
-    // 「外す/装備/使う」＋「捨てる」を選ぶ。装備変更・武装解除・破棄は行動を消費しない
+    // 「外す/装備/使う」＋「捨てる」を選ぶ。装備変更・外す・破棄は行動を消費しない
     // （FE準拠：同一行動で持ち替え→攻撃ができる。実行後はメニューを開き直して再計算）。
     // 道具（傷薬）だけは「使うと行動終了」（合意(b)）＝使用後に FinishAction する。
 
@@ -1313,7 +1299,7 @@ public class BattleController : MonoBehaviour
     /// <summary>
     /// 持ち物リストの行を作る。各行は押せて、クリックすると行動サブメニュー（外す/装備/使う＋捨てる）
     /// へ進む。ラベルの補足（装備中／装備不可／残りN）は状態の目印として残し、ホバー用の
-    /// 性能詳細（BuildItemDetail）も添える。従来の最下行「武装解除」は撤廃し、装備中の武器の
+    /// 性能詳細（BuildItemDetail）も添える。従来の最下行（装備を外すコマンド）は撤廃し、装備中の武器の
     /// サブメニューの「外す」へ移した。
     /// </summary>
     private List<ItemListMenu.Entry> BuildItemEntries()
@@ -1336,10 +1322,9 @@ public class BattleController : MonoBehaviour
     /// 持ち物リストと交換の列で共通の行ラベル（名前＋装備中／装備不可／残り回数）。
     /// 2箇所で同じ書き方に揃えるためにここへ集約している（片方だけ直して表示がずれるのを防ぐ）。
     /// 装備できるかは、その持ち物の持ち主 owner の兵種で判定する。
-    /// 「装備中」は EquippedWeapon で見る＝耐久が尽きていても装備は外れていない（フェーズ31）。
-    /// ※武器の耐久はここには出さない。ボタン幅は「傷薬（残り3）」「剣（装備中）」に合わせた
-    ///   210px しかなく、「魔道書（装備中）（耐久6）」のような長い名前で右端が見切れるため。
-    ///   耐久は行にマウスを重ねたときの詳細（UnitInfoLines.BuildItemDetail）で見る
+    /// 「装備中」は EquippedWeapon で見る（Weapon 窓口は「いま使えない武器」で null を返すため）。
+    /// ※武器の性能（威力・射程など）はここには出さない。ボタン幅に限りがあり長い名前で右端が見切れるため、
+    ///   行にマウスを重ねたときの詳細（UnitInfoLines.BuildItemDetail）で見る
     ///   ＝ユニット情報パネルの持ち物の行にも同じ詳細が出る。
     /// </summary>
     private string BuildItemLabel(ItemSlot slot, Unit owner)
@@ -1374,7 +1359,7 @@ public class BattleController : MonoBehaviour
         {
             if (weapon == unit.EquippedWeapon)
             {
-                // 装備中 → 外す（＝武装解除。従来の「武装解除」コマンドと同じ機能）
+                // 装備中 → 外す（＝非武装になる。従来の最下行のコマンドと同じ機能）
                 entries.Add(new ItemListMenu.Entry("外す", true, UnequipWeapon));
             }
             else if (CanEquip(unit, weapon))
@@ -1423,12 +1408,12 @@ public class BattleController : MonoBehaviour
         OpenCommandMenu();
     }
 
-    /// <summary>武装解除して行動メニューへ戻る（行動は消費しない）。攻撃・被ダメ確認が消える。</summary>
+    /// <summary>装備を外して（非武装になって）行動メニューへ戻る（行動は消費しない）。攻撃・被ダメ確認が消える。</summary>
     private void UnequipWeapon()
     {
         itemMenu.Hide();
         context.unit.Unequip();
-        Debug.Log($"{context.unit.Data.unitName} は武装解除した");
+        Debug.Log($"{context.unit.Data.unitName} は装備を外した（非武装）");
         OpenCommandMenu();
     }
 
@@ -1451,7 +1436,7 @@ public class BattleController : MonoBehaviour
     }
 
     /// <summary>
-    /// 「捨てる」：持ち物から1つ取り除く。装備中の武器なら Unit 側で自動的に武装解除される。
+    /// 「捨てる」：持ち物から1つ取り除く。装備中の武器なら Unit 側で自動的に非武装になる。
     /// 行動は消費しない（作者合意）。捨てた後は更新した持ち物リストへ戻り、空になったら行動メニューへ。
     /// </summary>
     private void DiscardSelectedItem(ItemSlot slot)
@@ -1462,7 +1447,7 @@ public class BattleController : MonoBehaviour
         bool wasEquipped = slot.Item == unit.EquippedWeapon;
 
         unit.DiscardItem(slot);
-        Debug.Log($"{unit.Data.unitName} は {name} を捨てた" + (wasEquipped ? "（装備していたので武装解除された）" : ""));
+        Debug.Log($"{unit.Data.unitName} は {name} を捨てた" + (wasEquipped ? "（装備していたので非武装になった）" : ""));
 
         // 持ち物が残っていれば更新したリストへ、無くなったら行動メニューへ戻る
         if (unit.Items.Count > 0) EnterItemSelect();
@@ -1549,7 +1534,7 @@ public class BattleController : MonoBehaviour
 
     /// <summary>
     /// 交換の列の見出し（名前／HPと持ち物の数／装備武器／いっぱいの注記）。
-    /// 装備の行があるので「武器を全部渡して武装無しになった」ことがその場で分かる。
+    /// 装備の行があるので「武器を全部渡して非武装になった」ことがその場で分かる。
     /// </summary>
     private List<string> BuildExchangeHeader(Unit unit)
     {
@@ -1560,10 +1545,6 @@ public class BattleController : MonoBehaviour
             $"装備: {(unit.EquippedWeapon != null ? unit.EquippedWeapon.DisplayName : "なし")}",
         };
 
-        // 傷んでいる注記は「装備:」の行に足さず、別の行にする（列の幅が狭く、
-        // 「装備: 魔道書（傷んでいる）」だと右端で見切れるため。フェーズ31）
-        if (unit.IsEquippedWeaponWorn) lines.Add("※武器が傷んでいる");
-
         // いっぱいのときだけ注記を足す（灰色で押せない理由がその場で分かるように）
         if (!ExchangeRules.CanReceive(unit)) lines.Add("※いっぱい（受け取れない）");
 
@@ -1573,16 +1554,14 @@ public class BattleController : MonoBehaviour
     /// <summary>
     /// 品を1つ、from から to へ移す（渡す・もらうの両方向で共通）。
     /// 行動は消費しないが、最初の1個で取り消し不能点を打つ。
-    /// 装備中の武器なら Unit 側で自動的に武装解除される。
-    /// 残り使用回数・武器の耐久は ItemSlot ごと移るので引き継がれる（満タンに戻らない）。
+    /// 装備中の武器なら Unit 側で自動的に非武装になる。
+    /// 道具の残り使用回数は ItemSlot ごと移るので引き継がれる（満タンに戻らない）。
     /// </summary>
     private void TransferItem(ItemSlot slot, Unit from, Unit to)
     {
         Unit self = context.unit;
         string name = slot.Item.DisplayName;
-        string uses = "";
-        if (slot.HasDurability)
-            uses = slot.Item is WeaponData ? $"（耐久{slot.UsesLeft}）" : $"（残り{slot.UsesLeft}）";
+        string uses = slot.HasUses ? $"（残り{slot.UsesLeft}）" : "";
         bool wasEquipped = slot.Item == from.EquippedWeapon;
 
         from.TransferItemTo(slot, to);
@@ -1600,7 +1579,7 @@ public class BattleController : MonoBehaviour
 
         Debug.Log(action +
                   $"（自分 {self.Items.Count}／{cap}・相手 {exchangePartner.Items.Count}／{cap}）" +
-                  (wasEquipped ? $"（{from.Data.unitName} の装備だったので武装解除された）" : ""));
+                  (wasEquipped ? $"（{from.Data.unitName} の装備だったので非武装になった）" : ""));
 
         ShowExchangeColumns(); // 両列を作り直す＝数・装備・押せるかどうかが即座に変わる
     }
@@ -1692,7 +1671,7 @@ public class BattleController : MonoBehaviour
     /// 射程は実戦と同じ CombatRules.TryGetAttackRange を使うので、
     /// 「後衛武器は移動すると最小射程ちょうどに縮む」ルールも正しく反映される。
     /// 表示用の下見なので、相手ごとの可否（飛翔の相性 CanEngage）までは見ない。
-    /// 誰も立ち入れない壁マス（通行不可かつ飛行も不可）は塗らない。武装無しなら空を返す。
+    /// 誰も立ち入れない壁マス（通行不可かつ飛行も不可）は塗らない。非武装なら空を返す。
     /// 2026-08-09 から、持っている武器ぶんを合算する（攻撃の対象を「全武器で届く敵」に
     /// した合意に表示を合わせるため）。敵は装備中の1本だけが候補なので、
     /// 敵の行動範囲プレビューの見た目は従来と変わらない。

@@ -9,7 +9,7 @@ using UnityEngine;
 /// レイアウト（左右のカラムは同じ幅。これがバーの長さを揃える条件になっている）:
 ///   左カラム … 顔枠（空欄）→ 名前／HP の1行 → クラス名／移動力 の1行 → ステータス枠
 ///              → 使用可能武器の1行 → 兵種経験値バー
-///   右カラム … 状態枠 → スキル枠 → 持ち物枠 → 必殺技の1行 → マナ・気勢ゲージ
+///   右カラム … 状態枠 → スキル枠 → 持ち物枠 → 必殺技の1行 → メモリ・気勢ゲージ
 ///
 /// **パネルの高さは右カラムで決まり**、左カラムの顔枠が残りの高さを全部もらって下端を揃える。
 ///
@@ -21,7 +21,8 @@ using UnityEngine;
 ///
 /// 続く修正案2（同日・作者の Play 確認後）で:
 ///  ・ステータス枠から装備武器を削除し、中を**ぴったり二等分**（左＝力/魔力/技/速さ・右＝守備/魔防）に戻した
-///  ・持ち物の行の右端に**耐久値「残り／最大」**を出す（名前が長い行は実際の描画幅で測って丸める）
+///  ・持ち物の行の右端に**耐久値「残り／最大」**を出す（名前が長い行は実際の描画幅で測って丸める）。
+///    ※武器の耐久は 2026-10-24 に撤廃。右端の欄はそのまま残し、道具の残り回数などを出す
 ///  ・名前／HP の行だけ文字を一回り大きくし、下のクラス名の行との隙間を詰めた
 ///
 /// レベル・スキル・クラスごとの必殺技・兵種経験値は**まだ実装が無い**（2026-08-16 時点）。
@@ -68,7 +69,7 @@ public static class UnitInfoView
     /// <summary>能力値の名前に使う幅（一番長い「速さ」「魔力」「守備」「魔防」の2文字＝約28px＋隙間）。</summary>
     private const float StatNameWidth = 52f;
 
-    /// <summary>持ち物の行で、品の名前と右端の耐久値のあいだに空ける最小の隙間。</summary>
+    /// <summary>持ち物の行で、品の名前と右端の数字（道具の残り回数など）のあいだに空ける最小の隙間。</summary>
     private const float ItemUsesGap = 6f;
 
     /// <summary>名前とHPの行だけ大きくする文字の差（2026-08-16 作者の修正案2「一回り大きく」）。</summary>
@@ -89,7 +90,7 @@ public static class UnitInfoView
     /// <summary>ホバー詳細の枠と、その元になった項目のあいだの隙間。</summary>
     private const float DetailGap = 2f;
 
-    /// <summary>兵種経験値バーの色（仕様未定なので見た目だけ。マナ＝緑・気勢＝青と分ける明るい黄）。</summary>
+    /// <summary>兵種経験値バーの色（仕様未定なので見た目だけ。メモリ＝緑・気勢＝青と分ける明るい黄）。</summary>
     private static readonly Color ExpColor = new Color(0.95f, 0.80f, 0.35f);
 
     // ===== 高さの計算（数値を変えても崩れないよう、ハードコードせず式で出す）=====
@@ -205,13 +206,13 @@ public static class UnitInfoView
         GUI.Label(usableRow, UnitInfoLines.UsableWeaponsLine(unit), label);
         hover.Track(usableRow, column, mouse);
 
-        // 兵種経験値バー（仕様未定＝レイアウトだけ。マナ・気勢と同じ長さ・半分の太さ）
+        // 兵種経験値バー（仕様未定＝レイアウトだけ。メモリ・気勢と同じ長さ・半分の太さ）
         var expRow = new Rect(column.x, usableRow.yMax + SectionGap, column.width, GaugeBars.SlimRowHeight);
         GaugeBars.DrawSlim(expRow, "兵種", 0f, ExpColor, "－", fontSize);
         hover.Track(expRow, column, mouse);
     }
 
-    /// <summary>右カラム：状態枠 → スキル枠 → 持ち物枠 → 必殺技 → マナ・気勢ゲージ。</summary>
+    /// <summary>右カラム：状態枠 → スキル枠 → 持ち物枠 → 必殺技 → メモリ・気勢ゲージ。</summary>
     private static void DrawRightColumn(Rect column, Unit unit, GridManager grid, HoverState hover, Vector2 mouse,
                                         GUIStyle label, GUIStyle labelRight, GUIStyle boxTitle,
                                         int fontSize, float lineHeight)
@@ -248,7 +249,7 @@ public static class UnitInfoView
         GUI.Label(critical, "必殺技: －", label);
         hover.Track(critical, column, mouse);
 
-        // マナ（緑）→ 気勢（青）の2本。1本ぶんずつホバーできるように矩形を分けて登録する
+        // メモリ（緑）→ 気勢（黄）の2本。1本ぶんずつホバーできるように矩形を分けて登録する
         var gauges = new Rect(column.x, critical.yMax + SectionGap, column.width, GaugeBars.TotalHeight);
         GaugeBars.Draw(gauges, unit, fontSize);
         float gaugeRow = GaugeBars.TotalHeight * 0.5f;
@@ -272,7 +273,8 @@ public static class UnitInfoView
     }
 
     /// <summary>
-    /// 持ち物枠（最大7行）。左に品の名前、**右端に耐久値「残り／最大」**（2026-08-16 作者の修正案2）。
+    /// 持ち物枠（最大7行）。左に品の名前、**右端に数字**（2026-08-16 作者の修正案2。当時は武器の耐久値。
+    /// 耐久を撤廃した 2026-10-24 からは道具の残り回数「残り／最大」）。
     /// 威力・射程などの詳しい数字は行のホバー詳細で見せる。
     /// </summary>
     private static void DrawItemBox(Rect box, Rect column, Unit unit, HoverState hover, Vector2 mouse,
@@ -289,7 +291,7 @@ public static class UnitInfoView
 
             ItemSlot slot = unit.Items[i];
 
-            // 耐久値「残り／最大」は右端。その実際の幅ぶんを空けて名前を描くので、
+            // 右端の数字は、その実際の幅ぶんを空けて名前を描くので、
             // 長い名前（「・アーマーキラー（装備中）」など）でも数字と重ならない
             string uses = UnitInfoLines.ItemUsesText(slot);
             float usesWidth = string.IsNullOrEmpty(uses)

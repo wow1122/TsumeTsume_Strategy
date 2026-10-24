@@ -49,7 +49,7 @@ public static class ThreatMap
         var reaches = new List<HashSet<Vector2Int>>();
         foreach (Unit p in UnitRegistry.GetUnits(opponentFaction))
         {
-            if (!CombatRules.IsPincerCapable(p)) continue; // 後衛・武装無しは挟撃に参加できない
+            if (!CombatRules.IsPincerCapable(p)) continue; // 後衛・非武装は挟撃に参加できない
             attackers.Add(p);
             reaches.Add(MovementCalculator.GetReachableCells(grid, p));
         }
@@ -159,7 +159,7 @@ public static class ThreatMap
         foreach (Unit p in UnitRegistry.GetUnits(opponentFaction))
         {
             // self（空を飛ぼうとしている本人）を攻撃できるユニットか（対空できる相手 or 飛翔中。
-            // 杖・武装無しは対空できない。判定は CombatRules.IsAntiAirCapable に一元化。Phase 25）
+            // 杖・非武装は対空できない。判定は CombatRules.IsAntiAirCapable に一元化。Phase 25）
             // ※対空は相手によって変わる（2026-08-08）。竜殺しの剣を持つ敵は、竜には対空だが
             //   天馬兵には対空でない＝天馬兵から見た対空圏には入らない。だから self を渡す
             if (!CombatRules.IsAntiAirCapable(p, self) && !p.IsFlying) continue;

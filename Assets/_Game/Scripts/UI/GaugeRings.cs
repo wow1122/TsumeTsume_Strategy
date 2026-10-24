@@ -2,16 +2,16 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 盤上のユニットのマスに出す、リング状のマナ・気勢ゲージ（2026-10-10 作者仕様・IMGUI）。
+/// 盤上のユニットのマスに出す、リング状のメモリ・気勢ゲージ（2026-10-10 作者仕様・IMGUI）。
 /// GaugeBars（ユニット情報パネルの横棒）と同じく MonoBehaviour ではない描画の共通処理で、
 /// Unit.OnGUI から呼ぶ。
 ///
 /// 見た目（作者仕様）:
-///  ・マスの左下隅にマナ、右下隅に気勢（2026-10-11 に上隅から変更）。外円の直径はマスの一辺の 1/5
+///  ・マスの左下隅にメモリ、右下隅に気勢（2026-10-11 に上隅から変更）。外円の直径はマスの一辺の 1/5
 ///  ・HP ゲージはリングと重ならないよう、リング2つぶんの直径だけ短くして中央に置く（Unit.OnGUI）
 ///  ・ユニットの絵と重なってもリングが上に見える（OnGUI の描画は常にスプライトより手前）
 ///  ・リングの一番上から**反時計回り**に、貯まったぶんだけ色が伸びる
-///  ・色はユニット情報のゲージと同じ（GaugeBars.ManaColor / MomentumColor）
+///  ・色はユニット情報のゲージと同じ（GaugeBars.MemoryColor / MomentumColor）
 ///  ・貯まりきって保持している本数（ストック）は、リングの真上にリングと同じ大きさの数字で出す
 ///    （下隅に移したので、真下だとマスの外にはみ出るため 2026-10-11 に真上へ変更）
 ///
@@ -53,7 +53,7 @@ public static class GaugeRings
 
     /// <summary>
     /// cell（マスの画面上の矩形・GUI 座標。見えているマスの内側 inset ぶんを除いて使う）の下隅に、
-    /// unit のマナ（左下）と気勢（右下）のリングを描く。
+    /// unit のメモリ（左下）と気勢（右下）のリングを描く。
     /// </summary>
     public static void Draw(Rect cell, float inset, Unit unit)
     {
@@ -64,7 +64,7 @@ public static class GaugeRings
         float left = Mathf.Round(cell.x + inset + CornerMargin);
         float right = Mathf.Round(cell.xMax - inset - CornerMargin - d);
 
-        DrawOne(new Rect(left, top, d, d), unit.Mana, GaugeBars.ManaColor);
+        DrawOne(new Rect(left, top, d, d), unit.Memory, GaugeBars.MemoryColor);
         DrawOne(new Rect(right, top, d, d), unit.Momentum, GaugeBars.MomentumColor);
     }
 

@@ -8,7 +8,7 @@ public enum TurnPhase { Player, Enemy }
 /// <summary>
 /// ターンとフェイズを管理する。
 ///  ・自軍フェイズ開始時に、味方全員の「行動済み」をリセット（飛翔の残りターンもここで減る）。
-///    マナの自然増加（フェーズ28）と輸送隊からの補給（フェーズ32）もここで行う
+///    メモリの自然増加（フェーズ28）もここで行う（フェーズ32の輸送隊からの補給は 2026-10-24 に撤廃）
 ///  ・味方が全員行動したら自動で敵フェイズへ。敵フェイズは EnemyAI が1体ずつ行動する
 ///  ・勝敗判定：敵全滅で勝利／味方全滅・味方輸送隊の死亡で敗北。
 ///    ターン制限（Phase 15）：StageData で指定されたターン数を使い切っても
@@ -69,15 +69,10 @@ public class TurnManager : MonoBehaviour
             u.ResetRefresh();    // 再行動の「1ターン1回」を戻す（フェーズ30）
         }
 
-        // マナの自然増加（フェーズ28）。ターン1は初期値のまま
+        // メモリの自然増加（フェーズ28）。ターン1は初期値のまま
         // （BattleSetup と TurnManager のどちらの Start が先に走るかを Unity は保証しないため、
         //   「ターン2以降に増える」と明示的に決めて、配置直後の値がぶれないようにしている）
-        if (TurnNumber > 1) GaugeRules.TickMana(Faction.Player);
-
-        // 輸送隊からの補給（フェーズ32）：陣中の味方の武器の耐久が少しずつ戻る。
-        // ターン1は全員の武器が満タンなので何も起きない（ここは条件を付けずに毎ターン回す）。
-        // 敵フェイズ側では呼ばない＝敵の武器は摩耗しないので回復も要らない（作者合意）
-        SupplyRules.TickRepair(Faction.Player, grid);
+        if (TurnNumber > 1) GaugeRules.TickMemory(Faction.Player);
 
         Debug.Log($"── ターン {TurnNumber}：自軍フェイズ 開始 ──");
     }
@@ -98,8 +93,8 @@ public class TurnManager : MonoBehaviour
             u.ResetRefresh();    // 敵は再行動を使わないが、状態は味方と対称に保つ
         }
 
-        // 敵側のマナも自軍と対称に増やす（敵AIは当面使わないが、蓄積は陣営を区別しない）
-        if (TurnNumber > 1) GaugeRules.TickMana(Faction.Enemy);
+        // 敵側のメモリも自軍と対称に増やす（敵AIは当面使わないが、蓄積は陣営を区別しない）
+        if (TurnNumber > 1) GaugeRules.TickMemory(Faction.Enemy);
 
         Debug.Log($"ターン {TurnNumber}：敵フェイズ 開始");
         StartCoroutine(EnemyPhaseRoutine());

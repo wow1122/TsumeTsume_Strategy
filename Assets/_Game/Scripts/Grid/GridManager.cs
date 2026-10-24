@@ -4,7 +4,8 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// マスのハイライトの「種類」。1マスに複数の種類を重ねられ（多層管理）、
 /// 表示は優先度の高い順（Selection > TargetChoice > AttackRange > HealRange > MoveRange >
-/// SupplyZone > 基本色）。ある種類だけを消すと、下に重なっていた種類の色が現れる。
+/// 基本色）。ある種類だけを消すと、下に重なっていた種類の色が現れる。
+/// ※フェーズ32の補給圏（SupplyZone・薄紫）は 2026-10-24 に補給ごと撤廃した。
 /// </summary>
 [System.Flags]
 public enum HighlightKind
@@ -15,8 +16,6 @@ public enum HighlightKind
     TargetChoice = 1 << 2, // 攻撃対象の候補（赤）
     Selection = 1 << 3,    // 選択中ユニットのマス（黄）
     HealRange = 1 << 4,    // 杖が届くマス・回復対象のマス（緑・Phase 25）
-    SupplyZone = 1 << 5,   // 輸送隊の補給が届くマス＝陣中（薄紫・フェーズ32）。
-                           // 優先度は一番下＝他のハイライトを絶対に隠さない
 }
 
 /// <summary>
@@ -70,8 +69,6 @@ public class GridManager : MonoBehaviour
     public Color moveRangeColor = new Color(0.5f, 0.8f, 1f);      // 水色
     [Tooltip("杖が届くマス・回復対象のマス（Phase 25）")]
     public Color healRangeColor = new Color(0.5f, 0.9f, 0.5f);    // 緑
-    [Tooltip("輸送隊の補給が届くマス＝陣中（フェーズ32）")]
-    public Color supplyZoneColor = new Color(0.78f, 0.66f, 1f);   // 薄紫
 
     // ── 内部データ ──
     private TileData[,] tiles;                 // 各マスの論理データ
@@ -366,7 +363,6 @@ public class GridManager : MonoBehaviour
         else if ((kinds & HighlightKind.AttackRange) != 0) highlightColor = attackRangeColor;
         else if ((kinds & HighlightKind.HealRange) != 0) highlightColor = healRangeColor;
         else if ((kinds & HighlightKind.MoveRange) != 0) highlightColor = moveRangeColor;
-        else if ((kinds & HighlightKind.SupplyZone) != 0) highlightColor = supplyZoneColor;
         else return baseColor;
 
         return Color.Lerp(baseColor, highlightColor, highlightBlend);

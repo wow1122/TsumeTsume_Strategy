@@ -1,13 +1,13 @@
 using UnityEngine;
 
 /// <summary>
-/// マナゲージ・気勢ゲージのバーを描く共通部品（フェーズ28・IMGUI）。
+/// メモリゲージ・気勢ゲージのバーを描く共通部品（フェーズ28・IMGUI）。
 /// UnitInfoLines と同じく MonoBehaviour ではない「描画の共通処理」で、
 /// ユニット情報の2カラム表示（UnitInfoView）から呼ぶ。
 /// 2026-08-16 に、仕様が決まっていないバー（兵種経験値）用の DrawSlim を足した。
 ///
 /// 見た目（作者仕様）:
-///  ・マナ（明るい緑）→ 気勢（明るい黄色）の順で2本
+///  ・メモリ（明るい緑）→ 気勢（明るい黄色）の順で2本
 ///  ・貯まっているぶんだけ、バーの左端から色が伸びる
 ///  ・値10ごとに黒い縦線（目盛り）が入る
 ///  ・バーの右隣に、貯まった本数（ストック）と現在値のカウンターを出す
@@ -25,8 +25,11 @@ public static class GaugeBars
     /// <summary>バー1本ぶんの下の余白（ピクセル）。</summary>
     private const float BarGap = 6f;
 
-    /// <summary>左のラベル（「マナ」「気勢」）の幅。</summary>
-    private const float LabelWidth = 38f;
+    /// <summary>
+    /// 左のラベル（「メモリ」「気勢」）の幅。2026-10-24 にマナ→メモリで1文字増えたので 38→46
+    /// （12pxの文字3つ＋ラベルの余白で約40px。バーはそのぶん短くなる）。
+    /// </summary>
+    private const float LabelWidth = 46f;
 
     /// <summary>
     /// 右のカウンター文字の幅。「3本 25／30」は12pxの文字で約61pxなので80で足りる
@@ -41,12 +44,12 @@ public static class GaugeBars
     private const int TickStep = 10;
 
     /// <summary>
-    /// 細いバー（兵種経験値）の太さ。作者仕様「マナ・気勢の半分ほどの太さで同じ長さ」（2026-08-16）。
+    /// 細いバー（兵種経験値）の太さ。作者仕様「メモリ・気勢の半分ほどの太さで同じ長さ」（2026-08-16）。
     /// 行の高さは細くせず BarHeight のままにして、左のラベルと右のカウンターが読める大きさを保つ。
     /// </summary>
     private const float SlimBarHeight = 7f;
 
-    public static readonly Color ManaColor = new Color(0.30f, 0.95f, 0.40f);      // 明るい緑
+    public static readonly Color MemoryColor = new Color(0.30f, 0.95f, 0.40f);    // 明るい緑
     public static readonly Color MomentumColor = new Color(1.00f, 0.90f, 0.25f);  // 明るい黄色（2026-10-10 作者指示で青から変更）
     public static readonly Color BackColor = new Color(0.12f, 0.12f, 0.12f, 0.90f);
     private static readonly Color FrameColor = new Color(0.65f, 0.65f, 0.65f);
@@ -67,7 +70,7 @@ public static class GaugeBars
         if (unit == null) return 0f;
 
         float y = area.y;
-        DrawOne(new Rect(area.x, y, area.width, BarHeight), "マナ", unit.Mana, ManaColor, fontSize);
+        DrawOne(new Rect(area.x, y, area.width, BarHeight), "メモリ", unit.Memory, MemoryColor, fontSize);
 
         y += BarHeight + BarGap;
         DrawOne(new Rect(area.x, y, area.width, BarHeight), "気勢", unit.Momentum, MomentumColor, fontSize);
@@ -78,7 +81,7 @@ public static class GaugeBars
     /// <summary>
     /// 仕様が決まっていないバー（兵種経験値・2026-08-16）を1本描く。
     /// ゲージと同じラベル幅・カウンター幅・間隔を使うので、**同じ幅の行に描けばバーの長さも自動的に揃う**
-    /// （作者仕様「マナ・気勢ゲージで使ったバーの半分ほどの太さで同じ長さ」）。
+    /// （作者仕様「メモリ・気勢ゲージで使ったバーの半分ほどの太さで同じ長さ」）。
     /// 目盛りは最大値が決まっていないので入れない。ratio は 0〜1、counter は右に出す文字（「－」など）。
     /// </summary>
     public static void DrawSlim(Rect row, string label, float ratio, Color fillColor, string counter, int fontSize)

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 /// <summary>
 /// 攻撃するときに「どの武器で殴るか」を選ぶための共有ルール集（2026-08-09 作者要望）。
-/// CombatRules / RescueRules / StaffRules / ExchangeRules / DurabilityRules と同じ方針で、
+/// CombatRules / RescueRules / StaffRules / ExchangeRules と同じ方針で、
 /// 「どの武器が候補になるか・その武器でどの相手を攻撃できるか」の判定をここへ集めている。
 ///
 /// ここにあるルール：
@@ -10,7 +10,7 @@ using System.Collections.Generic;
 ///    敵は装備中の1本だけ（既存合意「敵AIは所持品を使わない」に沿う＝敵の行動範囲プレビューも従来どおり）
 ///  ・その武器で攻撃できるか … 一時的にその武器を装備して、既存の CombatRules.CanAttack を呼ぶ
 ///  ・その武器で狙える敵の一覧 … FindTargets（武器1本ぶん）と FindAllTargets（持っている武器の合算）
-///  ・使えない理由 … 一覧の灰色の行に添える短い注記（耐久0／空中不可／届く敵なし）
+///  ・使えない理由 … 一覧の灰色の行に添える短い注記（空中不可／届く敵なし）
 ///
 /// 【probe（お試し装備）方式について】
 /// 射程・三すくみ・特効・対空・挟撃・撃墜は、どれも Unit.Weapon 窓口を見て決まる。
@@ -34,7 +34,6 @@ public static class WeaponChoiceRules
     /// <summary>
     /// 攻撃に使える候補の武器（並びは所持品の順）。
     ///  プレイヤー … 所持品の武器のうち「杖でない・その兵種で装備できる」もの。
-    ///                耐久が尽きた武器も候補に含める（一覧で「耐久0」と理由を見せるため）
     ///  敵         … 装備中の武器1本だけ
     /// いま装備している武器は、兵種が扱えない例外装備でも必ず候補に入れる
     /// （アセット側は「武器と兵種の不一致は警告のみで動作は続行」＝意図的な例外装備を許す方針。
@@ -57,8 +56,9 @@ public static class WeaponChoiceRules
         }
 
         // 装備中の武器は必ず候補に入れる（敵はこれだけ。プレイヤーでも所持品に無い武器を
-        // 装備しているデータの作り方に備えた保険。※耐久0でも候補に残すため EquippedWeapon を読む
-        //   ＝ Weapon 窓口だと傷んだ瞬間に候補から消えて「なぜ攻撃できないか」が見えなくなる）
+        // 装備しているデータの作り方に備えた保険。※ここは EquippedWeapon を読む
+        //   ＝ Weapon 窓口は「いま戦えない武器」で null を返す作りなので、そちらを読むと
+        //     候補から消えて「なぜ攻撃できないか」が一覧で見えなくなる）
         WeaponData equipped = unit.EquippedWeapon;
         if (equipped != null && equipped.type != WeaponType.Staff && !weapons.Contains(equipped))
             weapons.Insert(0, equipped);
@@ -158,7 +158,6 @@ public static class WeaponChoiceRules
     public static string GetUnusableReason(Unit unit, WeaponData weapon, bool hasMoved)
     {
         if (unit == null || weapon == null) return "使えない";
-        if (IsWorn(unit, weapon)) return "耐久0";                       // 傷んでいて攻撃できない
         if (FindTargets(unit, weapon, hasMoved).Count > 0) return null; // 狙える敵がいる＝押せる行
 
         // 射程には敵がいるのに戦えないなら、原因は飛翔の相性（対空でない等）。
@@ -180,22 +179,5 @@ public static class WeaponChoiceRules
     private static Faction OpponentOf(Unit unit)
     {
         return (unit.Faction == Faction.Player) ? Faction.Enemy : Faction.Player;
-    }
-
-    /// <summary>その武器の所持品の状態（耐久値の置き場）。持っていなければ null。</summary>
-    public static ItemSlot FindSlot(Unit unit, WeaponData weapon)
-    {
-        if (unit == null || weapon == null) return null;
-
-        foreach (ItemSlot slot in unit.Items)
-            if (slot.Item == weapon) return slot;
-        return null;
-    }
-
-    /// <summary>その武器の耐久が尽きている（傷んでいて攻撃に使えない）か。</summary>
-    public static bool IsWorn(Unit unit, WeaponData weapon)
-    {
-        ItemSlot slot = FindSlot(unit, weapon);
-        return slot != null && slot.HasDurability && slot.UsesLeft <= 0;
     }
 }

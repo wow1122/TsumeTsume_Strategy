@@ -1,16 +1,17 @@
 using UnityEngine;
 
 /// <summary>
-/// マナゲージ（技 → 必殺技）と気勢ゲージ（速さ → 再行動）のルールを一元管理する（フェーズ28）。
+/// メモリゲージ（技 → 必殺技）と気勢ゲージ（速さ → 再行動）のルールを一元管理する（フェーズ28）。
+/// メモリゲージは 2026-10-24 の作者仕様変更でマナゲージから改名した（中身の仕組みは同じ）。
 /// CombatRules / RescueRules / StaffRules / ExchangeRules と同じ「判定は1か所に集める」方針。
 /// UIも敵AIも、ゲージまわりの数値と可否は必ずここを通して読む。
 ///
 /// なぜ作ったか：技と速さは三すくみ補正の計算1か所でしか使われておらず、
 /// キャラクターの個性としてほとんど働いていなかった。この2つに独自の役割を与えるのが目的。
 ///
-///  ・マナゲージ … マップ開始時に「技」の値ぶん貯まった状態で始まり、
-///                 自陣営のフェイズ開始ごとに「魔力」に応じた量だけ増える。
-///                 1本（30）貯めると必殺技（フェーズ29）が撃てる。
+///  ・メモリゲージ … マップ開始時に「技」の値ぶん貯まった状態で始まり、
+///                   自陣営のフェイズ開始ごとに「魔力」に応じた量だけ増える。
+///                   1本（30）貯めると必殺技（フェーズ29）が撃てる。
 ///  ・気勢ゲージ … 戦闘で敵を連続して倒すと、倒した側の全ユニットに「速さ÷2」ずつ配られる。
 ///                 1本（100）貯めると再行動（フェーズ30）ができる。
 ///
@@ -23,28 +24,28 @@ public static class GaugeRules
     // ===== 調整用の定数（バランスを変えるときはここだけ書き換える）=====
     // 敵AIの点数定数と同じく、数値は先頭の1ブロックに集めてある。
 
-    // ── マナゲージ（技 → 必殺技）──
+    // ── メモリゲージ（技 → 必殺技）──
 
-    /// <summary>マナゲージ1本ぶんの満タン値。</summary>
-    public const int MaxMana = 30;
+    /// <summary>メモリゲージ1本ぶんの満タン値。</summary>
+    public const int MaxMemory = 30;
 
-    /// <summary>保持できるマナの本数。</summary>
-    public const int MaxManaStock = 2;
+    /// <summary>保持できるメモリの本数。</summary>
+    public const int MaxMemoryStock = 2;
 
-    /// <summary>マナの毎ターンの上昇量（魔力が低いとき）。</summary>
-    public const int ManaGainLow = 1;
+    /// <summary>メモリの毎ターンの上昇量（魔力が低いとき）。</summary>
+    public const int MemoryGainLow = 1;
 
-    /// <summary>魔力がこの値以上なら上昇量が ManaGainMid になる。</summary>
+    /// <summary>魔力がこの値以上なら上昇量が MemoryGainMid になる。</summary>
     public const int MagicThresholdMid = 20;
 
     /// <summary>魔力が MagicThresholdMid 以上のときの上昇量。</summary>
-    public const int ManaGainMid = 2;
+    public const int MemoryGainMid = 2;
 
-    /// <summary>魔力がこの値以上なら上昇量が ManaGainHigh になる。</summary>
+    /// <summary>魔力がこの値以上なら上昇量が MemoryGainHigh になる。</summary>
     public const int MagicThresholdHigh = 30;
 
     /// <summary>魔力が MagicThresholdHigh 以上のときの上昇量。</summary>
-    public const int ManaGainHigh = 3;
+    public const int MemoryGainHigh = 3;
 
     /// <summary>必殺技のダメージ倍率（フェーズ29で使う）。</summary>
     public const float CriticalMultiplier = 2.0f;
@@ -130,36 +131,36 @@ public static class GaugeRules
         }
     }
 
-    // ===== マナ =====
+    // ===== メモリ =====
 
     /// <summary>
-    /// マップ開始時のマナ（作者仕様：技の値をそのまま入れる）。
+    /// マップ開始時のメモリ（作者仕様：技の値をそのまま入れる）。
     /// 30 に達した分は GaugeState 側で1本に変換され、超過分が残る（技31 → 1本＋1）。
     /// </summary>
-    public static int InitialMana(Unit unit)
+    public static int InitialMemory(Unit unit)
     {
         return unit != null ? Mathf.Max(0, unit.Skill) : 0;
     }
 
-    /// <summary>自陣営のフェイズ開始1回ぶんのマナ上昇量（魔力で3段階）。</summary>
-    public static int ManaGainPerTurn(Unit unit)
+    /// <summary>自陣営のフェイズ開始1回ぶんのメモリ上昇量（魔力で3段階）。</summary>
+    public static int MemoryGainPerTurn(Unit unit)
     {
         if (unit == null) return 0;
-        if (unit.Magic >= MagicThresholdHigh) return ManaGainHigh;
-        if (unit.Magic >= MagicThresholdMid) return ManaGainMid;
-        return ManaGainLow;
+        if (unit.Magic >= MagicThresholdHigh) return MemoryGainHigh;
+        if (unit.Magic >= MagicThresholdMid) return MemoryGainMid;
+        return MemoryGainLow;
     }
 
     /// <summary>
-    /// 指定陣営の全生存ユニットのマナを1回ぶん増やす（フェイズ開始時に TurnManager が呼ぶ）。
+    /// 指定陣営の全生存ユニットのメモリを1回ぶん増やす（フェイズ開始時に TurnManager が呼ぶ）。
     /// 気勢と同じく、格納中の貨物にも入る。
     /// </summary>
-    public static void TickMana(Faction faction)
+    public static void TickMemory(Faction faction)
     {
         foreach (Unit u in UnitRegistry.All)
         {
             if (u == null || !u.IsAlive || u.Faction != faction) continue;
-            u.AddMana(ManaGainPerTurn(u));
+            u.AddMemory(MemoryGainPerTurn(u));
         }
     }
 
@@ -174,10 +175,10 @@ public static class GaugeRules
 
     // ===== コマンドの可否 =====
 
-    /// <summary>必殺技（マナ1本消費）が使える状態か（フェーズ29）。</summary>
+    /// <summary>必殺技（メモリ1本消費）が使える状態か（フェーズ29）。</summary>
     public static bool CanUseCritical(Unit unit)
     {
-        return unit != null && unit.IsAlive && unit.Mana != null && unit.Mana.HasStock;
+        return unit != null && unit.IsAlive && unit.Memory != null && unit.Memory.HasStock;
     }
 
     /// <summary>

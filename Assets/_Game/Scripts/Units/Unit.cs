@@ -50,13 +50,13 @@ public class Unit : MonoBehaviour
     /// <summary>
     /// 戦闘に使える武器。武器はこの窓口から読む（Data.weapon の直読みはしない約束。
     /// フェーズ22からはランタイム装備 EquippedWeapon を指す）。
-    /// 【フェーズ31】耐久が尽きた武器を装備しているときは null を返す＝「装備無し」扱い。
-    /// これ1箇所で、攻撃不可・三すくみで不利・挟撃やガードの資格を失う・対空でなくなる・
-    /// 静止撃ち有利が消える・敵AIが武装無しとして扱う、が全て自動で成立する
-    /// （CombatRules / DamageCalculator / EnemyAI は全てこの窓口だけを見ているため）。
+    /// CombatRules / DamageCalculator / EnemyAI は全てこの窓口だけを見ているので、
+    /// 「この武器では戦えない」という条件を足すときは、ここで null（＝非武装扱い）を返す1箇所で済む
+    /// （攻撃不可・三すくみで不利・挟撃やガードの資格を失う・対空でなくなる・静止撃ち有利が消える、が自動で成立する。
+    ///  フェーズ31の武器の耐久はこの手口で入れていた。耐久は 2026-10-24 に撤廃）。
     /// 「何を装備しているか」を見せたいだけの表示は EquippedWeapon を読むこと。
     /// </summary>
-    public WeaponData Weapon => IsEquippedWeaponWorn ? null : EquippedWeapon;
+    public WeaponData Weapon => EquippedWeapon;
 
     /// <summary>このターンに行動済みか（移動・攻撃を終えたか）。</summary>
     public bool HasActed { get; private set; }
@@ -73,7 +73,7 @@ public class Unit : MonoBehaviour
     /// <summary>所持品の一覧（ランタイム状態）。</summary>
     public List<ItemSlot> Items { get; } = new List<ItemSlot>();
 
-    /// <summary>装備中の武器（null = 武装無し）。</summary>
+    /// <summary>装備中の武器（null = 非武装）。</summary>
     public WeaponData EquippedWeapon { get; private set; }
 
     /// <summary>
@@ -84,7 +84,7 @@ public class Unit : MonoBehaviour
     /// 【警告】飛翔（StartFlight/CancelFlight）と同じ理由で、Equip / Unequip は
     /// 「純粋な状態変更」のまま保つこと（2026-08-09）。攻撃対象の計算と戦闘予測が
     /// probe（一時的に装備を差し替えて評価し、必ず元へ戻す。WeaponChoiceRules.WithWeapon）を
-    /// 使っており、ここに副作用（ログ・演出・行動消費・耐久の増減など）を足すと、
+    /// 使っており、ここに副作用（ログ・演出・行動消費・メモリの増減など）を足すと、
     /// 予測を1回描くたびにそれが実行されて壊れる。ログや演出は呼び出し側に置くこと。
     /// </summary>
     public void Equip(WeaponData weapon)
@@ -93,62 +93,12 @@ public class Unit : MonoBehaviour
     }
 
     /// <summary>
-    /// 武装解除する（EquippedWeapon = null＝武装無し扱い）。攻撃コマンドが出なくなり、
-    /// 前衛から攻撃されると不利判定、挟撃の資格も失う（既存の武装無しルールが自動で効く）。
+    /// 装備を外して非武装にする（EquippedWeapon = null）。攻撃コマンドが出なくなり、
+    /// 前衛から攻撃されると不利判定、挟撃の資格も失う（既存の非武装のルールが自動で効く）。
     /// </summary>
     public void Unequip()
     {
         EquippedWeapon = null;
-    }
-
-    // ── 武器の耐久（フェーズ31）──
-    // 耐久値そのものは所持品のランタイム状態（ItemSlot.UsesLeft）に入っている。
-    // 攻撃1回・杖の回復1回ごとに1減り、0になると「傷んでいる」＝ Weapon が null を返すようになる。
-    // そのとき装備は外れない（持ち替えずに補給を待てる＝作者合意）。
-    // マップが変わると Initialize で所持品ごと作り直されるので、資源なしで満タンに戻る。
-    //
-    // 【警告】飛翔・ゲージと同じ理由で、ここは「純粋な状態変更」に保つこと。
-    // 「誰の武器が減るか（自軍だけ）」やログは DurabilityRules と呼び出し側の担当。
-
-    /// <summary>
-    /// 装備中の武器のランタイム状態（耐久値の置き場）。武装無しなら null。
-    /// ※同じ武器アセットを2本持っていると先頭の1本を指す（現状そういうユニットはいない）。
-    ///   2本持ちを許すなら、装備をアセット参照から ItemSlot 参照へ変える必要がある。
-    /// </summary>
-    public ItemSlot EquippedSlot
-    {
-        get
-        {
-            if (EquippedWeapon == null) return null;
-            foreach (ItemSlot slot in Items)
-                if (slot.Item == EquippedWeapon) return slot;
-            return null;
-        }
-    }
-
-    /// <summary>装備中の武器が傷んでいる（耐久が尽きた）か。耐久なしの武器なら常に false。</summary>
-    public bool IsEquippedWeaponWorn
-    {
-        get
-        {
-            ItemSlot slot = EquippedSlot;
-            return slot != null && slot.HasDurability && slot.UsesLeft <= 0;
-        }
-    }
-
-    /// <summary>
-    /// 装備中の武器の耐久を1減らす（攻撃1回・杖の回復1回ぶん）。
-    /// 【重要】UseTool と違い、0になっても所持品からは絶対に取り除かない。
-    /// 耐久0の武器も「装備はできる・攻撃だけできない」が合意仕様で、補給で復活するため。
-    /// 戻り値は減らしたあとの残り耐久。耐久なしの武器・武装無しなら -1（＝減らさなかった）。
-    /// </summary>
-    public int ConsumeWeaponUse()
-    {
-        ItemSlot slot = EquippedSlot;
-        if (slot == null || !slot.HasDurability) return -1;
-
-        if (slot.UsesLeft > 0) slot.UsesLeft--;
-        return slot.UsesLeft;
     }
 
     /// <summary>
@@ -174,7 +124,7 @@ public class Unit : MonoBehaviour
 
     /// <summary>
     /// 所持品を1つ捨てる（「持ち物」の「捨てる」）。所持品リストから取り除く。
-    /// 捨てるのが装備中の武器なら武装解除も行う（持っていない武器は装備できないため）。
+    /// 捨てるのが装備中の武器なら非武装になる（持っていない武器は装備できないため）。
     /// ランタイム状態(Items)のみ変更で元データ(アセット)は汚さない＝その戦闘中だけ消え、
     /// 次の戦闘は Initialize で元の所持品に戻る。行動を消費するかは呼び出し側が扱う
     /// （合意：捨てるは行動を消費しない）。
@@ -187,7 +137,7 @@ public class Unit : MonoBehaviour
 
     /// <summary>
     /// 所持品を1つ相手へ渡す（「交換」・フェーズ26）。装備中の武器を渡したときは
-    /// 自動で武装解除する（「捨てる」と同じ扱い。持っていない武器は装備できないため）。
+    /// 自動で非武装になる（「捨てる」と同じ扱い。持っていない武器は装備できないため）。
     /// 【重要】ItemSlot（ランタイム状態）をそのまま移すので、道具の残り使用回数は引き継がれる。
     /// 受け側で new ItemSlot(...) を作ると UsesLeft が maxUses に戻る＝
     /// 「渡すと使用回数が満タンに戻る裏技」になるので、必ずこの関数を通すこと。
@@ -302,19 +252,19 @@ public class Unit : MonoBehaviour
         if (FlightBlockedTurns > 0) FlightBlockedTurns--;
     }
 
-    // ── マナゲージ・気勢ゲージ（フェーズ28）──
+    // ── メモリゲージ・気勢ゲージ（フェーズ28。2026-10-24 にマナゲージをメモリゲージへ改名）──
     // 技と速さが三すくみ補正でしか使われていなかったので、この2つに独自の役割を与えるための仕組み。
-    //  ・マナ … マップ開始時に「技」ぶん貯まっており、自陣営のフェイズ開始ごとに「魔力」に応じて増える。
-    //           1本（30）で必殺技（フェーズ29）。
-    //  ・気勢 … 敵を連続撃破すると、倒した側の全ユニットに「速さ÷2」ずつ配られる。
-    //           1本（100）で再行動（フェーズ30）。
+    //  ・メモリ … マップ開始時に「技」ぶん貯まっており、自陣営のフェイズ開始ごとに「魔力」に応じて増える。
+    //             1本（30）で必殺技（フェーズ29）。
+    //  ・気勢   … 敵を連続撃破すると、倒した側の全ユニットに「速さ÷2」ずつ配られる。
+    //             1本（100）で再行動（フェーズ30）。
     // 蓄積量・可否のルール本体は Combat/GaugeRules に集約してある（CombatRules と同じ方針）。
     //
     // 【警告】飛翔と同じ理由で、ここは「純粋な状態変更」に保つこと。
     // ログ・演出・行動消費は呼び出し側（TurnManager / BattleController）に置く。
 
-    /// <summary>マナゲージ（必殺技用）。Initialize で構築される。</summary>
-    public GaugeState Mana { get; private set; }
+    /// <summary>メモリゲージ（必殺技用）。Initialize で構築される。</summary>
+    public GaugeState Memory { get; private set; }
 
     /// <summary>気勢ゲージ（再行動用）。Initialize で構築される。</summary>
     public GaugeState Momentum { get; private set; }
@@ -322,16 +272,16 @@ public class Unit : MonoBehaviour
     /// <summary>このターンすでに再行動を使ったか（1ターン1回まで。フェーズ30）。</summary>
     public bool UsedRefreshThisTurn { get; private set; }
 
-    /// <summary>マナを増やす（フェイズ開始時の自然増加）。</summary>
-    public void AddMana(int amount)
+    /// <summary>メモリを増やす（フェイズ開始時の自然増加）。</summary>
+    public void AddMemory(int amount)
     {
-        Mana?.Add(amount);
+        Memory?.Add(amount);
     }
 
-    /// <summary>マナを1本使う。使えたら true。</summary>
-    public bool SpendMana()
+    /// <summary>メモリを1本使う。使えたら true。</summary>
+    public bool SpendMemoryStock()
     {
-        return Mana != null && Mana.SpendStock();
+        return Memory != null && Memory.SpendStock();
     }
 
     /// <summary>気勢を増やす（連続撃破の配分）。</summary>
@@ -410,15 +360,15 @@ public class Unit : MonoBehaviour
         FlightMove = data.EffectiveFlightMove;   // 飛翔中の移動力（未設定なら地上と同じ）
         CurrentHP = MaxHP;
 
-        // ゲージを用意する（フェーズ28）。マナの初期値は技の値そのもので、
+        // ゲージを用意する（フェーズ28）。メモリの初期値は技の値そのもので、
         // 30 に達した分は GaugeState 側で1本に変換される（技31 → 1本＋1）
-        Mana = new GaugeState(GaugeRules.MaxMana, GaugeRules.MaxManaStock);
+        Memory = new GaugeState(GaugeRules.MaxMemory, GaugeRules.MaxMemoryStock);
         Momentum = new GaugeState(GaugeRules.MaxMomentum, GaugeRules.MaxMomentumStock);
-        Mana.Add(GaugeRules.InitialMana(this));
+        Memory.Add(GaugeRules.InitialMemory(this));
         UsedRefreshThisTurn = false;
 
         // 所持品をコピーし（ランタイム状態）、一番上の武器を初期装備にする（フェーズ22）。
-        // 武器の耐久値も新品（上限）で入るので、マップが変わるたびに資源なしで全回復する（フェーズ31）
+        // 道具の残り回数も新品で入るので、マップが変わるたびに満タンに戻る
         Items.Clear();
         foreach (ItemData item in data.GetInitialItems())
             Items.Add(new ItemSlot(item));
@@ -638,7 +588,7 @@ public class Unit : MonoBehaviour
     private static readonly Color HpBarEnemyColor = new Color(1.00f, 0.30f, 0.30f);   // 赤
     private static readonly Color HpBarBackColor = new Color(0.10f, 0.10f, 0.10f, 0.85f);
 
-    // 各ユニットの HP ゲージとマナ・気勢のリングを描く（簡易・Canvas不要）。
+    // 各ユニットの HP ゲージとメモリ・気勢のリングを描く（簡易・Canvas不要）。
     // 「救」「飛x2」の印も以前はここで絵の上に出していたが、ユニット情報パネルの状態枠
     // （飛翔の残りターン・救出中の相手の名前）で確認できるので廃止した（2026-10-10 作者合意）。
     void OnGUI()
@@ -663,7 +613,7 @@ public class Unit : MonoBehaviour
         if (ratio > 0f)
             GaugeBars.FillRect(new Rect(bar.x, bar.y, Mathf.Max(1f, Mathf.Round(bar.width * ratio)), bar.height), fill);
 
-        // マナ（左下隅）・気勢（右下隅）のリング状ゲージとストック数（2026-10-11 作者仕様）。
+        // メモリ（左下隅）・気勢（右下隅）のリング状ゲージとストック数（2026-10-11 作者仕様）。
         // HP ゲージより後に描くので、重なってもリングが上になる
         GaugeRings.Draw(cell, inset, this);
     }

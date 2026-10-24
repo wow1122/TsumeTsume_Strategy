@@ -67,7 +67,7 @@ public class UnitDataEditor : Editor
             using (new EditorGUI.DisabledScope(true))
             {
                 EditorGUILayout.LabelField("初期装備（所持品由来）",
-                    initial != null ? initial.weaponName : "武装無し");
+                    initial != null ? initial.weaponName : "非武装");
             }
         }
         else
