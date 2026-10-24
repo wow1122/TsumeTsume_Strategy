@@ -47,8 +47,9 @@ public static class UnitInfoLines
 
     /// <summary>
     /// 持ち物リストの1行の左側（「鉄の剣（装備中）」「傷薬」）。
-    /// 「装備中」の目印は EquippedWeapon で判定する（Weapon 窓口は「いま使えない武器」で null を返すため）。
-    /// 残り回数は行の右端に別に出すので（ItemUsesText）、ここには付けない（2026-08-16 作者の修正案2）。
+    /// 「装備中」の目印は EquippedWeapon で判定する（Weapon 窓口は「この武器では戦えない」条件を足す場所なので、
+    ///  装備の事実を見せたいだけの表示はこちらを読む約束。Unit.Weapon の注記）。
+    /// 右端の数字は別に出すので（ItemRightText）、ここには付けない（2026-08-16 作者の修正案2）。
     /// 威力・射程・特効などの詳しい数字はホバー詳細（BuildItemDetail）に送る。
     /// </summary>
     public static string ItemLabel(ItemSlot slot, Unit owner)

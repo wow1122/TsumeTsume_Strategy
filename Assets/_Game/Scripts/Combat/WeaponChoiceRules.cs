@@ -61,8 +61,8 @@ public static class WeaponChoiceRules
 
         // 装備中の武器は必ず候補に入れる（敵はこれだけ。プレイヤーでも所持品に無い武器を
         // 装備しているデータの作り方に備えた保険。※ここは EquippedWeapon を読む
-        //   ＝ Weapon 窓口は「いま戦えない武器」で null を返す作りなので、そちらを読むと
-        //     候補から消えて「なぜ攻撃できないか」が一覧で見えなくなる）
+        //   ＝ Weapon 窓口は「この武器では戦えない」条件を足す場所なので〔フェーズ31の耐久はそこで null を返していた〕、
+        //     そちらを読むと、条件が付いたときに候補から消えて「なぜ攻撃できないか」が一覧で見えなくなる）
         WeaponData equipped = unit.EquippedWeapon;
         if (equipped != null && equipped.type != WeaponType.Staff && !weapons.Contains(equipped))
             weapons.Insert(0, equipped);
