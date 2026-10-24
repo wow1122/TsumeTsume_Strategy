@@ -31,6 +31,12 @@ public class GaugeState
     /// <summary>ストックが上限まで貯まっているか（これ以上ゲージが伸びない状態）。</summary>
     public bool IsFull => Stock >= MaxStock && Value >= Max;
 
+    /// <summary>
+    /// 貯まっている量の合計＝本数×満タン値＋いまの値（例：1本＋3 なら 33）。
+    /// 武器のメモリ消費は本数も崩してこの合計から払う（2026-10-24 作者合意）。
+    /// </summary>
+    public int Total => Stock * Max + Value;
+
     public GaugeState(int max, int maxStock)
     {
         Max = max;
@@ -62,6 +68,25 @@ public class GaugeState
     {
         if (Stock <= 0) return false;
         Stock--;
+        return true;
+    }
+
+    /// <summary>
+    /// 合計（Total）から amount を払う。本数も崩して払い、払った後は
+    /// 「本数＝残りの合計÷満タン値（上限まで）・値＝その余り」に並べ直す
+    /// （例：1本＋3＝33 から5を払うと 0本＋28。2026-10-24 作者合意）。
+    /// 足りなければ何もせず false。0以下の量は払うものが無いので true。
+    /// </summary>
+    public bool Spend(int amount)
+    {
+        if (amount <= 0) return true;
+
+        int total = Total;
+        if (total < amount) return false;
+
+        total -= amount;
+        Stock = System.Math.Min(MaxStock, total / Max);
+        Value = total - Stock * Max;
         return true;
     }
 }

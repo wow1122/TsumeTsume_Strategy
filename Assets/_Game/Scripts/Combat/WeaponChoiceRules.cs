@@ -6,11 +6,15 @@ using System.Collections.Generic;
 /// 「どの武器が候補になるか・その武器でどの相手を攻撃できるか」の判定をここへ集めている。
 ///
 /// ここにあるルール：
-///  ・候補になる武器 … プレイヤーは所持品の中の「杖でない・その兵種で装備できる」武器すべて。
+///  ・候補になる武器 … プレイヤーは所持品の中の「杖でない・その兵種で装備できる」武器すべて
+///    （メモリが足りない武器も候補に入れる＝一覧で「メモリ不足」と理由を見せるため。2026-10-24）。
 ///    敵は装備中の1本だけ（既存合意「敵AIは所持品を使わない」に沿う＝敵の行動範囲プレビューも従来どおり）
-///  ・その武器で攻撃できるか … 一時的にその武器を装備して、既存の CombatRules.CanAttack を呼ぶ
+///  ・その武器で攻撃できるか … いまのメモリで払えるか（WeaponMemoryRules）を見たうえで、
+///    一時的にその武器を装備して、既存の CombatRules.CanAttack を呼ぶ
 ///  ・その武器で狙える敵の一覧 … FindTargets（武器1本ぶん）と FindAllTargets（持っている武器の合算）
-///  ・使えない理由 … 一覧の灰色の行に添える短い注記（空中不可／届く敵なし）
+///  ・使えない理由 … 一覧の灰色の行に添える短い注記（メモリ不足／空中不可／届く敵なし）
+///  ・extraCost … 武器の消費とは別に一緒に払う量（必殺技の1本＝30）。必殺技では
+///    「1本＋武器の消費」を両方払える武器だけが選べる（2026-10-24 の既定）
 ///
 /// 【probe（お試し装備）方式について】
 /// 射程・三すくみ・特効・対空・挟撃・撃墜は、どれも Unit.Weapon 窓口を見て決まる。
@@ -50,7 +54,7 @@ public static class WeaponChoiceRules
             {
                 if (!(slot.Item is WeaponData weapon)) continue;
                 if (weapon.type == WeaponType.Staff) continue;                    // 杖は攻撃できない武器
-                if (!CanEquip(unit, weapon) && weapon != unit.EquippedWeapon) continue;
+                if (!WeaponMemoryRules.CanEquipByClass(unit, weapon) && weapon != unit.EquippedWeapon) continue;
                 weapons.Add(weapon);
             }
         }
@@ -64,15 +68,6 @@ public static class WeaponChoiceRules
             weapons.Insert(0, equipped);
 
         return weapons;
-    }
-
-    /// <summary>その兵種でこの武器を装備できるか（兵種データが無ければ従来どおり可）。</summary>
-    public static bool CanEquip(Unit unit, WeaponData weapon)
-    {
-        if (unit == null || weapon == null) return false;
-
-        ClassData cls = unit.Data.classData;
-        return cls == null || cls.CanUse(weapon.type);
     }
 
     /// <summary>
@@ -98,11 +93,13 @@ public static class WeaponChoiceRules
 
     /// <summary>
     /// unit がいまの位置から weapon で target を攻撃できるか。
-    /// 判定そのものは既存の CombatRules.CanAttack（射程＋飛翔の相性）に任せる。
+    /// まず「いまのメモリで払えるか」（extraCost は必殺技の1本など、一緒に払う量）を見て、
+    /// 判定の残りは既存の CombatRules.CanAttack（射程＋飛翔の相性）に任せる。
     /// </summary>
-    public static bool CanAttackWith(Unit unit, WeaponData weapon, Unit target, bool hasMoved)
+    public static bool CanAttackWith(Unit unit, WeaponData weapon, Unit target, bool hasMoved, int extraCost = 0)
     {
         if (unit == null || weapon == null || target == null) return false;
+        if (!WeaponMemoryRules.CanAfford(unit, weapon, extraCost)) return false;
 
         return WithWeapon(unit, weapon, () => CombatRules.CanAttack(unit, unit.GridPosition, target, hasMoved));
     }
@@ -111,11 +108,13 @@ public static class WeaponChoiceRules
     /// unit がいまの位置から weapon で攻撃できる敵の一覧（並びは名簿順）。
     /// 武器を1本だけ装備した状態で名簿を1周する（probe は一覧ぶんで1回だけ）。
     /// 武器選択で行にホバーしたときの赤ハイライトと、武器を決めた後の対象選択が これを使う。
+    /// メモリで払えない武器（extraCost 込み）なら空の一覧になる。
     /// </summary>
-    public static List<Unit> FindTargets(Unit unit, WeaponData weapon, bool hasMoved)
+    public static List<Unit> FindTargets(Unit unit, WeaponData weapon, bool hasMoved, int extraCost = 0)
     {
         var targets = new List<Unit>();
         if (unit == null || weapon == null) return targets;
+        if (!WeaponMemoryRules.CanAfford(unit, weapon, extraCost)) return targets;
 
         WithWeapon(unit, weapon, () =>
         {
@@ -130,8 +129,9 @@ public static class WeaponChoiceRules
     /// 持っている武器のどれかで攻撃できる敵の一覧（並びは名簿順・重複なし）。
     /// 「攻撃」コマンドを出すかどうか・被ダメ確認の相手・移動選択中の赤い攻撃範囲がこれを使う。
     /// 敵は候補が装備中の1本だけなので、従来（装備中の武器で判定）と同じ結果になる。
+    /// extraCost を渡すと「その量も一緒に払える武器」だけで数える（「必殺技」コマンドを出すかの判定）。
     /// </summary>
-    public static List<Unit> FindAllTargets(Unit unit, bool hasMoved)
+    public static List<Unit> FindAllTargets(Unit unit, bool hasMoved, int extraCost = 0)
     {
         var targets = new List<Unit>();
         if (unit == null) return targets;
@@ -141,7 +141,7 @@ public static class WeaponChoiceRules
         {
             foreach (WeaponData weapon in weapons)
             {
-                if (!CanAttackWith(unit, weapon, other, hasMoved)) continue;
+                if (!CanAttackWith(unit, weapon, other, hasMoved, extraCost)) continue;
                 targets.Add(other);
                 break; // 1本でも届けば対象（同じ相手を二重に入れない）
             }
@@ -152,13 +152,15 @@ public static class WeaponChoiceRules
     /// <summary>
     /// その武器がいま使えない理由（使えるなら null）。相手より先に武器を選ぶので、相手は引数に取らない
     /// ＝「その武器で狙える敵が1体でもいるか」で決める（2026-08-09 の作者仕様変更）。
-    /// 武器一覧の灰色の行に「（届く敵なし）」のように添える注記なので、
-    /// ボタン幅210px（全角12文字）に収まる短い言葉にしてある。
+    /// 武器一覧の灰色の行に「（届く敵なし）」のように添える注記なので、短い言葉にしてある
+    /// （一番長い「シャイニングボウ（メモリ不足）」が収まるよう、ボタン幅は ItemListMenu 側で決めている）。
+    /// extraCost は必殺技の1本など、武器の消費と一緒に払う量。
     /// </summary>
-    public static string GetUnusableReason(Unit unit, WeaponData weapon, bool hasMoved)
+    public static string GetUnusableReason(Unit unit, WeaponData weapon, bool hasMoved, int extraCost = 0)
     {
         if (unit == null || weapon == null) return "使えない";
-        if (FindTargets(unit, weapon, hasMoved).Count > 0) return null; // 狙える敵がいる＝押せる行
+        if (!WeaponMemoryRules.CanAfford(unit, weapon, extraCost)) return "メモリ不足";   // 2026-10-24
+        if (FindTargets(unit, weapon, hasMoved, extraCost).Count > 0) return null;      // 狙える敵がいる＝押せる行
 
         // 射程には敵がいるのに戦えないなら、原因は飛翔の相性（対空でない等）。
         // それ以外は単に届く敵がいない（射程外・敵が遠い）

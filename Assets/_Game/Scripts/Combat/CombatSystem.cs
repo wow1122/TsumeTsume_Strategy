@@ -17,7 +17,10 @@ using UnityEngine;
 ///    三すくみ有利が付く。攻撃側が移動したかは呼び出し側しか知らないので attackerHasMoved で受け取る。
 ///  ・撃墜（2026-08-05 作者仕様）：対空武器（弓・魔導書・光魔法）で飛翔中の相手を攻撃すると、
 ///    当たった相手はその場に着地する（落下ダメージなし）。判定は攻撃の前に控え、解除は最後に行う。
-///  ※フェーズ31の武器の耐久（戦闘後に武器を消耗させる処理）は 2026-10-24 に撤廃した。
+///  ・メモリの支払い（2026-10-24 作者仕様）：攻撃した側と挟撃の支援役が、使った武器のメモリ消費を払う
+///    （WeaponMemoryRules.PayForAttack。払えなくなったらその場で安い武器へ自動で持ち替える）。
+///    払うのは「この戦闘が全部終わってから」＝その一撃の中で武器が変わり、挟撃の成立判定や
+///    気勢の配分がずれることは無い（フェーズ31の武器の耐久の消耗と同じ位置。耐久は撤廃した）。
 /// </summary>
 public static class CombatSystem
 {
@@ -31,10 +34,12 @@ public static class CombatSystem
         if (attacker == null || defender == null) return;
 
         // 0) 撃墜になる組み合わせか（2026-08-05 作者仕様）を、攻撃を解決する「前」に控えておく。
-        //    戦闘の後で装備が変わると（Unit.Weapon が別の武器や null になると）、
-        //    後から見たときに「対空武器ではない」へ判定がひっくり返ってしまうため
-        //    （フェーズ31の耐久で入れた控え。耐久は撤廃したが、戦闘で装備が変わりうる限り同じ注意が要る）
+        //    最後にメモリを払うと自動の持ち替えで Unit.Weapon が別の武器（や null）に変わり、
+        //    後から見ると「対空武器ではない」へ判定がひっくり返ってしまうため（フェーズ31の耐久と同じ罠）
         bool shootsDown = CombatRules.ShootsDown(attacker, defender);
+
+        //    同じ理由で、メモリを払う「実際に使った武器」も先に控えておく（2026-10-24）
+        WeaponData attackerWeapon = attacker.Weapon;
 
         // 1) 攻撃側 → 防御側（内訳付きログ）
         //    必殺技（フェーズ29）のときは、この本体の一撃にだけ倍率がかかる（挟撃は等倍のまま）
@@ -55,8 +60,9 @@ public static class CombatSystem
             Debug.Log($"反撃: {defender.Data.unitName} → {attacker.Data.unitName} に {counter} ダメージ");
         }
 
-        // 3) 挟撃（はさみ撃ち）
-        TryPincer(attacker, defender, grid);
+        // 3) 挟撃（はさみ撃ち）。支援役も自分の武器のメモリを払うので、誰が・どの武器で撃ったかを受け取る
+        Unit pincerAlly = TryPincer(attacker, defender, grid);
+        WeaponData pincerWeapon = pincerAlly != null ? pincerAlly.Weapon : null;
 
         // 4) 気勢ゲージ（フェーズ28）：この戦闘で相手を倒したかを連鎖の判定へ渡す。
         //    挟撃のとどめもこの戦闘の結果に含める（誰がとどめを刺したかは問わない＝作者合意）。
@@ -64,7 +70,13 @@ public static class CombatSystem
         bool killed = defender == null || !defender.IsAlive;
         GaugeRules.NotifyBattleResult(attacker.Faction, killed);
 
-        // 5) 撃墜（2026-08-05 作者仕様）：対空武器で撃たれた飛翔中の相手はその場に着地する。
+        // 5) メモリの支払い（2026-10-24 作者仕様）：攻撃側 → 挟撃の支援役の順に、使った武器のぶんを払う。
+        //    払えなくなったらその場で安い武器へ自動で持ち替える（無ければ非武装）。
+        //    この戦闘の判定（ダメージ・挟撃・気勢）が全部終わってから払う＝その一撃の中で武器は変わらない
+        WeaponMemoryRules.PayForAttack(attacker, attackerWeapon);
+        WeaponMemoryRules.PayForAttack(pincerAlly, pincerWeapon);
+
+        // 6) 撃墜（2026-08-05 作者仕様）：対空武器で撃たれた飛翔中の相手はその場に着地する。
         //    解除するのはこの戦闘の判定が全部終わってから（途中で解除すると
         //    挟撃の成立判定や地形防御の有無が、この一撃の中で変わってしまう）。
         //    倒したときは何もしない（死亡が優先）
@@ -83,6 +95,7 @@ public static class CombatSystem
     /// ただし防御側の隣に「前衛武器の徒歩ユニット」の味方（ガード役）がいると無効化される。
     /// 成立条件・無効化条件の本体は CombatRules にある（AIの予測と共通）。
     /// 戻り値は実際に追撃した味方（挟撃が起きなかった・ガードで無効化されたときは null）。
+    /// 呼び出し側はこれを使って支援役にもメモリを払わせる（2026-10-24 作者仕様）。
     /// </summary>
     private static Unit TryPincer(Unit attacker, Unit defender, GridManager grid)
     {

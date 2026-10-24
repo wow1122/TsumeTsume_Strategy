@@ -19,7 +19,7 @@ public class Unit : MonoBehaviour
     public int Strength { get; private set; }     // 力（物理攻撃）
     public int Magic { get; private set; }        // 魔力（魔法攻撃）
     public int Skill { get; private set; }        // 技（三すくみ補正・Phase 9 から使用）
-    public int Speed { get; private set; }        // 速さ（三すくみ補正・Phase 9 から使用）
+    public int BaseSpeed { get; private set; }    // 速さ（能力値そのもの。実際に使う値は下の Speed）
     public int Defense { get; private set; }      // 守備（物理防御）
     public int Resistance { get; private set; }   // 魔防（魔法防御）
     public int GroundMove { get; private set; }   // 移動力（地上を歩くとき）
@@ -34,6 +34,21 @@ public class Unit : MonoBehaviour
     /// 飛翔中に呼ばれても地上の値が要るので、この窓口ではなく GroundMove を読むこと。
     /// </summary>
     public int Move => IsFlying ? FlightMove : GroundMove;
+
+    /// <summary>
+    /// 速さ（実際に使う値）。鋼の武器・中級魔導のように「装備すると速さが移動力ぶん下がる」武器を
+    /// 装備しているあいだは、移動力（地上）ぶん下がる。0未満にはならない（2026-10-24 作者仕様）。
+    /// 速さを読む全箇所（三すくみの補正・気勢の貯まり方・ユニット情報の表示）がこの窓口を見るので、ここ1か所で効く
+    /// （移動力の Move・武器の Weapon と同じ手口）。
+    /// </summary>
+    public int Speed => Mathf.Max(0, BaseSpeed - SpeedPenalty);
+
+    /// <summary>
+    /// 装備中の武器による速さの減少量（reducesSpeedByMove の武器なら地上の移動力、それ以外は0）。
+    /// 飛行兵でも地上の移動力で数える＝飛翔の切り替えで速さが上下しない（2026-10-24 の既定）。
+    /// </summary>
+    public int SpeedPenalty =>
+        EquippedWeapon != null && EquippedWeapon.reducesSpeedByMove ? GroundMove : 0;
 
     /// <summary>陣営（UnitData から取得）。</summary>
     public Faction Faction => Data.faction;
@@ -54,9 +69,13 @@ public class Unit : MonoBehaviour
     /// 「この武器では戦えない」という条件を足すときは、ここで null（＝非武装扱い）を返す1箇所で済む
     /// （攻撃不可・三すくみで不利・挟撃やガードの資格を失う・対空でなくなる・静止撃ち有利が消える、が自動で成立する。
     ///  フェーズ31の武器の耐久はこの手口で入れていた。耐久は 2026-10-24 に撤廃）。
+    /// 【2026-10-24】いまのメモリで払えない武器は null を返す（判定は WeaponMemoryRules.CanAfford）。
+    /// 平時は自動の持ち替えで必ず払える武器を持っているので、これが効くのは主に武器選択の probe
+    /// （お試し装備）のとき＝「払えない武器で狙える敵」が攻撃対象・攻撃範囲・戦闘予測に混ざらない。
+    /// 「挟撃の支援役が払えなければ挟撃は起きない」（作者仕様）もこれで成立する。
     /// 「何を装備しているか」を見せたいだけの表示は EquippedWeapon を読むこと。
     /// </summary>
-    public WeaponData Weapon => EquippedWeapon;
+    public WeaponData Weapon => WeaponMemoryRules.CanAfford(this, EquippedWeapon) ? EquippedWeapon : null;
 
     /// <summary>このターンに行動済みか（移動・攻撃を終えたか）。</summary>
     public bool HasActed { get; private set; }
@@ -278,10 +297,13 @@ public class Unit : MonoBehaviour
         Memory?.Add(amount);
     }
 
-    /// <summary>メモリを1本使う。使えたら true。</summary>
-    public bool SpendMemoryStock()
+    /// <summary>
+    /// メモリを amount だけ払う（本数も崩して払う。2026-10-24 作者合意）。払えたら true、足りなければ何もせず false。
+    /// 武器のメモリ消費（WeaponMemoryRules.PayForAttack）と必殺技の1本（BattleController）がここを通る。
+    /// </summary>
+    public bool SpendMemory(int amount)
     {
-        return Memory != null && Memory.SpendStock();
+        return Memory != null && Memory.Spend(amount);
     }
 
     /// <summary>気勢を増やす（連続撃破の配分）。</summary>
@@ -353,7 +375,7 @@ public class Unit : MonoBehaviour
         Strength = data.strength;
         Magic = data.magic;
         Skill = data.skill;
-        Speed = data.speed;
+        BaseSpeed = data.speed;
         Defense = data.defense;
         Resistance = data.resistance;
         GroundMove = data.EffectiveMove;         // 移動力は兵種データ優先（無ければ旧 move）
@@ -374,13 +396,18 @@ public class Unit : MonoBehaviour
             Items.Add(new ItemSlot(item));
         EquippedWeapon = data.GetInitialWeapon();
 
-        // 初期装備が兵種の武器リストに無ければ警告（実行時側の保険。警告のみで続行）
-        if (data.classData != null && EquippedWeapon != null && !data.classData.CanUse(EquippedWeapon.type))
+        // 初期装備を兵種が装備できなければ警告（実行時側の保険。警告のみで続行）。
+        // 武器側の兵種限定（長弓は弓聖だけ。2026-10-24）も同じ判定で見る
+        if (data.classData != null && EquippedWeapon != null && !WeaponMemoryRules.CanEquipByClass(this, EquippedWeapon))
         {
             Debug.LogWarning(
                 $"ユニット「{data.unitName}」: 兵種「{data.classData.className}」は " +
                 $"武器「{EquippedWeapon.weaponName}」を装備できません（警告のみ・動作は続行）。");
         }
+
+        // 開始時のメモリ（＝技）で初期装備を払えないなら、払える武器へ自動で持ち替える
+        // （2026-10-24 作者仕様。無ければ非武装）。メモリはこの上で用意済み
+        WeaponMemoryRules.EnsureEquippable(this);
 
         // 見た目：兵種データに絵があればそれを、無ければ陣営で色分けした四角（自軍=青 / 敵=赤）。
         spriteRenderer = gameObject.AddComponent<SpriteRenderer>();

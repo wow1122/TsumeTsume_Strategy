@@ -195,7 +195,7 @@ public static class UnitInfoView
         DrawStat(new Rect(innerX, innerY, half, lineHeight), "力", unit.Strength, hover, column, mouse, label);
         DrawStat(new Rect(innerX, innerY + lineHeight, half, lineHeight), "魔力", unit.Magic, hover, column, mouse, label);
         DrawStat(new Rect(innerX, innerY + lineHeight * 2f, half, lineHeight), "技", unit.Skill, hover, column, mouse, label);
-        DrawStat(new Rect(innerX, innerY + lineHeight * 3f, half, lineHeight), "速さ", unit.Speed, hover, column, mouse, label);
+        DrawStat(new Rect(innerX, innerY + lineHeight * 3f, half, lineHeight), "速さ", SpeedText(unit), hover, column, mouse, label);
 
         float rightX = innerX + half;
         DrawStat(new Rect(rightX, innerY, half, lineHeight), "守備", unit.Defense, hover, column, mouse, label);
@@ -293,7 +293,7 @@ public static class UnitInfoView
 
             // 右端の数字は、その実際の幅ぶんを空けて名前を描くので、
             // 長い名前（「・アーマーキラー（装備中）」など）でも数字と重ならない
-            string uses = UnitInfoLines.ItemUsesText(slot);
+            string uses = UnitInfoLines.ItemRightText(slot);
             float usesWidth = string.IsNullOrEmpty(uses)
                 ? 0f
                 : labelRight.CalcSize(new GUIContent(uses)).x + ItemUsesGap;
@@ -311,10 +311,27 @@ public static class UnitInfoView
     private static void DrawStat(Rect row, string name, int value, HoverState hover, Rect column,
                                  Vector2 mouse, GUIStyle label)
     {
+        DrawStat(row, name, value.ToString(), hover, column, mouse, label);
+    }
+
+    /// <summary>能力値1つ（名前＋数字の文字）。数字に注記を添えたいとき（速さの「2(-3)」）はこちら。</summary>
+    private static void DrawStat(Rect row, string name, string valueText, HoverState hover, Rect column,
+                                 Vector2 mouse, GUIStyle label)
+    {
         GUI.Label(new Rect(row.x, row.y, StatNameWidth, row.height), name, label);
         GUI.Label(new Rect(row.x + StatNameWidth, row.y, row.width - StatNameWidth, row.height),
-                  value.ToString(), label);
+                  valueText, label);
         hover.Track(row, column, mouse);
+    }
+
+    /// <summary>
+    /// 速さの表示。鋼の武器などで下がっているときは「2(-3)」のように下がった量を添える（2026-10-24）。
+    /// 数字の欄は約59px（全角4文字ぶん）あり、半角5文字の「2(-3)」は余裕で入る。
+    /// </summary>
+    private static string SpeedText(Unit unit)
+    {
+        int drop = unit.BaseSpeed - unit.Speed;
+        return drop > 0 ? $"{unit.Speed}(-{drop})" : unit.Speed.ToString();
     }
 
     /// <summary>

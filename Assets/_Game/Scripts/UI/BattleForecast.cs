@@ -181,6 +181,9 @@ public class BattleForecast : MonoBehaviour
         string weaponLine = BuildWeaponLine(attacker.EquippedWeapon);
         if (weaponLine != null) lines.Add(weaponLine);
 
+        // 払うメモリの見込みと、攻撃した後の自動の持ち替え（2026-10-24）
+        lines.AddRange(BuildMemoryLines(attacker.EquippedWeapon));
+
         // 計算式は出さず、攻撃力を与ダメージの下・防御力を三すくみの下に出す（2026-08-17 作者指示）
         lines.Add($"与ダメージ　{main.Total}");
         lines.Add($"攻撃力　{main.AttackTotal}");
@@ -191,6 +194,10 @@ public class BattleForecast : MonoBehaviour
         string standNote = BuildStandingShotNote(attacker, attackerHasMoved);
         if (standNote != null) lines.Add(standNote);
 
+        // 三すくみ逆転が起きているなら、その理由も1行で添える（2026-10-24）
+        string reversalNote = BuildReversalNote(attacker, defender);
+        if (reversalNote != null) lines.Add(reversalNote);
+
         // 有効・特効が乗っているなら、その理由も1行で添える（2026-08-06）
         string effectiveNote = BuildEffectiveNote(attacker, defender, incoming: false);
         if (effectiveNote != null) lines.Add(effectiveNote);
@@ -199,8 +206,11 @@ public class BattleForecast : MonoBehaviour
             lines.Add($"必殺技 ×{GaugeRules.CriticalMultiplier:0.#}倍（メモリを1本使う。挟撃は等倍）");
         if (ally != null)
         {
+            // 支援役も自分の武器のメモリを払う（2026-10-24 作者仕様）ので、払う量があれば添える
+            int allyCost = WeaponMemoryRules.CostOf(ally.Weapon);
+            string allyNote = allyCost > 0 ? $"・メモリ{allyCost}" : "";
             lines.Add(guard == null
-                ? $"挟撃 +{pincerDamage}（{ally.Data.unitName}）"
+                ? $"挟撃 +{pincerDamage}（{ally.Data.unitName}{allyNote}）"
                 : $"挟撃はガードで無効（{guard.Data.unitName}）");
         }
         lines.Add(hpAfter == 0
@@ -218,14 +228,50 @@ public class BattleForecast : MonoBehaviour
     }
 
     /// <summary>
-    /// 「武器: 斬馬刀」の行（2026-08-09。当時は残り耐久も添えていたが、耐久は 2026-10-24 に撤廃）。
+    /// 「武器: 斬馬刀（消費4）」の行（2026-08-09。当時は残り耐久を添えていたが、耐久は 2026-10-24 に撤廃し、
+    /// 代わりにメモリ消費を添える。消費0の武器は武器名だけ）。
     /// 非武装（＝武器を持たないユニット）のときは null を返して行を足さない。
     /// </summary>
     private string BuildWeaponLine(WeaponData weapon)
     {
         if (weapon == null) return null;
 
-        return $"武器: {weapon.DisplayName}";
+        int cost = WeaponMemoryRules.CostOf(weapon);
+        return cost > 0 ? $"武器: {weapon.DisplayName}（消費{cost}）" : $"武器: {weapon.DisplayName}";
+    }
+
+    /// <summary>
+    /// 攻撃で払うメモリの見込み（2026-10-24 作者仕様）。「メモリ 14 → 9」の1行と、払った後に
+    /// その武器を払えなくなるなら「※攻撃後は鉄の剣に持ち替え」／「※攻撃後は非武装になる」の1行。
+    /// 必殺技なら1本（30）も一緒に数える。払う量が0（消費0の武器の通常攻撃）なら何も足さない。
+    /// 数字は実戦と同じ WeaponMemoryRules の計算（副作用の無い見積り）なので、実際の結果と一致する。
+    /// </summary>
+    private List<string> BuildMemoryLines(WeaponData weapon)
+    {
+        var result = new List<string>();
+        if (weapon == null) return result;
+
+        int extra = critical ? GaugeRules.CriticalMemoryCost : 0;
+        if (extra + WeaponMemoryRules.CostOf(weapon) <= 0) return result;
+
+        int before = WeaponMemoryRules.MemoryOf(attacker);
+        int after = WeaponMemoryRules.PredictAfterAttack(attacker, weapon, extra,
+                                                         out bool switches, out WeaponData next);
+        result.Add($"メモリ　{before} → {after}");
+        if (switches)
+            result.Add(next != null ? $"※攻撃後は{next.DisplayName}に持ち替え" : "※攻撃後は非武装になる");
+        return result;
+    }
+
+    /// <summary>
+    /// 三すくみ逆転の注記（「※三すくみ逆転（斬馬刀）」。起きていなければ null。2026-10-24 作者仕様）。
+    /// 逆転を起こしている武器は自分の側とは限らない（相手の斬馬刀で自分の槍の有利が消える、もある）ので、
+    /// どちらの武器かを括弧で添える。判定は戦闘本体と同じ CombatRules.FindTriangleReverser。
+    /// </summary>
+    private static string BuildReversalNote(Unit attacker, Unit defender)
+    {
+        WeaponData reverser = CombatRules.FindTriangleReverser(attacker, defender);
+        return reverser != null ? $"※三すくみ逆転（{reverser.DisplayName}）" : null;
     }
 
     /// <summary>current の敵から「攻撃を受けたら」の予測を組み立てて描く（被ダメモード）。</summary>
@@ -265,6 +311,9 @@ public class BattleForecast : MonoBehaviour
         lines.Add($"攻撃力　{main.AttackTotal}");
         lines.Add(BuildTriangleLine(main.triangle, "相手が有利", "相手が不利"));
         lines.Add($"防御力　{main.DefenseTotal}");
+
+        string incomingReversalNote = BuildReversalNote(enemy, incomingDefender);
+        if (incomingReversalNote != null) lines.Add(incomingReversalNote);
 
         string incomingEffectiveNote = BuildEffectiveNote(enemy, incomingDefender, incoming: true);
         if (incomingEffectiveNote != null) lines.Add(incomingEffectiveNote);

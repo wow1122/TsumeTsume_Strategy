@@ -59,6 +59,12 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  右クリック/ESC で1段ずつ戻る（対象選択 → 武器選択 → 行動メニュー）。
 ///  必殺技のメモリが減るのは敵をクリックした瞬間なので、それまでに戻ればメモリは減らない。
 ///
+/// 2026-10-24 の追加（メモリゲージで払う武器）：
+///  強い武器は攻撃のたびにメモリゲージを払う（判定は WeaponMemoryRules）。武器の一覧と持ち物では、
+///  いまのメモリで払えない武器が「（メモリ不足）」の灰色行になる。必殺技は「1本＋その武器の消費」を
+///  両方払える武器だけ選べる。払ってその武器を払えなくなったら、攻撃の後に安い武器へ自動で持ち替わる
+///  （CombatSystem の中で起きる。無ければ非武装）。
+///
 /// 2026-08-15 の追加（コマンド一覧）：
 ///  ユニットがいないマスをクリックすると「状況／設定／終了」のコマンド一覧が出る【SystemMenu】。
 ///  「状況」はターン数・フェイズ・クリア条件・両軍の数のパネル、「設定」は将来の調整項目の枠
@@ -97,6 +103,12 @@ public class BattleController : MonoBehaviour
     private Dictionary<Vector2Int, int> moveCosts = new Dictionary<Vector2Int, int>(); // 各マスまでの移動コスト（再移動の予算計算用）
     private List<Unit> attackTargets;           // 攻撃できる敵（メニュー＝全武器の合算／対象選択＝選んだ武器ぶん）
     private bool criticalPending;               // 武器・対象選択中の攻撃が必殺技かどうか（フェーズ29）
+
+    /// <summary>
+    /// 武器の消費とは別に一緒に払うメモリ（必殺技なら1本＝30、通常の攻撃なら0）。
+    /// 武器選択の「メモリ不足」と、その武器で狙える敵の判定に渡す（2026-10-24）。
+    /// </summary>
+    private int CriticalExtraCost => criticalPending ? GaugeRules.CriticalMemoryCost : 0;
     private List<WeaponData> weaponChoices;     // 武器選択の候補（並びは所持品の順・2026-08-09）
     private int hoveredWeaponRow = -1;          // 武器一覧でいま赤表示を出している行（-1＝まだ無し）
     private readonly Rect[] avoidPanelBuffer = new Rect[2]; // 武器選択のUIが避けるパネルの矩形（使い回し）
@@ -684,8 +696,11 @@ public class BattleController : MonoBehaviour
 
             // 必殺技（フェーズ29）: メモリが1本以上貯まっているときだけ「攻撃」の直後に出る。
             // 武器・対象の選び方は攻撃とまったく同じで、ダメージだけ倍率ぶん増える。
-            // メモリは敵をクリックした瞬間に1本減る（それまでに戻れば減らない）
-            if (GaugeRules.CanUseCritical(unit))
+            // メモリは敵をクリックした瞬間に1本減る（それまでに戻れば減らない）。
+            // 2026-10-24 から武器のメモリ消費も一緒に払うので、「1本＋その武器の消費」を
+            // 払える武器で届く敵がいるときだけ出す（鉄の武器なら1本ちょうどで撃てる）
+            if (GaugeRules.CanUseCritical(unit)
+                && FindAttackTargets(unit, context.hasMoved, GaugeRules.CriticalMemoryCost).Count > 0)
                 commands.Add(new ActionMenu.Entry("必殺技", () => EnterWeaponSelect(true)));
 
             // 被ダメ確認（2026-07-18 作者要望）: 攻撃できる相手から「逆に攻撃されたら」の
@@ -816,6 +831,7 @@ public class BattleController : MonoBehaviour
     /// （なぜ選べないかがその場で分かるように。持ち物リストの「装備不可」と同じ考え方）。
     /// 押せるかどうかは相手ではなく武器ごとに決まる＝その武器で狙える敵が1体でもいるか
     /// （相手より先に武器を選ぶため。判定は WeaponChoiceRules.GetUnusableReason）。
+    /// メモリで払えない武器は「（メモリ不足）」の灰色行（必殺技なら「1本＋武器の消費」で判定。2026-10-24）。
     /// ホバー詳細（detailLines）は付けない＝行にマウスを重ねたときは盤面の赤表示で見せるため。
     /// </summary>
     private List<ItemListMenu.Entry> BuildWeaponEntries()
@@ -825,7 +841,7 @@ public class BattleController : MonoBehaviour
 
         foreach (WeaponData weapon in weaponChoices)
         {
-            string reason = WeaponChoiceRules.GetUnusableReason(unit, weapon, context.hasMoved);
+            string reason = WeaponChoiceRules.GetUnusableReason(unit, weapon, context.hasMoved, CriticalExtraCost);
 
             string label = weapon.DisplayName;
             if (reason != null) label += $"（{reason}）";
@@ -872,7 +888,7 @@ public class BattleController : MonoBehaviour
             Debug.Log($"{unit.Data.unitName} は {weapon.DisplayName} に持ち替えた（行動は消費しない）");
         }
 
-        attackTargets = WeaponChoiceRules.FindTargets(unit, weapon, context.hasMoved);
+        attackTargets = WeaponChoiceRules.FindTargets(unit, weapon, context.hasMoved, CriticalExtraCost);
         ShowAttackTargets(attackTargets);
 
         // 敵にマウスを重ねると、画面右上に敵ユニット情報・右下に戦闘予測が出る
@@ -889,7 +905,7 @@ public class BattleController : MonoBehaviour
     /// <summary>その武器で狙える敵を赤く塗る（武器が null なら選択マークだけ＝狙える敵ゼロ）。</summary>
     private void ShowWeaponTargets(WeaponData weapon)
     {
-        ShowAttackTargets(WeaponChoiceRules.FindTargets(context.unit, weapon, context.hasMoved));
+        ShowAttackTargets(WeaponChoiceRules.FindTargets(context.unit, weapon, context.hasMoved, CriticalExtraCost));
     }
 
     /// <summary>選択マークを付け直し、渡した敵を赤（攻撃対象）で塗る。武器選択・対象選択で共用。</summary>
@@ -921,7 +937,10 @@ public class BattleController : MonoBehaviour
     /// 攻撃を実行する（敵をクリックした瞬間。2026-08-09 から「実行」の確認は無い）。
     /// 武器はもう装備してあるので、威力・三すくみ・特効・対空（撃墜）・挟撃の資格は
     /// すべて選んだ武器で決まる。装備は攻撃の後もそのまま＝敵フェイズもこの武器で受ける（FE準拠）。
+    /// ただし武器のメモリ消費を払ってその武器を払えなくなったら、CombatSystem の中で
+    /// 安い武器へ自動で持ち替わる（2026-10-24 作者仕様。無ければ非武装）。
     /// 必殺技のメモリはここで1本使う（敵をクリックする前に戻ればメモリは減らない）。
+    /// 武器の消費は攻撃の後に CombatSystem が払う（武器を選んだ時点で「1本＋消費」を払えることは確認済み）。
     /// </summary>
     private void ExecuteAttack(Unit target)
     {
@@ -929,8 +948,9 @@ public class BattleController : MonoBehaviour
 
         if (criticalPending)
         {
-            unit.SpendMemoryStock();
-            Debug.Log($"{unit.Data.unitName} がメモリを1本使った（残り {unit.Memory.Stock} 本）");
+            int before = WeaponMemoryRules.MemoryOf(unit);
+            unit.SpendMemory(GaugeRules.CriticalMemoryCost);
+            Debug.Log($"{unit.Data.unitName} がメモリを1本使った（{before} → {WeaponMemoryRules.MemoryOf(unit)}）");
         }
 
         // 移動したかも渡す（後衛武器はマスから動かずに撃つと三すくみ有利。2026-07-30 作者仕様）
@@ -1334,7 +1354,8 @@ public class BattleController : MonoBehaviour
         if (slot.Item is WeaponData weapon)
         {
             if (weapon == owner.EquippedWeapon) label += "（装備中）";
-            else if (!CanEquip(owner, weapon)) label += "（装備不可）";
+            else if (!WeaponMemoryRules.CanEquipByClass(owner, weapon)) label += "（装備不可）";
+            else if (!WeaponMemoryRules.CanAfford(owner, weapon)) label += "（メモリ不足）";   // 2026-10-24
         }
         else if (slot.Item is ToolData)
         {
@@ -1362,14 +1383,14 @@ public class BattleController : MonoBehaviour
                 // 装備中 → 外す（＝非武装になる。従来の最下行のコマンドと同じ機能）
                 entries.Add(new ItemListMenu.Entry("外す", true, UnequipWeapon));
             }
-            else if (CanEquip(unit, weapon))
+            else if (WeaponMemoryRules.CanEquipNow(unit, weapon))
             {
                 WeaponData w = weapon;
                 entries.Add(new ItemListMenu.Entry("装備", true, () => EquipWeapon(w)));
             }
             else
             {
-                // 装備不可 → 「装備」は灰色（押せない）。捨てるはできる（作者合意）
+                // 装備不可・メモリ不足 → 「装備」は灰色（押せない）。捨てるはできる（作者合意）
                 entries.Add(new ItemListMenu.Entry("装備", false, null));
             }
         }
@@ -1388,15 +1409,6 @@ public class BattleController : MonoBehaviour
         itemMenu.SetActions(entries, unit.Items.IndexOf(slot));
         state = State.ItemActionSelect;
         Debug.Log($"「{slot.Item.DisplayName}」の行動を選択。右クリック/ESCで持ち物へ戻る。");
-    }
-
-    /// <summary>
-    /// その兵種でこの武器を装備できるか（判定は WeaponChoiceRules に集約。
-    /// 持ち物・交換の表示と、攻撃時の武器選択が同じ判定を見るようにするため）。
-    /// </summary>
-    private bool CanEquip(Unit unit, WeaponData weapon)
-    {
-        return WeaponChoiceRules.CanEquip(unit, weapon);
     }
 
     /// <summary>武器を装備して行動メニューへ戻る（行動は消費しない）。攻撃対象が新装備で再計算される。</summary>
@@ -1766,9 +1778,10 @@ public class BattleController : MonoBehaviour
     /// （どの武器で殴るかは、この後の武器選択で決める）。
     /// 中身は WeaponChoiceRules に集約してある（射程・飛翔の相性の判定は CombatRules 共通＝敵AIと同じルール）。
     /// 敵は候補が装備中の1本だけなので、敵の行動範囲プレビューの見た目は従来と変わらない。
+    /// メモリで払えない武器は数えない。extraCost は必殺技の1本など、一緒に払う量（2026-10-24）。
     /// </summary>
-    private List<Unit> FindAttackTargets(Unit unit, bool hasMoved)
+    private List<Unit> FindAttackTargets(Unit unit, bool hasMoved, int extraCost = 0)
     {
-        return WeaponChoiceRules.FindAllTargets(unit, hasMoved);
+        return WeaponChoiceRules.FindAllTargets(unit, hasMoved, extraCost);
     }
 }

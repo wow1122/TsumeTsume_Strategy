@@ -84,6 +84,8 @@ public struct DamageBreakdown
 /// ダメージ計算（決定論的・命中判定なし）。
 ///   物理武器（剣・斧・槍・弓）： ダメージ = max(0, 力   + 武器威力×特効倍率 + 三すくみ補正 − (守備 + 地形防御))
 ///   魔法武器　　　　　　　　　： ダメージ = max(0, 魔力 + 武器威力×特効倍率 + 三すくみ補正 − (魔防 + 地形防御))
+///   ※魔法武器＝魔導書・光魔法と、魔法武器の印が付いた剣・槍・斧・弓（ソニックソードなど。2026-10-24）。
+///     判定は WeaponData.DealsMagicDamage
 /// 地形防御は物理・魔法の両方に効く（作者合意）。
 /// 特効倍率（有効2倍・特効3倍）は EffectiveRules が相手の特攻タグから決める（2026-08-06）。
 /// 武器威力にだけ掛かる点に注意（必殺技の倍率はダメージ全体に掛かる別の段）。
@@ -107,8 +109,9 @@ public static class DamageCalculator
         // 防御側がいるマスの地形防御ボーナス
         TileData defTile = grid.GetTile(defender.GridPosition);
 
-        // 魔法系武器（魔導書・光魔法）なら 魔力 vs 魔防、それ以外は 力 vs 守備
-        bool isMagic = weapon != null && weapon.type.IsMagicDamage();
+        // 魔法系武器（魔導書・光魔法）と魔法武器（ソニックソードなど。2026-10-24）なら 魔力 vs 魔防、
+        // それ以外は 力 vs 守備
+        bool isMagic = weapon != null && weapon.DealsMagicDamage;
 
         return new DamageBreakdown
         {

@@ -50,6 +50,12 @@ public static class GaugeRules
     /// <summary>必殺技のダメージ倍率（フェーズ29で使う）。</summary>
     public const float CriticalMultiplier = 2.0f;
 
+    /// <summary>
+    /// 必殺技で払うメモリ（1本＝満タン1回ぶん）。武器のメモリ消費はこれとは別に払う
+    /// （＝必殺技は「1本＋その武器の消費」。2026-10-24 の既定）。
+    /// </summary>
+    public const int CriticalMemoryCost = MaxMemory;
+
     // ── 気勢ゲージ（速さ → 再行動）──
 
     /// <summary>気勢ゲージ1本ぶんの満タン値。</summary>
@@ -175,10 +181,14 @@ public static class GaugeRules
 
     // ===== コマンドの可否 =====
 
-    /// <summary>必殺技（メモリ1本消費）が使える状態か（フェーズ29）。</summary>
+    /// <summary>
+    /// 必殺技（メモリ1本消費）を撃てるだけのメモリがあるか（フェーズ29）。
+    /// 2026-10-24 から武器の消費も一緒に払うので、どの武器で撃てるかは
+    /// WeaponChoiceRules に extraCost（＝CriticalMemoryCost）を渡して別に確かめる。
+    /// </summary>
     public static bool CanUseCritical(Unit unit)
     {
-        return unit != null && unit.IsAlive && unit.Memory != null && unit.Memory.HasStock;
+        return unit != null && unit.IsAlive && unit.Memory != null && unit.Memory.Total >= CriticalMemoryCost;
     }
 
     /// <summary>

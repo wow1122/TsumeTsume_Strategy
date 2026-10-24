@@ -117,11 +117,21 @@ public class UnitData : ScriptableObject
         }
 
         WeaponData initial = GetInitialWeapon();
-        if (classData != null && initial != null && !classData.CanUse(initial.type))
+        if (classData != null && initial != null
+            && (!classData.CanUse(initial.type) || !initial.AllowsClass(classData)))
         {
             Debug.LogWarning(
                 $"ユニット「{unitName}」({name}): 兵種「{classData.className}」は " +
                 $"武器「{initial.weaponName}」({initial.type}) を装備できません（警告のみ・動作は続行）。");
+        }
+
+        // 開始時のメモリは「技」の値（GaugeRules.InitialMemory）。初期装備の消費がそれを上回ると、
+        // マップ開始時に払える武器へ自動で持ち替わる（無ければ非武装）ので、気づけるように知らせる（2026-10-24）
+        if (initial != null && initial.memoryCost > Mathf.Max(0, skill))
+        {
+            Debug.LogWarning(
+                $"ユニット「{unitName}」({name}): 初期装備「{initial.weaponName}」のメモリ消費 {initial.memoryCost} が " +
+                $"開始時のメモリ（技 {skill}）を上回ります。マップ開始時は払える武器に自動で持ち替わります（無ければ非武装）。");
         }
     }
 }

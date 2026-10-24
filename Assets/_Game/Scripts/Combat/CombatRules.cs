@@ -161,7 +161,8 @@ public static class CombatRules
     ///     移動してから攻撃した                                 → 補正なし（0）
     ///   攻撃側が前衛武器：
     ///     防御側が後衛武器・非武装 → 「非武装扱い」で攻撃側有利
-    ///     防御側も前衛武器           → 相性表（剣＞斧＞槍＞剣）で判定
+    ///     防御側も前衛武器         → 相性表（剣＞斧＞槍＞剣）で判定。
+    ///                                三すくみ逆転（FindTriangleReverser）が起きる組み合わせなら有利と不利を入れ替える
     ///   有利なら +max(2, 攻撃側の技 − 防御側の速さ)
     ///   不利なら −max(2, 防御側の速さ − 攻撃側の技)
     ///
@@ -184,14 +185,70 @@ public static class CombatRules
 
         WeaponData defWeapon = defender.Weapon;
         bool defenderUnarmed = defWeapon == null || defWeapon.category == WeaponCategory.Ranged;
+        if (defenderUnarmed) return AdvantageBonus(attacker, defender);  // 攻撃側が有利（非武装扱い）
 
-        if (defenderUnarmed || Beats(atkWeapon.type, defWeapon.type))
-            return AdvantageBonus(attacker, defender);              // 攻撃側が有利
+        bool attackerWins = Beats(atkWeapon.type, defWeapon.type);
+        bool defenderWins = Beats(defWeapon.type, atkWeapon.type);
 
-        if (Beats(defWeapon.type, atkWeapon.type))
-            return -Mathf.Max(2, defender.Speed - attacker.Skill);  // 攻撃側が不利
+        // 三すくみ逆転（2026-10-24 作者仕様）：斬馬刀で槍の騎馬兵と戦うときなどは、有利と不利が入れ替わる。
+        // 攻める側・攻められる側のどちらの武器が逆転を持っていても同じ（「戦闘時」に効く）
+        if (FindTriangleReverser(attacker, defender) != null)
+        {
+            bool swap = attackerWins;
+            attackerWins = defenderWins;
+            defenderWins = swap;
+        }
 
+        if (attackerWins) return AdvantageBonus(attacker, defender);                  // 攻撃側が有利
+        if (defenderWins) return -Mathf.Max(2, defender.Speed - attacker.Skill);      // 攻撃側が不利
         return 0; // 同種など、相性なし
+    }
+
+    /// <summary>
+    /// 三すくみ逆転を起こしている武器（起きていなければ null。2026-10-24 作者仕様）。
+    /// 逆転を持つ武器（WeaponData.triangleReversalTags）の使い手が、そのタグに当てはまる相手と戦っていて、
+    /// かつ相手の武器が三すくみでその武器に勝つ（剣にとっての槍）とき、その武器を返す。
+    /// 例：アーマーキラー（重装）× 槍の重装兵／斬馬刀（騎馬）× 槍の騎馬兵／風薙ぎの剣（天馬）× 槍の天馬兵。
+    /// 攻める側・攻められる側のどちらの武器でもよい（どちらにしても有利と不利が入れ替わる）。
+    /// 前衛武器どうしの戦闘でだけ意味を持つ（後衛・非武装の相手には相性表を使わないため）。
+    /// 戦闘本体（GetTriangleModifier）と戦闘予測の注記が同じこの関数を見る。
+    /// </summary>
+    public static WeaponData FindTriangleReverser(Unit attacker, Unit defender)
+    {
+        WeaponData a = attacker != null ? attacker.Weapon : null;
+        WeaponData d = defender != null ? defender.Weapon : null;
+        if (a == null || d == null) return null;
+        if (a.category != WeaponCategory.Melee || d.category != WeaponCategory.Melee) return null;
+
+        if (ReversesAgainst(a, defender, d)) return a;
+        if (ReversesAgainst(d, attacker, a)) return d;
+        return null;
+    }
+
+    /// <summary>
+    /// weapon が opponent（opponentWeapon を装備）との戦闘で三すくみを逆転させるか。
+    /// 相手がタグに当てはまり、かつ相手の武器が三すくみでこの武器に勝つときだけ（＝不利を有利に変える逆転）。
+    /// </summary>
+    private static bool ReversesAgainst(WeaponData weapon, Unit opponent, WeaponData opponentWeapon)
+    {
+        if (weapon.triangleReversalTags == ClassTag.None) return false;
+        if (!ClassTagExtensions.Matches(opponent.Tags, weapon.triangleReversalTags)) return false;
+        return Beats(opponentWeapon.type, weapon.type);
+    }
+
+    /// <summary>
+    /// 三すくみで type に勝つ武器種（剣→槍・斧→剣・槍→斧）。相性表に無い武器種は null。
+    /// 表示用（「三すくみ逆転: 槍の騎馬」の「槍」）。判定そのものは Beats が持つ。
+    /// </summary>
+    public static WeaponType? TriangleCounterOf(WeaponType type)
+    {
+        switch (type)
+        {
+            case WeaponType.Sword: return WeaponType.Lance;
+            case WeaponType.Axe: return WeaponType.Sword;
+            case WeaponType.Lance: return WeaponType.Axe;
+            default: return null;
+        }
     }
 
     /// <summary>

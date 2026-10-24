@@ -61,15 +61,23 @@ public static class UnitInfoLines
     }
 
     /// <summary>
-    /// 持ち物リストの1行の右端に出す残り回数「残り／最大」（道具の使用回数。2026-08-16 作者指示。
-    /// 当時は武器の耐久もここに出していたが、耐久は 2026-10-24 に撤廃）。
-    /// 回数の概念を持たない品は空文字（何も描かない）。
-    /// 品の名前と並べると行の幅（212px）ぎりぎりになるので、描く側は実際の幅を測って
+    /// 持ち物リストの1行の右端に出す数字（2026-08-16 作者指示で武器の耐久値を出していた場所。耐久は 2026-10-24 に撤廃）。
+    ///  ・道具 … 残り回数「残り／最大」
+    ///  ・武器 … メモリ消費「消費5」（2026-10-24。消費0の武器＝鉄の武器・杖は何も出さない）
+    /// 何も出さない品は空文字。品の名前と並べると行の幅（222px）ぎりぎりになるので、描く側は実際の幅を測って
     /// 名前のほうを丸めること（UnitInfoView.FitText）。
     /// </summary>
-    public static string ItemUsesText(ItemSlot slot)
+    public static string ItemRightText(ItemSlot slot)
     {
-        if (slot == null || !slot.HasUses) return "";
+        if (slot == null) return "";
+
+        if (slot.Item is WeaponData weapon)
+        {
+            int cost = WeaponMemoryRules.CostOf(weapon);
+            return cost > 0 ? $"消費{cost}" : "";
+        }
+
+        if (!slot.HasUses) return "";
         return $"{slot.UsesLeft}／{slot.MaxUses}";
     }
 
@@ -150,7 +158,8 @@ public static class UnitInfoLines
 
     /// <summary>
     /// 持ち物・装備武器にマウスを重ねたときの詳細（1行目＝名前を見出しに、以降＝性能）。
-    /// 武器は種類・前衛/後衛・威力・射程・有効特効、道具は効果・使用回数。
+    /// 武器は種類・前衛/後衛・威力・射程・メモリ消費・有効特効・装備付与（魔法・速さ−移動力・三すくみ逆転・
+    /// 兵種限定。2026-10-24）、道具は効果・使用回数。
     /// 持ち物メニュー（右下220px）とユニット情報パネル（列の幅・約全角15文字）の**両方**が使うので、
     /// 1行は短くする。長い説明を足したくなったら行を分けること（2026-08-03 に実際に見切れた）。
     /// </summary>
@@ -167,9 +176,22 @@ public static class UnitInfoLines
             lines.Add($"種類: {w.type.DisplayName()}　{cat}");
             lines.Add($"威力 {w.might}　射程 {range}");
 
+            // 1回攻撃するたびに払うメモリ（2026-10-24）。消費0の武器も「0」と出す＝いつでも使えることが分かる
+            lines.Add($"メモリ消費: {WeaponMemoryRules.CostOf(w)}");
+
             // 有効・特効の行（2026-08-06）。「特効: 竜」「有効: 重装」のように短い行で足す
             // ＝どの武器に持ち替えるかを、この詳細だけで判断できるようにする
             lines.AddRange(EffectiveRules.BuildWeaponEffectLines(w));
+
+            // 装備付与（2026-10-24）。持ち物メニューの詳細（全角14文字）に入る短い行にしてある
+            if (w.magicDamage) lines.Add("魔法（魔力−魔防）");
+            if (w.reducesSpeedByMove) lines.Add("装備中: 速さ−移動力");
+
+            string reversal = BuildReversalLine(w);
+            if (reversal != null) lines.Add(reversal);
+
+            string exclusive = BuildExclusiveLine(w);
+            if (exclusive != null) lines.Add(exclusive);
         }
         else if (slot.Item is ToolData t)
         {
@@ -179,6 +201,35 @@ public static class UnitInfoLines
         }
         return lines;
     }
+
+    /// <summary>
+    /// 三すくみ逆転の行（「三すくみ逆転: 槍の騎馬」。逆転を持たない武器は null）。
+    /// 「槍の」は、三すくみでこの武器に勝つ武器種（剣なら槍）＝逆転が起きる相手の武器。
+    /// </summary>
+    private static string BuildReversalLine(WeaponData weapon)
+    {
+        if (weapon.triangleReversalTags == ClassTag.None) return null;
+
+        WeaponType? counter = CombatRules.TriangleCounterOf(weapon.type);
+        string holder = counter != null ? $"{counter.Value.DisplayName()}の" : "";
+        return $"三すくみ逆転: {holder}{weapon.triangleReversalTags.DisplayName()}";
+    }
+
+    /// <summary>兵種限定の行（「弓聖専用」。限定の無い武器は null）。長くなりすぎたら「…」で切る。</summary>
+    private static string BuildExclusiveLine(WeaponData weapon)
+    {
+        if (weapon.exclusiveClasses == null || weapon.exclusiveClasses.Count == 0) return null;
+
+        var names = new List<string>();
+        foreach (ClassData cls in weapon.exclusiveClasses)
+            if (cls != null) names.Add(cls.className);
+        if (names.Count == 0) return null;
+
+        return Truncate(string.Join("・", names) + "専用", DetailWidthLimit);
+    }
+
+    /// <summary>ホバー詳細の1行に入れてよい長さ（半角の個数。持ち物メニューの詳細＝全角14文字に合わせる）。</summary>
+    private const int DetailWidthLimit = 28;
 
     /// <summary>
     /// 状態の行に入れてよい長さ（半角の個数。全角は2つぶんと数える）。

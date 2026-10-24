@@ -25,6 +25,24 @@ public class WeaponDataEditor : Editor
         Draw("minRange", "最小射程");
         Draw("maxRange", "最大射程");
 
+        // 2026-10-24（メモリゲージで払う武器）
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("メモリ", EditorStyles.boldLabel);
+        Draw("memoryCost", "メモリ消費（攻撃1回ごと）");
+
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("装備付与", EditorStyles.boldLabel);
+        Draw("magicDamage", "魔法武器（魔力で攻撃・魔防で受ける）");
+        Draw("reducesSpeedByMove", "装備中は速さ−移動力");
+        Draw("triangleReversalTags", "三すくみ逆転の相手");
+        Draw("exclusiveClasses", "装備できる兵種の限定（空＝限定なし）");
+
+        // 2026-08-06 に足した欄。この画面に出していなかったので、ここで一緒に並べる
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("特効", EditorStyles.boldLabel);
+        Draw("effectiveTags", "この武器だけの特効（威力3倍）");
+        Draw("grantsAntiAir", "対空（前衛は特効の相手にだけ）");
+
         serializedObject.ApplyModifiedProperties();
     }
 
