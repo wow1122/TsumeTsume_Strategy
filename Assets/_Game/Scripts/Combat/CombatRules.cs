@@ -284,6 +284,18 @@ public static class CombatRules
             || (x == WeaponType.Lance && y == WeaponType.Sword);
     }
 
+    // ===== 剣の撃破後1マス再移動（2026-10-24 作者仕様） =====
+
+    /// <summary>
+    /// この武器で攻撃した戦闘で相手を倒したら、1マスだけ再移動できるか（剣の特性）。
+    /// 剣（ソニックソードのような魔法の剣も含む）だけが持つ。挟撃のとどめ・必殺技で倒しても同じ。
+    /// 行動の流れ（BattleController）と戦闘予測の注記が同じこの判定を見る。敵AIは当面使わない。
+    /// </summary>
+    public static bool GrantsStepAfterKill(WeaponData weapon)
+    {
+        return weapon != null && weapon.type == WeaponType.Sword;
+    }
+
     // ===== 挟撃（はさみ撃ち） =====
 
     /// <summary>挟撃に参加できるユニットか（前衛武器の装備者のみ）。</summary>

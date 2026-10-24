@@ -113,6 +113,26 @@ public static class MovementCalculator
     }
 
     /// <summary>
+    /// unit が上下左右の隣へ「1マスだけ」動けるマスの一覧（2026-10-24。剣で敵を倒した後の1マス再移動）。
+    /// 地形のコストは問わない（森でも山でも1マスは1マス＝移動力の残りも見ない）。
+    /// 入れない地形・敵に塞がれたマス・誰かがいるマス（止まれない）は除く。
+    /// 入れるかどうかは通常の移動と同じ CanTraverse で判定する（騎乗の山・飛翔中の壁なども同じ扱い）。
+    /// </summary>
+    public static List<Vector2Int> GetStepCells(GridManager grid, Unit unit)
+    {
+        var cells = new List<Vector2Int>();
+        foreach (Vector2Int dir in Directions)
+        {
+            Vector2Int next = unit.GridPosition + dir;
+            TileData tile = grid.GetTile(next);
+            if (tile == null || tile.Occupant != null) continue;       // 盤外・誰かがいるマスには止まれない
+            if (!CanTraverse(unit, tile, ignoreEnemyUnits: false)) continue;
+            cells.Add(next);
+        }
+        return cells;
+    }
+
+    /// <summary>
     /// 「目標マス群までの最短移動コストの地図」を作る（Phase 16・敵AIの接近用）。
     /// 戻り値は マス → そのマスから一番近い目標マスまでの移動コスト。届かないマスは載らない。
     /// 移動力の制限は掛けない（何ターンもかけて歩く前提の「道のり」を測る）。

@@ -64,6 +64,8 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  いまのメモリで払えない武器が「（メモリ不足）」の灰色行になる。必殺技は「1本＋その武器の消費」を
 ///  両方払える武器だけ選べる。払ってその武器を払えなくなったら、攻撃の後に安い武器へ自動で持ち替わる
 ///  （CombatSystem の中で起きる。無ければ非武装）。
+///  剣で攻撃した戦闘で相手を倒したら、行動を終える前に上下左右の1マスだけ動ける【CantoSelect】。
+///  青いマスをクリックで移動、自分のマス・右クリック・ESC でその場に留まる。どちらでも行動は終わる。
 ///
 /// 2026-08-15 の追加（コマンド一覧）：
 ///  ユニットがいないマスをクリックすると「状況／設定／終了」のコマンド一覧が出る【SystemMenu】。
@@ -87,7 +89,7 @@ public class BattleController : MonoBehaviour
     public TurnManager turnManager;
 
     // 操作の状態（ハイライト色の設定は GridManager に集約した）
-    private enum State { Idle, MoveSelect, CommandMenu, WeaponSelect, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect, ExchangeSelect, RefreshMenu, SystemMenu, SystemInfo }
+    private enum State { Idle, MoveSelect, CommandMenu, WeaponSelect, TargetSelect, UnitTargetSelect, TileSelect, CargoSelect, DamageCheck, ItemSelect, ItemActionSelect, ExchangeSelect, RefreshMenu, SystemMenu, SystemInfo, CantoSelect }
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
@@ -119,6 +121,7 @@ public class BattleController : MonoBehaviour
     private Unit selectedCargo;                 // 貨物リストで選んだ（または自動選択された）貨物
     private Unit exchangePartner;               // 「交換」で選んだ相手（交換画面のあいだ保持・フェーズ26）
     private Unit refreshCandidate;              // 「再行動」のメニューを出している行動済みの味方（フェーズ30）
+    private HashSet<Vector2Int> cantoCells;     // 剣で敵を倒した後に1マスだけ動けるマス（2026-10-24）
     private int exchangedCount;                 // この交換で動かした品の数（0なら「無かったこと」にする）
     private ActionMenu menu;                    // 行動メニュー（IMGUI）
     private CargoListMenu cargoMenu;            // 貨物リストメニュー（IMGUI・Phase 12）
@@ -323,6 +326,13 @@ public class BattleController : MonoBehaviour
                     else ExecuteProxyDrop(cell);
                 }
                 break;
+
+            case State.CantoSelect:
+                // 剣で敵を倒した後の1マス再移動（2026-10-24）。青いマスなら動いて終わり、
+                // 自分のマスならその場に留まって終わり。それ以外のクリックは無視（誤クリックで留まらないように）
+                if (cantoCells.Contains(cell)) FinishCanto(cell);
+                else if (cell == context.unit.GridPosition) FinishCanto(null);
+                break;
         }
     }
 
@@ -355,6 +365,11 @@ public class BattleController : MonoBehaviour
                 // 状況・設定のパネル → コマンド一覧へ1段戻る（見ていただけなので何も変わらない）
                 systemInfo.Hide();
                 OpenSystemMenu(systemMenuCell);
+                break;
+
+            case State.CantoSelect:
+                // 剣の撃破後の1マス再移動 → 動かずにその場で行動を終える（攻撃は済んでいるので戻る先は無い）
+                FinishCanto(null);
                 break;
 
             case State.UnitTargetSelect:
@@ -953,8 +968,68 @@ public class BattleController : MonoBehaviour
             Debug.Log($"{unit.Data.unitName} がメモリを1本使った（{before} → {WeaponMemoryRules.MemoryOf(unit)}）");
         }
 
+        // 攻撃に使う武器を控えておく。攻撃の後にメモリを払って別の武器へ持ち替わることがあるが、
+        // 剣の「撃破後1マス再移動」は実際に攻撃した武器で決める（2026-10-24）
+        WeaponData usedWeapon = unit.Weapon;
+
         // 移動したかも渡す（後衛武器はマスから動かずに撃つと三すくみ有利。2026-07-30 作者仕様）
         CombatSystem.ResolveAttack(unit, target, grid, criticalPending, context.hasMoved);
+
+        // 倒れた相手は Destroy 済みで「== null」が true になるので、そこも撃破として扱う（挟撃のとどめも含む）
+        bool killed = target == null || !target.IsAlive;
+        if (killed && CombatRules.GrantsStepAfterKill(usedWeapon) && TryEnterCanto()) return;
+
+        FinishAction();
+    }
+
+    // ===== 剣の撃破後1マス再移動（2026-10-24 作者仕様）=====
+    // 剣で攻撃した戦闘で相手を倒したら、上下左右の1マスだけ動ける（地形のコストは問わない）。
+    // 動かずに終えてもよい（自分のマスをクリック・右クリック・ESC）。攻撃はもう済んでいるので取り消しは無い。
+    // 敵AIは使わない（救出系などと同じく、当面プレイヤーだけ）。
+
+    /// <summary>
+    /// 剣で倒した後の1マス再移動に入る。動けるマスを青で出してクリックを待つ。
+    /// 勝利が決まった（敵が残っていない）とき・動けるマスが無いときは入らずに false を返す
+    /// （呼び出し側がそのまま行動を終える）。
+    /// </summary>
+    private bool TryEnterCanto()
+    {
+        Unit unit = context.unit;
+        if (UnitRegistry.CountAlive(Faction.Enemy) == 0) return false; // 勝利が決まっている＝動く意味が無い
+
+        List<Vector2Int> cells = MovementCalculator.GetStepCells(grid, unit);
+        if (cells.Count == 0) return false;
+
+        // 攻撃した位置を取り消し不能点にしておく（万一 CancelAll が走っても、攻撃前の位置へ巻き戻らないように）
+        context.Commit(keepHasMoved: true);
+
+        cantoCells = new HashSet<Vector2Int>(cells);
+        forecast.Hide();
+        unitInfo.Hide();
+        grid.ResetAllHighlights();
+        grid.AddHighlight(unit.GridPosition, HighlightKind.Selection);
+        foreach (Vector2Int c in cells)
+            grid.AddHighlight(c, HighlightKind.MoveRange);
+
+        state = State.CantoSelect;
+        Debug.Log($"{unit.Data.unitName} は剣で敵を倒したので、1マスだけ再移動できる" +
+                  "（青いマスをクリック。自分のマス・右クリック・ESC でその場に留まる）");
+        return true;
+    }
+
+    /// <summary>1マス再移動を終える。cell が null ならその場に留まる。どちらでも行動はここで終わる。</summary>
+    private void FinishCanto(Vector2Int? cell)
+    {
+        Unit unit = context.unit;
+        if (cell != null)
+        {
+            unit.MoveTo(grid, cell.Value);
+            Debug.Log($"{unit.Data.unitName} は {cell.Value} へ1マス再移動した");
+        }
+        else
+        {
+            Debug.Log($"{unit.Data.unitName} はその場に留まった");
+        }
         FinishAction();
     }
 
@@ -1672,6 +1747,7 @@ public class BattleController : MonoBehaviour
         exchangePartner = null;
         exchangedCount = 0;
         refreshCandidate = null;
+        cantoCells = null;
         state = State.Idle;
     }
 

@@ -217,6 +217,10 @@ public class BattleForecast : MonoBehaviour
             ? $"相手HP {defender.CurrentHP} → 0　撃破！"
             : $"相手HP {defender.CurrentHP} → {hpAfter}");
 
+        // 剣で倒し切るなら、攻撃の後に1マス再移動できる（2026-10-24 作者仕様。判定は CombatRules と共通）
+        if (hpAfter == 0 && CombatRules.GrantsStepAfterKill(attacker.Weapon))
+            lines.Add("※剣で倒すと、攻撃の後に1マス再移動できる");
+
         // 撃墜（2026-08-05 作者仕様）。倒し切るなら着地は起きないので、生き残るときだけ出す
         if (hpAfter > 0)
         {
