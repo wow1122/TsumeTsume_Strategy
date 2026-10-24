@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
   m_Name: Unit_Test_Dragon_Tough
   m_EditorClassIdentifier: Assembly-CSharp::UnitData
-  unitName: "頑丈な竜騎兵"
+  unitName: "頑丈なドラゴンナイト"
   faction: 1
   unitClass: 2
   classData: {fileID: 11400000, guid: d0344cca85e446e3b1d3086361a96e71, type: 2}

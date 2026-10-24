@@ -12,11 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df93f8370db448debb8878ead1266772, type: 3}
   m_Name: Class_FalconKnight
   m_EditorClassIdentifier: Assembly-CSharp::ClassData
-  className: "聖天馬兵"
+  className: "聖白翼兵"
   tier: 1
   moveType: 2
-  move: 4
-  flightMove: 6
+  move: 6
   usableWeapons:
   - 1
   - 5

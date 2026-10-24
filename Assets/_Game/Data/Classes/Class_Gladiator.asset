@@ -16,7 +16,6 @@ MonoBehaviour:
   tier: 0
   moveType: 0
   move: 3
-  flightMove: 0
   usableWeapons: 00000000
   tags: 0
   promotions:

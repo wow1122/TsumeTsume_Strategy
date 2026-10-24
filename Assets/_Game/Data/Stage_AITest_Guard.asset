@@ -15,23 +15,18 @@ MonoBehaviour:
   placements:
   - unitData: {fileID: 11400000, guid: 4f3df088901a403483eb0d25fffb32dc, type: 2}
     cell: {x: 4, y: 0}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: 4f3df088901a403483eb0d25fffb32dc, type: 2}
     cell: {x: 6, y: 0}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
     cell: {x: 2, y: 6}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
     cell: {x: 2, y: 4}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: bf5aaf7cfc4c460c95aa2fd7fa36e0e6, type: 2}
     cell: {x: 5, y: 6}
-    initialFlightTurns: 0
     aiProfile: 1
   terrainTable: {fileID: 11400000, guid: ab7adf8c0ffdbd8e6818d76fdffbee85, type: 2}
   terrainRows:

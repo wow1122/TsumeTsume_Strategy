@@ -10,18 +10,15 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: df93f8370db448debb8878ead1266772, type: 3}
-  m_Name: Class_PegasusKnight
+  m_Name: Class_DragonKnight
   m_EditorClassIdentifier: Assembly-CSharp::ClassData
-  className: "天馬兵"
+  className: "ドラゴンナイト"
   tier: 0
   moveType: 2
-  move: 4
-  flightMove: 6
+  move: 6
   usableWeapons:
-  - 1
-  tags: 2
+  - 2
+  tags: 16
   promotions:
-  - {fileID: 11400000, guid: f310372a3fa14590a634f0c1db5db979, type: 2}
-  - {fileID: 11400000, guid: c1e00cacd2664075a0deff3e52edc881, type: 2}
-  playerMapSprite: {fileID: -212665303019024798, guid: 62562b5b81291c847b7f1cce44c78e95, type: 3}
-  enemyMapSprite: {fileID: -4610615385653485217, guid: 559f33a487c05ce45ad7e3600d38244f, type: 3}
+  - {fileID: 11400000, guid: 666695778ce449228db4038c41c7ef56, type: 2}
+  - {fileID: 11400000, guid: 8d3863efa95f4bbebd63c3d107a6b1e6, type: 2}

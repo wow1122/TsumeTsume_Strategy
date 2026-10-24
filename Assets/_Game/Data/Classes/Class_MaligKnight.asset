@@ -15,8 +15,7 @@ MonoBehaviour:
   className: "魔竜騎兵"
   tier: 1
   moveType: 2
-  move: 3
-  flightMove: 7
+  move: 6
   usableWeapons:
   - 2
   - 4

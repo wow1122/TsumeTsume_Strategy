@@ -15,59 +15,45 @@ MonoBehaviour:
   placements:
   - unitData: {fileID: 11400000, guid: f5dc42c69e1c21a4ba8005563f8b60f3, type: 2}
     cell: {x: 0, y: 1}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: 02b7a653b6c54ac5a00a942a40e6b240, type: 2}
     cell: {x: 1, y: 1}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: a7cae2a61e224b0a96c8210e95dbf695, type: 2}
     cell: {x: 3, y: 1}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: 8247691a5dfa46b3abcc4522efd149a8, type: 2}
     cell: {x: 5, y: 1}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: 0ab9e65ec8ef4d5bacbc7d208ca03791, type: 2}
     cell: {x: 7, y: 1}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: 391970494cef46cb8f56b50cb656988b, type: 2}
     cell: {x: 8, y: 1}
-    initialFlightTurns: 0
     aiProfile: 0
   - unitData: {fileID: 11400000, guid: 2d2074640067438f87453d75e2f17a92, type: 2}
     cell: {x: 4, y: 5}
-    initialFlightTurns: 0
     aiProfile: 1
   - unitData: {fileID: 11400000, guid: 4bbd6b6e8cff3aa47bedff6e4dd42b44, type: 2}
     cell: {x: 2, y: 6}
-    initialFlightTurns: 0
     aiProfile: 1
   - unitData: {fileID: 11400000, guid: 2b82046b9b4b4da2851d9841425195f6, type: 2}
     cell: {x: 6, y: 7}
-    initialFlightTurns: 0
     aiProfile: 1
   - unitData: {fileID: 11400000, guid: 43975648fa4e412f9e830d26585ae6ab, type: 2}
-    cell: {x: 1, y: 8}
-    initialFlightTurns: 0
+    cell: {x: 1, y: 9}
     aiProfile: 1
   - unitData: {fileID: 11400000, guid: b7f9c2cb11f04b2aa6d8e46556e06c77, type: 2}
-    cell: {x: 3, y: 8}
-    initialFlightTurns: 99
+    cell: {x: 3, y: 9}
     aiProfile: 1
   - unitData: {fileID: 11400000, guid: 6fd6a4f4dc2e4a689fca726a08685521, type: 2}
     cell: {x: 5, y: 9}
-    initialFlightTurns: 99
     aiProfile: 1
   - unitData: {fileID: 11400000, guid: 6fd6a4f4dc2e4a689fca726a08685521, type: 2}
     cell: {x: 7, y: 9}
-    initialFlightTurns: 0
     aiProfile: 1
   - unitData: {fileID: 11400000, guid: b36af662151b4214a2d0156cfdddcbea, type: 2}
     cell: {x: 9, y: 9}
-    initialFlightTurns: 0
     aiProfile: 1
   terrainTable: {fileID: 11400000, guid: ab7adf8c0ffdbd8e6818d76fdffbee85, type: 2}
   terrainRows:
