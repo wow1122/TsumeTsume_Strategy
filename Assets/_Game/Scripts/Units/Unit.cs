@@ -185,7 +185,8 @@ public class Unit : MonoBehaviour
     // 技と速さが三すくみ補正でしか使われていなかったので、この2つに独自の役割を与えるための仕組み。
     //  ・メモリ … マップ開始時に「技」ぶん貯まっており、自陣営のフェイズ開始ごとに「魔力」に応じて増える。
     //             1本（30）で必殺技（フェーズ29）。
-    //  ・覚醒   … 敵を連続撃破すると、倒した側の全ユニットに「速さ÷2」ずつ配られる。
+    //  ・覚醒   … 敵を倒すたびに、倒した側の全ユニットに配られる。量は速さと連続撃破の数で決まる
+    //             （1体目＝速さの半分・2連続目＝速さ・3連続目以降＝速さの2倍。2026-10-25）。
     //             1本（100）で再行動（フェーズ30）。
     // 蓄積量・可否のルール本体は Combat/GaugeRules に集約してある（CombatRules と同じ方針）。
     //
@@ -217,7 +218,7 @@ public class Unit : MonoBehaviour
         return Memory != null && Memory.Spend(amount);
     }
 
-    /// <summary>覚醒を増やす（連続撃破の配分）。</summary>
+    /// <summary>覚醒を増やす（撃破の配分）。</summary>
     public void AddMomentum(int amount)
     {
         Momentum?.Add(amount);

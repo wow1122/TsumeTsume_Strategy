@@ -12,10 +12,12 @@ using UnityEngine;
 ///  ・メモリゲージ … マップ開始時に「技」の値ぶん貯まった状態で始まり、
 ///                   自陣営のフェイズ開始ごとに「魔力」に応じた量だけ増える。
 ///                   1本（30）貯めると必殺技（フェーズ29）が撃てる。
-///  ・覚醒ゲージ … 戦闘で敵を連続して倒すと、倒した側の全ユニットに「速さ÷2」ずつ配られる。
-///                 1本（100）貯めると再行動（フェーズ30）ができる。
+///  ・覚醒ゲージ … 戦闘で敵を倒すたびに、倒した側の全ユニットに「速さ」に応じた量が配られる。
+///                 量は連続撃破の数で3段階（1体目＝速さの半分・2連続目＝速さ・3連続目以降＝速さの2倍。
+///                 2026-10-25 作者仕様）。1本（100）貯めると再行動（フェーズ30）ができる。
 ///
-/// 【注意】現行ユニットの能力値は 技1〜6・速さ1〜7・魔力0〜6 で、下の閾値には届かない。
+/// 【注意】現行ユニットの能力値は 技1〜6・速さ1〜7・魔力0〜6 で、下の閾値にはほぼ届かない
+/// （覚醒は 2026-10-25 の変更後でも、速さ7が敵を何体も続けて倒してやっと1本になる程度）。
 /// 動作確認は専用の検証ステージ（Stage_GaugeTest）で行う。Stage_01 で遊べるようにするには、
 /// ユニットの能力値を上げるか、下の定数を下げる調整が別途必要（作者と相談のうえで行う）。
 /// </summary>
@@ -64,11 +66,17 @@ public static class GaugeRules
     /// <summary>保持できる覚醒の本数。</summary>
     public const int MaxMomentumStock = 2;
 
-    /// <summary>何連続の撃破から覚醒が貯まり始めるか（作者合意：2連続目から）。</summary>
-    public const int ChainRequired = 2;
+    // 撃破1回で増える覚醒＝速さ × 下の割合（％。切り捨て）。連続撃破の数で3段階（2026-10-25 作者仕様）。
+    // 連鎖が切れたら（倒せなかった戦闘・フェイズの切り替わり）、次の撃破は1体目の割合に戻る。
 
-    /// <summary>1回ぶんの覚醒上昇量＝速さ ÷ この値（切り捨て）。</summary>
-    public const int MomentumDivisor = 2;
+    /// <summary>1体目（連続していない撃破）の覚醒の上昇率（％）。50＝速さの半分。</summary>
+    public const int MomentumPercentFirst = 50;
+
+    /// <summary>2連続目の撃破の覚醒の上昇率（％）。100＝速さと同じ。</summary>
+    public const int MomentumPercentChain2 = 100;
+
+    /// <summary>3連続目以降の撃破の覚醒の上昇率（％）。200＝速さの2倍。これより先は増えない。</summary>
+    public const int MomentumPercentChain3Plus = 200;
 
     // ===== 連続撃破（連鎖）の管理 =====
     // 「戦闘1回（CombatSystem.ResolveAttack 1回。挟撃のとどめを含む）で相手を倒したか」を
@@ -97,10 +105,9 @@ public static class GaugeRules
 
     /// <summary>
     /// 戦闘1回の結果を受け取って連鎖を進める／切る（CombatSystem.ResolveAttack が呼ぶ）。
-    /// 連続撃破が ChainRequired 以上になったら、撃破1回につき1回分の覚醒を
-    /// 倒した側の全生存ユニットに配る。1体目の撃破では配らない。
-    /// 結果として貯まるのは「連続で撃破した数 − 1」回分になる
-    /// （2体連続なら1回分、3体なら2回分…。作者仕様 2026-07-26）。
+    /// 撃破するたびに、倒した側の全生存ユニットへ覚醒を配る。量は連続撃破の数で決まる
+    /// （1体目＝速さの半分・2連続目＝速さ・3連続目以降＝速さの2倍。作者仕様 2026-10-25）。
+    /// ※旧版（2026-07-26）は「2連続目から、撃破1回につき速さ÷2」で、1体目では配らなかった。
     /// </summary>
     public static void NotifyBattleResult(Faction attackerFaction, bool killed)
     {
@@ -115,25 +122,27 @@ public static class GaugeRules
         chainFaction = attackerFaction;
         chainCount++;
 
-        if (chainCount < ChainRequired) return;
+        AwardMomentum(attackerFaction, chainCount);
 
-        AwardMomentum(attackerFaction);
-
-        Debug.Log($"覚醒！ {chainCount}連続撃破 → {FactionLabel(attackerFaction)}の全ユニットの覚醒ゲージが" +
-                  $"「速さ÷{MomentumDivisor}」ずつ貯まった（この連鎖で累計 {chainCount - 1} 回分）");
+        // 割合が100の倍数でないとき（1体目の50％など）だけ「切り捨て」と書き添える
+        int percent = MomentumPercent(chainCount);
+        string chainLabel = chainCount >= 2 ? $"{chainCount}連続撃破" : "撃破";
+        string rounding = percent % 100 != 0 ? "（切り捨て）" : "";
+        Debug.Log($"覚醒！ {chainLabel} → {FactionLabel(attackerFaction)}の全ユニットの覚醒ゲージが" +
+                  $"「速さの{percent}％{rounding}」ずつ貯まった");
     }
 
     /// <summary>
-    /// 指定陣営の全生存ユニットに覚醒を1回分配る。
+    /// 指定陣営の全生存ユニットに、chain 連続目の撃破1回分の覚醒を配る（量は各自の速さで決まる）。
     /// 格納中（救出されて盤上にいない）の貨物にも入るので、UnitRegistry.All を使う
     /// （GetUnits は盤上のユニットしか返さない）。
     /// </summary>
-    private static void AwardMomentum(Faction faction)
+    private static void AwardMomentum(Faction faction, int chain)
     {
         foreach (Unit u in UnitRegistry.All)
         {
             if (u == null || !u.IsAlive || u.Faction != faction) continue;
-            u.AddMomentum(MomentumGain(u));
+            u.AddMomentum(MomentumGain(u, chain));
         }
     }
 
@@ -172,11 +181,22 @@ public static class GaugeRules
 
     // ===== 覚醒 =====
 
-    /// <summary>1回ぶんの覚醒上昇量＝速さ ÷ MomentumDivisor（切り捨て）。</summary>
-    public static int MomentumGain(Unit unit)
+    /// <summary>
+    /// chain 連続目の撃破1回で増える覚醒＝速さ × MomentumPercent(chain) ÷ 100（切り捨て）。
+    /// 例：速さ7なら 1体目3・2連続目7・3連続目以降14。
+    /// </summary>
+    public static int MomentumGain(Unit unit, int chain)
     {
         if (unit == null) return 0;
-        return Mathf.Max(0, unit.Speed / MomentumDivisor);
+        return Mathf.Max(0, unit.Speed * MomentumPercent(chain) / 100);
+    }
+
+    /// <summary>chain 連続目の撃破の上昇率（％）。1以下は1体目扱い、3以上はすべて3連続目と同じ。</summary>
+    private static int MomentumPercent(int chain)
+    {
+        if (chain >= 3) return MomentumPercentChain3Plus;
+        if (chain == 2) return MomentumPercentChain2;
+        return MomentumPercentFirst;
     }
 
     // ===== コマンドの可否 =====
