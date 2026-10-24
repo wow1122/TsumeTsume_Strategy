@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df93f8370db448debb8878ead1266772, type: 3}
   m_Name: Class_DragonKnight
   m_EditorClassIdentifier: Assembly-CSharp::ClassData
-  className: "ドラゴンナイト"
+  className: "竜騎兵"
   tier: 0
   moveType: 2
   move: 6
