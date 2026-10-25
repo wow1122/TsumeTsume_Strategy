@@ -171,6 +171,9 @@ Combat/WeaponChoiceRules に集約し、**probe（お試し装備）方式**で�
 形にした（1体目＝速さの半分〔切り捨て〕・2連続目＝速さ・3連続目以降＝速さの2倍）。配る相手（倒した側の全ユニット・
 各自の速さ）と、敵も同じルールで貯まる点は変えていない（作者確認）。コミットは feat 7aaf438 → docs（この CLAUDE.md）。
 作者 Play 確認済み（Stage_GaugeTest）。
+同日さらに、作者の指示で**再行動の「1ユニットにつき1ターン1回」の制限を外した**（覚醒が残っていれば同じターンに
+何回でも再行動できる。制限が必要になったら作者から相談する）。コミットは feat 93c3579 → docs（この CLAUDE.md）。
+作者 Play 確認済み（Stage_GaugeTest）。
 
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
@@ -885,10 +888,13 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   行動を終えた後の入口にしてある（行動前に宣言する方式は作者が不採用）
 - 実行すると覚醒1本を消費して行動済みを解除し、通常の移動選択に戻る。**ActionContext が
   作り直されるので移動力は全回復**し、救出済みなどの制限も引きずらない＝まっさらな1行動
-- **1ユニットにつき1ターン1回まで**（Unit.UsedRefreshThisTurn。自陣営フェイズ開始でリセット）
+- **回数の制限なし**: 覚醒が残っていれば、同じユニットが同じターンに何回でも再行動できる
+  （2026-10-25 作者指示。制限が必要になったら作者から相談する）。
+  ※旧版は「1ユニットにつき1ターン1回まで」（Unit.UsedRefreshThisTurn。自陣営フェイズ開始でリセット）。
+  この印は 2026-10-25 にコードから消した
 - **味方全員が行動済みでも、再行動できる味方がいる間はターンが自動終了しない**
   （TurnManager.NotifyUnitActed）。最後の1体が行動した瞬間に終わると使う隙が無くなるため。
-  終えるときは「ターン終了」ボタンを押す
+  終えるときは「ターン終了」ボタンを押す。再行動した後もまだ覚醒が残っていれば、同じく自動では終わらない
 
 **共通**
 
@@ -1356,7 +1362,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   ※2026-08-15に左上のターン数表示と「ターン終了」ボタンを撤去〔コマンド一覧へ移設〕・
   クリア条件の文言BuildClearConditionLines※判定CheckGameEndの真下に置く＝食い違い防止・ターン制限の公開TurnLimit・
   敵AI思考ログの切替enemyAILog・敵フェイズ内の敵HasActed管理※フェイズ終了時に戻す・
-  フェイズ開始時のメモリ加算/再行動フラグ戻し/連鎖リセット※ターン1は初期値のまま・
+  フェイズ開始時のメモリ加算/連鎖リセット※ターン1は初期値のまま。再行動フラグ戻しは 2026-10-25 に回数の制限ごと撤廃・
   再行動できる味方がいる間は自動でターンを終えない※フェーズ30・
   ※フェーズ32の自軍フェイズ開始時の補給（SupplyRules.TickRepair）とフェイズ開始時の飛翔・撃墜のTickは 2026-10-24 に撤廃),
   BattleSetup(StageDataを読んで初期配置・配置マスの兵種チェック〔飛行兵は城壁・山にも置ける〕)
@@ -1482,7 +1488,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   ※フェーズ31の武器の耐久（EquippedSlot/IsEquippedWeaponWorn/ConsumeWeaponUse）は 2026-10-24 に撤廃・
   メモリ/覚醒ゲージMemory/Momentum※フェーズ28〔2026-10-24 にMana から改名。AddMemory/SpendMemory(量)※本数も崩して払う/
   AddMomentum/SpendMomentum・Initializeで技ぶんの初期メモリ＋敵だけ払えない初期装備を持ち替え〕・
-  再行動の1ターン1回UsedRefreshThisTurn/MarkRefreshUsed/ResetRefresh※フェーズ30),
+  ※再行動の1ターン1回（UsedRefreshThisTurn/MarkRefreshUsed/ResetRefresh。フェーズ30）は 2026-10-25 に撤廃),
   GaugeState(ゲージ1本ぶんのランタイム状態: 値Value + 本数Stock + 上限Max/MaxStock。
   満タンでストックへ繰り上げ・超過分は繰り越し・ストック上限では頭打ち。ItemSlotと同じ素のC#クラス。
   合計Total＝本数×Max＋値・合計から払うSpend(量)※2026-10-24〔本数も崩して払い、本数と値を並べ直す〕),
@@ -1799,7 +1805,9 @@ docs a51b575〔作者の変更〕→ feat 21939a6 → data da097e5 → docs）�
 - **兵種ごとの必殺技**（フェーズ29 は全兵種共通のダメージ2倍。ClassData に効果データを足して
   兵種の個性を出す段階。効果の型を数種類作って Stage_01 に出る兵種へ割り当てる案が有力）
 - **能力値スケールの見直し**（メモリ・覚醒の閾値が現行の能力値では届かない。育成要素を入れて
-  能力値が20〜30まで伸びれば自然に解決するが、それまでは Stage_01 で発動しない）
+  能力値が20〜30まで伸びれば自然に解決するが、それまでは Stage_01 で発動しない）。
+  能力値を上げるときは、回数の制限が無い再行動（2026-10-25〜）が雪だるまにならないかも見る
+  （速さ25なら、3連続目以降は2体倒すごとに全員の覚醒が1本ずつ貯まり直す）
 - **敵AIのゲージ使用**（蓄積は陣営を区別せず動いているので、EnemyAI に評価を足せば使える。
   「敵は救出系／所持品／交換を使わない」と同じ前例で当面は不使用）
 - ~~特効ダメージ＋特効武器~~ → **2026-08-06〜08 に完了**（「有効と特効の合意仕様」の節）
