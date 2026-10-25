@@ -28,6 +28,8 @@ public enum HighlightKind
 ///  ・カメラを盤面全体が収まる位置・表示範囲に自動調整する（Phase 15）
 ///  ・ワールド座標 ⇔ グリッド座標 の変換を行う
 ///  ・マスの色（ハイライト）を変える道具を提供する
+///  ・敵の攻撃範囲の赤紫（Rキー）と、印を付けた敵の範囲の赤い外枠を描く（2026-10-25。
+///    中身の計算といつ描き直すかは DangerZoneView）
 /// クリックや選択の操作は BattleController が担当します（役割分担）。
 /// グリッドの中心が、この GameObject の位置に来るように配置されます。
 /// </summary>
@@ -80,11 +82,20 @@ public class GridManager : MonoBehaviour
     [Range(0f, 1f)]
     public float dangerZoneBlend = 0.35f;
 
+    [Header("印を付けた敵の範囲の外枠（敵のクリックで付け外し・2026-10-25）")]
+    [Tooltip("外枠の線の色")]
+    public Color markedOutlineColor = new Color(0.7f, 0f, 0f);    // 濃い赤
+    [Tooltip("外枠の線の太さ（マスの一辺に対する割合。0.08 で Stage_01 の約4ピクセル）")]
+    [Range(0.02f, 0.3f)]
+    public float markedOutlineThickness = 0.08f;
+
     // ── 内部データ ──
     private TileData[,] tiles;                 // 各マスの論理データ
     private SpriteRenderer[,] cellRenderers;   // 各マスの見た目（色を変える用）
     private HighlightKind[,] highlights;       // 各マスに重なっているハイライトの種類
     private bool[,] dangerZone;                // 敵の攻撃範囲に入っているマス（ハイライトとは別の層・2026-10-25）
+    private Transform outlineRoot;             // 印を付けた敵の範囲の外枠の線をまとめる入れ物（初めて描くときに作る）
+    private readonly List<SpriteRenderer> outlineBars = new List<SpriteRenderer>(); // 外枠の線（隠して使い回す）
     private Sprite squareSprite;               // コードで生成する白い四角スプライト
     private Vector3 originWorld;               // マス(0,0)の中心のワールド座標
 
@@ -417,6 +428,117 @@ public class GridManager : MonoBehaviour
                 RepaintCell(x, y);
             }
         }
+    }
+
+    // ===== 印を付けた敵の範囲の外枠（2026-10-25 作者要望） =====
+
+    /// <summary>外枠の線の描画順。マス(0)より手前・ユニットの絵(2。Unit.Initialize)より奥。</summary>
+    private const int OutlineSortingOrder = 1;
+
+    /// <summary>上下左右の4方向（外枠の境目さがしと穴埋めで使う）。</summary>
+    private static readonly Vector2Int[] Directions =
+    {
+        Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right,
+    };
+
+    /// <summary>
+    /// area（印を付けた敵の範囲を合わせたもの）の外枠を濃い赤の線で描く（null か空なら消す）。
+    /// 「外枠」なので、範囲に囲まれた内側の穴（城の壁のような入れないマスなど）は囲まない（FillHoles）。
+    /// 盤面の端に接する所は、盤面の端に沿って線を引いて閉じる。
+    /// 線は「範囲のマス」と「範囲の外（または盤外）」の境目ごとに1本の細長い四角で、境目の真上に置く。
+    /// 両端を線の太さの半分ずつ伸ばしてあるので、角で縦と横の線がすき間なくつながる。
+    /// どの敵に印が付いているかの管理と、いつ描き直すかは DangerZoneView が受け持つ。
+    /// </summary>
+    public void SetMarkedOutline(HashSet<Vector2Int> area)
+    {
+        int used = 0;
+        if (area != null && area.Count > 0)
+        {
+            HashSet<Vector2Int> filled = FillHoles(area);
+            float half = cellSize * 0.5f;
+            float thickness = cellSize * markedOutlineThickness;
+            float length = cellSize + thickness;
+
+            foreach (Vector2Int cell in filled)
+            {
+                Vector3 center = CellToWorld(cell);
+                foreach (Vector2Int dir in Directions)
+                {
+                    if (filled.Contains(cell + dir)) continue; // 隣も範囲の中なら境目ではない
+
+                    SpriteRenderer bar = GetOutlineBar(used++);
+                    bar.transform.position = center + new Vector3(dir.x * half, dir.y * half, 0f);
+                    bar.transform.localScale = (dir.x != 0)
+                        ? new Vector3(thickness, length, 1f)   // 左右の境目は縦の線
+                        : new Vector3(length, thickness, 1f);  // 上下の境目は横の線
+                    bar.color = markedOutlineColor;
+                    bar.enabled = true;
+                }
+            }
+        }
+
+        // 今回使わなかった線は隠す（消さずに取っておき、次に使い回す）
+        for (int i = used; i < outlineBars.Count; i++)
+            outlineBars[i].enabled = false;
+    }
+
+    /// <summary>
+    /// 範囲に囲まれた内側の穴を埋めた範囲を返す（外枠だけを描くため）。
+    /// 盤面の外周にある「範囲の外のマス」から、範囲の外のマスだけをたどって外側を広げていき、
+    /// たどり着けなかった「範囲の外のマス」を、範囲に囲まれた穴として範囲に加える。
+    /// </summary>
+    private HashSet<Vector2Int> FillHoles(HashSet<Vector2Int> area)
+    {
+        var outside = new HashSet<Vector2Int>();
+        var stack = new Stack<Vector2Int>();
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                bool onEdge = x == 0 || y == 0 || x == width - 1 || y == height - 1;
+                if (onEdge) stack.Push(new Vector2Int(x, y));
+            }
+        }
+
+        while (stack.Count > 0)
+        {
+            Vector2Int cell = stack.Pop();
+            if (!IsInside(cell) || area.Contains(cell) || !outside.Add(cell)) continue;
+            foreach (Vector2Int dir in Directions)
+                stack.Push(cell + dir);
+        }
+
+        var filled = new HashSet<Vector2Int>(area);
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                var cell = new Vector2Int(x, y);
+                if (!outside.Contains(cell)) filled.Add(cell);
+            }
+        }
+        return filled;
+    }
+
+    /// <summary>index 番目の外枠の線を返す（まだ無ければ作る）。</summary>
+    private SpriteRenderer GetOutlineBar(int index)
+    {
+        if (outlineRoot == null)
+        {
+            outlineRoot = new GameObject("MarkedOutline").transform;
+            outlineRoot.SetParent(transform, false);
+        }
+
+        while (outlineBars.Count <= index)
+        {
+            var bar = new GameObject($"OutlineBar_{outlineBars.Count}");
+            bar.transform.SetParent(outlineRoot, false);
+            var sr = bar.AddComponent<SpriteRenderer>();
+            sr.sprite = squareSprite;               // マスと同じ白い四角を細長く伸ばして使う
+            sr.sortingOrder = OutlineSortingOrder;
+            outlineBars.Add(sr);
+        }
+        return outlineBars[index];
     }
 
     // ===== カーソル下のマスの地形情報と座標（盤面の下の帯。2026-08-17 作者仕様） =====

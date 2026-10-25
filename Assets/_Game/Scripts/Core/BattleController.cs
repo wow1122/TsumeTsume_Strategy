@@ -73,6 +73,11 @@ using UnityEngine.InputSystem; // 新 Input System
 ///    （引き受け後に移動した先では降ろせない。引き受けたマスへ戻れば また選べる）。
 ///  ・「降ろす」の後も、使っていない移動力が残っていればその範囲で再移動できる
 ///    （降ろした時点では行動終了にならず、待機で確定する。「代わりに降ろす」は従来どおり即終了）。
+///
+/// 2026-10-25 の追加（敵の攻撃範囲の表示。中身は DangerZoneView）：
+///  Rキーで敵全員の攻撃範囲を薄い赤紫で重ねる（ここは関わらない）。
+///  何も選んでいないときに敵をクリックすると、その敵に印が付き、範囲の外枠が濃い赤で残る（何体でも）。
+///  印の付いた敵をもう一度クリックすると外れる。印を付けたときは今までどおり青・橙の下見表示も出る。
 /// </summary>
 public class BattleController : MonoBehaviour
 {
@@ -125,6 +130,7 @@ public class BattleController : MonoBehaviour
     private SystemInfoPanel systemInfo;         // 「状況」「設定」のパネル（IMGUI・2026-08-15）
     private Vector2Int systemMenuCell;          // コマンド一覧を出している空きマス（パネルから戻る先）
     private Unit previewedEnemy;                // 行動範囲を下見表示中の敵（Idle のときだけ使う）
+    private DangerZoneView dangerZone;          // 敵の攻撃範囲の表示（Rキーの赤紫・印を付けた敵の赤い外枠。2026-10-25）
 
     void Awake()
     {
@@ -147,9 +153,10 @@ public class BattleController : MonoBehaviour
         // 出す相手はユニット情報パネルから自分で読むので、ここからの呼び出しは無い
         if (GetComponent<AIDebugPanel>() == null) gameObject.AddComponent<AIDebugPanel>();
 
-        // 敵全員の攻撃範囲を薄い赤紫で重ねる表示（Rキーで切り替え・2026-10-25）。
-        // キーの読み取りも範囲の計算し直しも自分で行うので、ここからの呼び出しは無い
-        if (GetComponent<DangerZoneView>() == null) gameObject.AddComponent<DangerZoneView>();
+        // 敵の攻撃範囲の表示（2026-10-25）。敵全員の赤紫（Rキー）はキーの読み取りも計算し直しも自分で行う。
+        // ここから呼ぶのは、何も選んでいないときの敵のクリックで印（赤い外枠）を付け外しする ToggleMark だけ
+        dangerZone = GetComponent<DangerZoneView>();
+        if (dangerZone == null) dangerZone = gameObject.AddComponent<DangerZoneView>();
 
         // コマンド一覧の「状況」「設定」で出るパネル（2026-08-15）
         systemInfo = GetComponent<SystemInfoPanel>();
@@ -234,10 +241,13 @@ public class BattleController : MonoBehaviour
                     ClearEnemyPreview();
                     EnterRefreshMenu(clickedUnit);
                 }
-                // 敵をクリック → その敵の移動できるマス（青）と攻撃可能マス（赤）を下見表示（2026-07-18 作者要望）
+                // 敵をクリック → 印（その敵の範囲の赤い外枠。他の操作をしても残る）を付け外しする（2026-10-25 作者要望）。
+                // 印を付けたときは、その敵の移動できるマス（青）と攻撃可能マス（赤）の下見表示も今までどおり出す
+                // （2026-07-18 作者要望）。印の付いた敵をもう一度クリックすると、印も下見表示も消える
                 else if (clickedUnit != null && clickedUnit.Faction == Faction.Enemy)
                 {
-                    ShowEnemyPreview(clickedUnit);
+                    if (dangerZone.ToggleMark(clickedUnit)) ShowEnemyPreview(clickedUnit);
+                    else ClearEnemyPreview();
                 }
                 // ユニットがいないマス → コマンド一覧（状況・設定・終了）を出す（2026-08-15）
                 else if (clickedUnit == null)
@@ -596,6 +606,8 @@ public class BattleController : MonoBehaviour
     /// クリックした敵の移動できるマス（青）と攻撃可能マス（赤）を下見表示する。
     /// 見るだけの機能で、選択状態（Idle のまま）も敵の状態も一切変えない。
     /// 別のマスのクリック・右クリック/ESC・味方の選択・敵フェイズ開始で消える。
+    /// 2026-10-25 から、敵のクリックは印（赤い外枠）の付け外しを兼ねる。下見表示が出るのは印を付けたときで、
+    /// 印の付いた敵の2回目のクリックでは印と一緒に消える（印の外枠は下見表示が消えても残る＝DangerZoneView）。
     /// </summary>
     private void ShowEnemyPreview(Unit enemy)
     {

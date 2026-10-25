@@ -328,7 +328,8 @@ public class Unit : MonoBehaviour
                 : new Color(1.00f, 0.40f, 0.40f);  // 赤
             transform.localScale = Vector3.one * grid.cellSize * 0.7f;
         }
-        spriteRenderer.sortingOrder = 1;       // マス(0)より手前に表示
+        // マス(0)・印を付けた敵の範囲の赤い外枠(1)より手前に表示（2026-10-25 に枠を挟むため 1 → 2）
+        spriteRenderer.sortingOrder = 2;
         baseColor = spriteRenderer.color;      // 元の色を覚えておく（行動済みの暗転の基準）
         HasActed = false;
 

@@ -5,7 +5,8 @@ using UnityEngine;
 /// 盤面から「次の相手フェイズにどんな危険があるか」を読み取る道具集（Phase 19〜）。
 /// 判定の部品は CombatRules / MovementCalculator / DamageCalculator / WeaponChoiceRules にあるものを使い、
 /// ここではそれを組み合わせるだけ（一元化の方針）。
-/// 扱う脅威は「挟撃の脅威」（Phase 19）と「攻撃が届くマス」（2026-10-25・Rキーで出す敵全員の攻撃範囲）。
+/// 扱う脅威は「挟撃の脅威」（Phase 19）と「攻撃が届くマス」（2026-10-25・Rキーで出す敵全員の攻撃範囲と、
+/// クリックで印を付けた敵の赤い外枠）。
 /// Phase 20 の「対空射程マス」は 2026-10-24 に飛翔ごと撤廃した。
 /// </summary>
 public static class ThreatMap
@@ -147,7 +148,7 @@ public static class ThreatMap
         return false;
     }
 
-    // ===== 攻撃が届くマス（2026-10-25・Rキーで出す敵全員の攻撃範囲）=====
+    // ===== 攻撃が届くマス（2026-10-25・Rキーで出す敵全員の攻撃範囲／クリックで印を付けた敵の赤い外枠）=====
 
     /// <summary>
     /// faction のユニット全員が、次の自分のフェイズに攻撃を届かせられるマスの集合
@@ -165,10 +166,35 @@ public static class ThreatMap
         if (grid == null) return result;
 
         foreach (Unit unit in UnitRegistry.GetUnits(faction))
-        {
-            var stands = new List<Vector2Int>(MovementCalculator.GetReachableCells(grid, unit)) { unit.GridPosition };
-            result.UnionWith(WeaponChoiceRules.GetAttackCellsFrom(grid, unit, stands));
-        }
+            result.UnionWith(WeaponChoiceRules.GetAttackCellsFrom(grid, unit, GetStandCells(grid, unit)));
         return result;
+    }
+
+    /// <summary>
+    /// その1体の範囲＝「移動できるマス＋いまのマス＋そこから攻撃が届くマス」
+    /// （2026-10-25 作者要望・クリックで印を付けた敵の赤い外枠用。DangerZoneView が呼ぶ）。
+    /// 敵をクリックしたときの下見表示（青＋橙＋敵自身の黄）を合わせた範囲と同じ。
+    /// GetThreatCells と違って移動できるマスと本人のマスも必ず含めるのは、外枠で囲んだときに
+    /// 敵自身や移動先が枠の外にはみ出さないようにするため（攻撃が届くマスだけだと、
+    /// 動けない敵の足元などが穴になることがある）。
+    /// </summary>
+    public static HashSet<Vector2Int> GetUnitRangeCells(GridManager grid, Unit unit)
+    {
+        var result = new HashSet<Vector2Int>();
+        if (grid == null || unit == null) return result;
+
+        List<Vector2Int> stands = GetStandCells(grid, unit);
+        result.UnionWith(WeaponChoiceRules.GetAttackCellsFrom(grid, unit, stands));
+        result.UnionWith(stands);
+        return result;
+    }
+
+    /// <summary>
+    /// 攻撃するときに立てるマスの候補＝移動できるマス＋いまのマス（動かない選択）。
+    /// 敵AIが攻撃先を探すとき（EnemyAI.Evaluate）の候補と同じ作り方。
+    /// </summary>
+    private static List<Vector2Int> GetStandCells(GridManager grid, Unit unit)
+    {
+        return new List<Vector2Int>(MovementCalculator.GetReachableCells(grid, unit)) { unit.GridPosition };
     }
 }
