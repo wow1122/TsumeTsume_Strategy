@@ -7,7 +7,7 @@
 （プレイヤーのリスクとリターン、メリットとデメリットの評価と推奨）。
 書き方は「## 新しい仕様のレビュー（実装前に必ず出す）」の節に従う。
 
-## 進捗状況（2026-10-25 時点）
+## 進捗状況（2026-10-26 時点）
 
 バーティカルスライス完成（Phase 0〜7）、Phase 8（データ基盤刷新）、
 Phase 9（前衛・後衛武器と新三すくみ、CombatRules による判定一元化）、
@@ -175,6 +175,12 @@ Combat/WeaponChoiceRules に集約し、**probe（お試し装備）方式**で�
 何回でも再行動できる。制限が必要になったら作者から相談する）。コミットは feat 93c3579 → docs（この CLAUDE.md）。
 作者 Play 確認済み（Stage_GaugeTest）。
 
+2026-10-25〜26、作者要望で**敵の攻撃範囲を盤面に重ねて見せる機能**を足した（「敵の攻撃範囲の表示の合意仕様」の節）。
+見るだけの機能で、ゲームの状態は変えない。**Rキーで敵全員の攻撃範囲を薄い赤紫で一括表示**（feat 21676cf）→
+**敵をクリックで印を付け、その敵の範囲の外枠を濃い赤で残す**（何体でも・2回目のクリックで外す。feat fff0db0）→
+**印の付いた敵の絵を赤く染める**（feat 707a2e9）→ docs（この CLAUDE.md）。いずれも作者 Play 確認済み（Stage_01）。
+スクリプトのみでアセット変更なし（新規 `UI/DangerZoneView.cs` は BattleController が自動生成する）。
+
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
 敵AI強化（Phase 16〜21）は `/home/wawo/.claude/plans/tsumetsume-strategy-ai-ai-ai-robust-quasar.md`、
@@ -289,7 +295,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   移動の取り消しは ActionContext.RevertMove（占有も復元）。待機はメニューから明示的に選ぶ
   （旧「敵以外クリックで待機」は廃止）。メニューはユニット右隣・画面端で左に回り込み
 - マスのハイライトは HighlightKind の優先度付き多層管理
-  （Selection > TargetChoice > AttackRange > HealRange > MoveRange > 市松模様）。色設定は GridManager に集約
+  （Selection > TargetChoice > AttackRange > HealRange > MoveRange > 市松模様）。色設定は GridManager に集約。
+  敵の攻撃範囲の赤紫（Rキー）と印を付けた敵の外枠は、ハイライトとは別の層（2026-10-25。「敵の攻撃範囲の表示の合意仕様」の節）
 
 ### 救出システムの合意仕様（Phase 11・2026-07-11 作者合意）
 
@@ -534,6 +541,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   重ね表示（BattleController.ComputeAttackCells。壁マスは除外・救出/引き受け/降ろす後は非表示）。
   Idle 中に敵をクリックするとその敵の移動+攻撃範囲プレビュー（ShowEnemyPreview。
   空きマスクリック/ESC/右クリック/自軍選択/敵フェイズ開始で解除）。
+  ※2026-10-25 から敵のクリックは印の付け外しを兼ねる＝下見が出るのは印を付けたときで、
+  印の付いた敵をもう一度クリックすると下見も印も消える（「敵の攻撃範囲の表示の合意仕様」の節）。
   色の注記: スクリプト既定の attackRangeColor は赤 (1, 0.5, 0.5) だが、シーンの直列化値は
   オレンジ (1, 0.7, 0.5) のままで作者テスト済み・承認済み
   （変える場合は GridManager の Inspector で色を変えて Ctrl+S 保存→シーンをコミット）
@@ -1277,7 +1286,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   「終了」を最下段にしたのは誤クリックでターンが終わる事故を防ぐため
 - **「終了」** ＝ 自軍フェイズの終了（旧「ターン終了」ボタン）。全員行動済みでの自動ターン終了は従来どおり
   （再行動できる味方が残っているときだけ自動で終わらない＝フェーズ30 の合意も従来どおり）
-- **「状況」** ＝ ターン数／ターン制限・フェイズ・クリア条件・両軍の数（味方は未行動数も）。見るだけ
+- **「状況」** ＝ ターン数／ターン制限・フェイズ・クリア条件・両軍の数（味方は未行動数も）・
+  敵の攻撃範囲の表示状態（2026-10-25。Rキーの案内も兼ねる）。見るだけ
 - **クリア条件はステージのデータではなくコードの判定から自動生成**（TurnManager.BuildClearConditionLines を
   CheckGameEnd の真下に置く）。「味方輸送隊の死亡」は輸送隊がいるステージだけ、ターン制限の行は turnLimit>0 だけ出す。
   **勝敗判定を変えたらこの関数も直すこと**（拠点到達などを足すときの唯一の注意点）
@@ -1320,6 +1330,54 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   （計算上、16:9 で縦631px 未満になると重なる）。エディタでは Game ビューの解像度を 1280x720 にして確認する
 - マップの絵は作者の調整で**キャンバスの 0.9 倍**に縮小（Unit.Initialize の localScale に ×0.9）
 
+### 敵の攻撃範囲の表示の合意仕様（2026-10-25 作者要望）
+
+**ねらい**: 「どこに立つと敵の攻撃が届くか」を、敵を1体ずつクリックして調べなくても分かるようにする。
+見るだけの機能で、ゲームの状態は一切変えない（中身は `UI/DangerZoneView`。BattleController が自動生成）。
+
+- **Rキーで敵全員の攻撃範囲を薄い赤紫で重ねる**（表示／非表示の切り替え。戦闘開始時は非表示）。
+  Rキーはいつでも効く（自軍フェイズのどの操作の途中でも・敵フェイズ中でも・決着後でも）
+- 赤紫になるのは**次の敵フェイズに、どれかの敵の攻撃が届くマス**（ThreatMap.GetThreatCells）。
+  決まりは敵AIが攻撃先を探すときと同じ＝立ち位置の候補は「移動できるマス＋いまのマス」・
+  後衛武器は移動すると最小射程ちょうど・メモリで払えない武器では届かない・壁マスは塗らない。
+  **待ち伏せ型の敵も含める**（挑発される前でも、届く相手がいれば動いて攻撃してくる＝Phase 17）。
+  行動済みかどうかは見ない（敵フェイズの途中では「いまの盤面から全員がもう一度動いたら」の範囲になる）。
+  敵が順番に動いて空いたマスに止まる分までは読まない（表示用の近似）
+- **青い移動範囲にも重なって青紫になる**（作者合意）＝移動先の安全・危険が選ぶ前に分かる。
+  混ぜるのはハイライトの無いマスと水色だけのマス。黄（選択中）・赤（攻撃対象）・橙（攻撃が届く）・緑（杖）は
+  いま選んでいる操作の色なので混ぜない。色と濃さは GridManager の Inspector の
+  dangerZoneColor / dangerZoneBlend（既定 (0.85,0.3,0.75)・0.35）
+- いまの状態はコマンド一覧の「状況」に1行で出す（「敵の攻撃範囲: 表示中／非表示（Rキーで切り替え）」。作者合意）。
+  キーの案内もこの1行が兼ねる
+- **何も選んでいないときに敵をクリックすると印が付き**、その敵の範囲（移動できるマス＋本人のマス＋攻撃が届くマス。
+  ThreatMap.GetUnitRangeCells）の**外枠が濃い赤で残る**。何体でも付けられ、
+  **印の付いた敵をもう一度クリックすると外れる**
+  - 印を付ける1回目のクリックでは、今までどおり青・橙の下見表示も出る（作者合意）。下見は今までの条件
+    （別のマスのクリック・右クリック/ESC・味方の選択・敵フェイズ開始）で消えるが、外枠は残る。
+    2回目のクリックでは下見も印と一緒に消える
+  - 印が複数あるときは、**範囲を合わせた外周を1本の枠で囲む**（作者合意）
+  - 外枠なので、範囲に囲まれた内側の穴（城の壁など）は囲まない。盤面の端では端に沿って閉じる。
+    そのため**枠の内側にも、実際には届かないマスが入ることがある**（Stage_01 の (5,9) の弓兵の死角 (1,9)・(2,8) など。
+    2026-10-25 に作者へ報告済み・現状のまま）
+  - 印はターンをまたいでも残り、敵が動けば付いていく。倒れた敵の印は自動で外れる。ESC・右クリックでは外れない
+  - 線の色と太さは Inspector の markedOutlineColor / markedOutlineThickness
+    （既定 (0.7,0,0)・マスの一辺の8%＝Stage_01 で約4px）
+- **印の付いた敵の絵は赤く染まる**（作者要望）＝範囲を調べている途中の敵だと分かる。印を外すと元の色に戻る。
+  染め方は元の色への掛け算で、色は Inspector の markedUnitTint（既定 (1,0.35,0.35)。白にすると染めない。
+  敵の絵で候補4つを見比べて、元の絵との違いが一番はっきりするものを選んだ）。
+  行動済みの暗さとは重ねがけ＝敵フェイズ中に印の付いた敵が行動すると暗い赤になる。
+  絵の無い兵種（赤い四角で出る）は、もともと赤いので濃い赤になるだけで違いは小さい
+- 描く順番（奥から）: マス（0）→ 外枠の線（1）→ ユニットの絵（2）。外枠を絵の下に通すため、
+  ユニットの描画順を 1 → 2 に上げた
+- 描き直しは、何か表示しているあいだ毎フレーム「盤面の様子」（全ユニットの位置・生死・盤上にいるか、
+  敵の装備とメモリ）を数字の並びにして最後に描いたときと比べ、違うときだけ計算し直す。
+  これで仮の移動・その取り消し・敵フェイズ中の敵の移動・救出にも自動で付いていく
+  （味方のマスは敵が通れないので、味方が動くだけで敵の範囲が変わることがある）
+- 参考の数字: Stage_01 の1ターン目は 168 マス中 140 マス（83%）が赤紫（WSL での事前計算と Play のログが一致）。
+  移動6の敵4体を除くと 99 マス
+- ※ここに出てくる色と太さの欄は、まだシーンに保存されていない（スクリプトの既定値で動いている）。
+  Inspector で変えて Ctrl+S すると BattleScene に書き込まれるので、シーンの差分を確かめてからコミットする
+
 ### Phase 8 以降の追加合意（2026-07-08）
 
 - 武器分類: 剣・斧・槍＝前衛武器、弓・魔法＝後衛武器（WeaponData にカテゴリ欄を追加、データ駆動）
@@ -1334,10 +1392,11 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 - Core/ … BattleController(操作の司令塔・16状態FSM: Idle/MoveSelect/CommandMenu/WeaponSelect/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect/RefreshMenu/SystemMenu/SystemInfo/CantoSelect。
   ※飛翔・着陸コマンドと飛翔の段階取り消し（CancelFlightAndReturn・CanUseFlightCommand）は 2026-10-24 に撤廃・
-  攻撃可能マス表示ComputeAttackCells・
+  攻撃可能マス表示ComputeAttackCells※2026-10-25 から届くマスの計算本体は WeaponChoiceRules.GetAttackCellsFrom〔ここは移動範囲と自分のマスを除くだけ〕・
   持ち物コマンド（2段階サブメニュー: 装備/外す/道具使用/捨てる・ホバー詳細は右下固定）・杖コマンド（回復対象選択→ExecuteHeal・杖が届くマス表示ComputeHealCells）・
   交換コマンド（相手選択→2列の交換画面。左右共用のBuildExchangeColumn/TransferItem・列見出しBuildExchangeHeader・行動は消費せず1個目でCommit）・
-  敵の行動範囲プレビューShowEnemyPreview・被ダメ確認の閲覧状態もここ・
+  敵の行動範囲プレビューShowEnemyPreview※2026-10-25 から敵のクリックは印の付け外しを兼ねる〔DangerZoneView.ToggleMark が
+  true＝印を付けたら下見を出す・false＝外したら ClearEnemyPreview〕・被ダメ確認の閲覧状態もここ・
   必殺技コマンド※フェーズ29〔武器・対象の選び方は攻撃と共通のEnterWeaponSelect(critical)・criticalPending〕・
   攻撃の武器選択→対象選択※2026-08-09〔EnterWeaponSelect(bool critical)（武器1本でも必ず一覧を出す）→
   BuildWeaponEntries（押せる＝その武器で狙える敵がいること。使えない武器は理由付きの灰色行）→
@@ -1372,6 +1431,11 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   画面サイズが変わったらUpdateで合わせ直す〕・座標変換・
   多層ハイライト※HighlightKindの優先順は Selection > TargetChoice > AttackRange > HealRange >
   MoveRange〔フェーズ32の補給圏 SupplyZone は 2026-10-24 に撤廃〕・
+  敵の攻撃範囲の赤紫の層SetDangerZone※2026-10-25〔ハイライトとは別の層＝ResetAllHighlightsで消えない。
+  混ぜるのはResolveColorの最後のMixDangerZoneで、ハイライトの無いマスと水色だけのマス・dangerZoneColor/dangerZoneBlend〕・
+  印を付けた敵の範囲の外枠SetMarkedOutline※2026-10-25〔FillHolesで内側の穴を埋めてから、境目ごとに細長い四角
+  （OutlineBar_n・使い回し）を境目の真上に置く。描画順OutlineSortingOrder=1＝マス0とユニット2の間・
+  markedOutlineColor/markedOutlineThickness。印の敵を染める色markedUnitTintもここ〕・
   地形適用ApplyTerrain・地形情報を**盤面の真下の帯に1行で表示**※2026-08-17
   〔文字はBuildTerrainInfo（地形名+移動コスト〔騎乗差分も〕+地形防御）を左詰め・座標は右端に右詰め・
   **横幅は盤面と同じ・高さは1行で固定**〔盤面の左下から動かない〕・
@@ -1431,8 +1495,15 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   描かなかったフレームはRect.zero〕・
   BattleControllerが自動生成),
   SystemInfoPanel(コマンド一覧の「状況」「設定」のパネル・右上※2026-08-15。SystemInfoKind(Status/Settings)で1枚を兼用・
-  状況＝ターン数/フェイズ＋クリア条件（TurnManager.BuildClearConditionLines）＋両軍の数（UnitRegistry.CountAlive・未行動数も）・
+  状況＝ターン数/フェイズ＋クリア条件（TurnManager.BuildClearConditionLines）＋両軍の数（UnitRegistry.CountAlive・未行動数も）
+  ＋敵の攻撃範囲の表示中/非表示の1行※2026-10-25〔DangerZoneView.IsVisible を読む〕・
   設定＝「準備中」の案内だけ・見るだけでゲーム状態は変えない・BattleControllerが自動生成),
+  DangerZoneView(敵の攻撃範囲の表示※2026-10-25。見るだけ・BattleControllerが自動生成。
+  Rキーで敵全員の赤紫IsVisibleを切り替え〔ThreatMap.GetThreatCells→GridManager.SetDangerZone〕・
+  印の付いた敵の一覧と付け外しToggleMark〔BattleControllerが何も選んでいないときの敵のクリックで呼ぶ。
+  範囲はThreatMap.GetUnitRangeCellsの合算→GridManager.SetMarkedOutline。印の敵はUnit.SetMarkTintで赤く・外したら白に戻す・
+  倒れた敵の印は自動で外す〕・描き直しは盤面の様子ReadBoardState〔全ユニットの識別番号・位置・生死・盤上にいるか＋
+  敵の装備とメモリ〕を毎フレーム比べて変わったときだけ〔何も表示していない間は見張らない〕),
   UnitInfoPanel(ユニット情報パネル・右上・幅500px※2026-08-16に旧DebugUnitPanelと統合〔DebugUnitPanel.csは削除〕。
   常設モード＝自分でクリックを読み、盤上のユニットを出し続ける／空きマスで閉じる／敵フェイズ中も見られる・
   文脈モード＝相手選択中にBattleControllerがShow〔盤面モード＝候補をホバーで切替／単体モード＝指定1体※格納中の貨物用〕。
@@ -1478,6 +1549,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   〔4×4点の判定でふちを滑らかに・512枚を超えたら破棄・Domain Reload なしの Play 用に静的変数を初期化〕。
   リングの直径は GetDiameter が唯一の計算元で、Unit.OnGUI の HP ゲージの長さもこれを使う※2026-10-11)
 - Units/ … Unit(盤上のユニット・ランタイム能力値・行動済み・格納Carried/IsCarried・
+  絵の色はRefreshColorの1か所で決める※2026-10-25〔元の色×印の色SetMarkTint（白＝染めない）×行動済みならRGBを半分。
+  SetActedもここを通る〕・絵の描画順2※2026-10-25〔1から。印の外枠（1）をマスとの間に通すため〕・
   移動力Move※2026-10-24 から1本〔2026-08-10〜10-24 の GroundMove/FlightMove の2本立てと、飛翔IsFlying・
   撃墜ShootDown/飛翔禁止FlightBlockedTurns は飛翔ごと撤廃〕・
   AI性格AIProfile/挑発済みIsProvoked※永続・所持品Items/装備EquippedWeapon※Weapon窓口〔2026-10-24: メモリで払えない武器も
@@ -1544,6 +1617,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   〔プレイヤー＝所持品の武器のうち杖でない・兵種が扱えるもの（メモリ不足も候補＝理由を見せる）＋装備中の武器は例外装備でも必ず／
   敵＝装備中の1本だけ〕・
   可否CanAttackWith・対象さがしFindTargets〔武器1本ぶん〕/FindAllTargets〔全武器の合算・重複なし〕・
+  攻撃が届くマスGetAttackCellsFrom(grid,unit,stands)※2026-10-25〔全武器ぶん・立ち位置≠いまのマスなら移動した扱い・
+  壁は除く。BattleController.ComputeAttackCellsとThreatMapが共有〕・
   使えない理由GetUnusableReason〔メモリ不足/届く敵なし。相手は引数に取らない＝武器を先に選ぶため〕・
   必殺技ぶんの上乗せ extraCost※2026-10-24〔「1本＋武器の消費」を払える武器だけ〕・
   武器を選べる陣営かCanChooseWeapon〔プレイヤーだけ＝自動で持ち替えない陣営の判定にも使う〕・
@@ -1588,6 +1663,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   PincerSetupBonus 2〔AirThreatPenalty 1 は飛翔ごと撤廃〕),
   ThreatMap(盤面の危険の読み取り。挟撃されそうな味方と防げる最大ダメージの一覧
   FindPincerThreatenedAllies※self は盤面に居ない扱いで判定。Phase 19。
+  陣営全員の攻撃が届くマスGetThreatCells・1体の範囲（移動＋本人のマス＋攻撃）GetUnitRangeCells※2026-10-25
+  〔DangerZoneView 用。立ち位置の候補GetStandCells＝移動できるマス＋いまのマス＝EnemyAI.Evaluate と同じ。待ち伏せ型も区別しない〕・
   対空射程マスの集合GetAirThreatCells※Phase 20 は 2026-10-24 に撤廃),
   EnemyAIProfile(性格enum: 突撃型/待ち伏せ型。Phase 17),
   ActionPlan(行動予定の構造体+ActionKind。Stay/Approach/Attack/Guard※Phase 19。
@@ -1718,6 +1795,12 @@ docs a51b575〔作者の変更〕→ feat 21939a6 → data da097e5 → docs）�
 - Stage_01 の手応え（敵白翼騎兵 (3,9) が城壁を越えて来る・味方の飛行兵が山を越えて動ける。数値は未調整）
 - 作者所有の `docs/コアシステム仕様書.md` と Desktop の仕様書には、飛翔・対空の節や「天馬」「亜竜」の語が残っている
   （作者所有なので Claude は触っていない。飛翔・対空・呼称については CLAUDE.md の記述が新しい）
+
+**2026-10-25〜26: 敵の攻撃範囲の表示**（「敵の攻撃範囲の表示の合意仕様」の節。作者 Play 確認済み・
+feat 21676cf → fff0db0 → 707a2e9 → docs）。宿題（作者と相談すること）:
+- 外枠は内側の穴を埋めて描くので、枠の内側に実際には届かないマス（弓兵の死角など）が入ることがある。
+  気になるなら「誰も入れない壁の穴だけ埋める」形に変えられる（GridManager.FillHoles）
+- 色と太さの欄はまだシーンに保存されていない。Inspector で変えて Ctrl+S したら、シーンの差分を確かめてからコミットする
 
 **現在アクティブなロードマップは無い。次は作者と次期ロードマップの優先度を相談してから着手する**
 （下の「持ち越し候補」から作者が選ぶ。フェーズ着手は明示の合図をもらってから）。
