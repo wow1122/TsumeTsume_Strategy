@@ -34,6 +34,12 @@ using UnityEngine;
 /// 2026-08-05 の分類変更：
 ///  ・「歩兵」を条件にしていた判定はすべて徒歩（歩兵＋重装歩兵）= IsFoot() に置き換えた。
 ///    重装歩兵はこれまでの歩兵と同じ扱い（救出される・引き受けられる・代わりに降ろせる）。
+///
+/// 2026-10-26 の追加（作者要望）：
+///  ・引き渡し＝貨物を運んでいるユニットが、隣の空きのある騎乗ユニットへ貨物を渡す
+///    （引き受けの逆向き。輸送隊は貨物があっても空きがあれば受け取れる＝作者合意）
+///  ・人交換＝貨物を運んでいるユニットどうしが、貨物を1体ずつ取り替える
+///  ・どちらも受け取れる貨物の決まりは引き受けと同じ（CanReceive）。相手は行動済みでもよい
 /// </summary>
 public static class RescueRules
 {
@@ -106,16 +112,76 @@ public static class RescueRules
     }
 
     /// <summary>
-    /// receiver が carrier から「引き受け」できる貨物の一覧。
-    /// 輸送隊は何でも受け取れるが、通常の騎乗ユニットが受け取れるのは徒歩の貨物のみ（Phase 12）。
+    /// receiver が carrier から「引き受け」できる貨物の一覧（受け取れる兵種かは CanReceive）。
+    /// 空きがあるかは見ない（呼び出し側で CanCarryMore を見る。人交換は空きが要らないため）。
     /// </summary>
     public static List<Unit> GetTakeOverCargoes(Unit receiver, Unit carrier)
     {
         var result = new List<Unit>();
         foreach (Unit cargo in carrier.Carried)
         {
-            if (receiver.Class != UnitClass.Transporter && !cargo.Class.IsFoot()) continue;
-            result.Add(cargo);
+            if (CanReceive(receiver, cargo)) result.Add(cargo);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// receiver が cargo を受け取れる兵種か（引き受け・引き渡し・人交換で共通）。
+    /// 輸送隊は何でも受け取れるが、通常の騎乗ユニットが受け取れるのは徒歩の貨物のみ（Phase 12）。
+    /// </summary>
+    public static bool CanReceive(Unit receiver, Unit cargo)
+    {
+        return receiver.Class == UnitClass.Transporter || cargo.Class.IsFoot();
+    }
+
+    // ===== 引き渡し（2026-10-26 作者要望）=====
+
+    /// <summary>
+    /// giver がいまの位置から「引き渡し」できる、隣接する受け手の一覧。
+    /// 受け手＝同陣営で空きのある騎乗ユニット（通常の騎乗は1体まで＝貨物が無いこと、輸送隊は4体まで）。
+    /// 行動済みの受け手にも渡せる（受け手の行動は消費しない。救出の相手と同じ考え方）。
+    /// </summary>
+    public static List<Unit> FindGiveReceivers(Unit giver, GridManager grid)
+    {
+        var result = new List<Unit>();
+        if (!giver.IsRescuing) return result;
+
+        foreach (Unit neighbor in GetAdjacentUnits(giver.GridPosition, grid))
+        {
+            if (neighbor.Faction == giver.Faction && CanCarryMore(neighbor)
+                && GetGiveCargoes(giver, neighbor).Count > 0)
+                result.Add(neighbor);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// giver の貨物のうち、receiver へ渡せるものの一覧。
+    /// 中身は引き受けと同じ「receiver が受け取れる貨物」（向きだけ逆の呼び名）。人交換で「相手へ出せる貨物」にも使う。
+    /// </summary>
+    public static List<Unit> GetGiveCargoes(Unit giver, Unit receiver)
+    {
+        return GetTakeOverCargoes(receiver, giver);
+    }
+
+    // ===== 人交換（2026-10-26 作者要望）=====
+
+    /// <summary>
+    /// user がいまの位置から「人交換」できる、隣接する救出中の味方の一覧。
+    /// 1体出して1体入るので空きは要らないが、お互いに相手の貨物を受け取れること（CanReceive）が条件。
+    /// 行動済みの相手とも取り替えられる（相手の行動は消費しない）。徒歩は貨物を持てないので相手にならない。
+    /// </summary>
+    public static List<Unit> FindSwapPartners(Unit user, GridManager grid)
+    {
+        var result = new List<Unit>();
+        if (!user.IsRescuing) return result;
+
+        foreach (Unit neighbor in GetAdjacentUnits(user.GridPosition, grid))
+        {
+            if (neighbor.Faction != user.Faction || !neighbor.IsRescuing) continue;
+            if (GetGiveCargoes(user, neighbor).Count > 0        // 自分の貨物のどれかを相手が受け取れる
+                && GetTakeOverCargoes(user, neighbor).Count > 0) // 相手の貨物のどれかを自分が受け取れる
+                result.Add(neighbor);
         }
         return result;
     }

@@ -79,6 +79,15 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  何も選んでいないときに敵をクリックすると、その敵に印が付き、範囲の外枠が濃い赤で残る（何体でも）。
 ///  印の付いた敵は絵が赤く染まる（範囲を調べている途中の敵だと分かるように）。
 ///  印の付いた敵をもう一度クリックすると外れる。印を付けたときは今までどおり青・橙の下見表示も出る。
+///
+/// 2026-10-26 の追加（引き渡し・人交換。作者要望）：
+///  「引き渡し」→ 隣の空きのある騎乗の味方を選択 →（輸送隊が渡すときは貨物リストで選ぶ）→ 貨物を渡す
+///  「人交換」→ 隣の救出中の騎乗の味方を選択 → 自分の貨物 → 相手の貨物の順に選ぶ → 1体ずつ取り替える
+///  （どちらも候補が1体だけなら貨物リストは出ない）。
+///  渡した側は「降ろす」と同じく、残り移動力で再移動 → 待機（攻撃不可・取り消し不能。作者合意）。
+///  相手の行動は消費しない（行動済みの相手にも渡せる）。相手が未行動なら、受け取った貨物を
+///  自分の行動で運んで降ろせる（前のターンから運んでいた貨物と同じ扱い。作者合意）。
+///  救出・引き受け・降ろすの後のメニューには出ない（1回の行動で貨物を動かすのは1回まで）。
 /// </summary>
 public class BattleController : MonoBehaviour
 {
@@ -93,9 +102,10 @@ public class BattleController : MonoBehaviour
     private State state = State.Idle;
 
     // ユニット選択（UnitTargetSelect）・マス選択（TileSelect）・貨物選択（CargoSelect）が「どのコマンドのためか」
-    private enum UnitSelectPurpose { Rescue, TakeOver, ProxyDropCarrier, Board, Heal, Exchange }
+    private enum UnitSelectPurpose { Rescue, TakeOver, ProxyDropCarrier, Board, Heal, Exchange, Give, Swap }
     private enum TileSelectPurpose { Drop, ProxyDrop }
-    private enum CargoSelectPurpose { Drop, TakeOver, ProxyDrop }
+    // SwapGive＝人交換で自分の貨物から出すもの・SwapTake＝相手の貨物からもらうもの（2026-10-26）
+    private enum CargoSelectPurpose { Drop, TakeOver, ProxyDrop, Give, SwapGive, SwapTake }
     private UnitSelectPurpose unitSelectPurpose;
     private TileSelectPurpose tileSelectPurpose;
     private CargoSelectPurpose cargoSelectPurpose;
@@ -118,7 +128,9 @@ public class BattleController : MonoBehaviour
     private List<Vector2Int> tileCandidates;    // 降ろす先のマス候補
     private Unit proxyCarrier;                  // 「代わりに降ろす」で選んだ運び手
     private Unit takeOverCarrier;               // 「引き受け」で選んだ運び手（貨物選択のあいだ保持）
-    private Unit selectedCargo;                 // 貨物リストで選んだ（または自動選択された）貨物
+    private Unit giveReceiver;                  // 「引き渡し」で選んだ受け手（貨物選択のあいだ保持・2026-10-26）
+    private Unit swapPartner;                   // 「人交換」で選んだ相手（貨物選択のあいだ保持・2026-10-26）
+    private Unit selectedCargo;                 // 貨物リストで選んだ（または自動選択された）貨物。人交換では自分の貨物から出すもの
     private Unit exchangePartner;               // 「交換」で選んだ相手（交換画面のあいだ保持・フェーズ26）
     private Unit refreshCandidate;              // 「再行動」のメニューを出している行動済みの味方（フェーズ30）
     private HashSet<Vector2Int> cantoCells;     // 剣で敵を倒した後に1マスだけ動けるマス（2026-10-24）
@@ -318,6 +330,14 @@ public class BattleController : MonoBehaviour
                         case UnitSelectPurpose.Board: ExecuteBoard(clickedUnit); break;
                         case UnitSelectPurpose.Heal: ExecuteHeal(clickedUnit); break;
                         case UnitSelectPurpose.Exchange: EnterExchange(clickedUnit); break;
+                        case UnitSelectPurpose.Give:
+                            giveReceiver = clickedUnit;
+                            EnterGiveCargoSelect();
+                            break;
+                        case UnitSelectPurpose.Swap:
+                            swapPartner = clickedUnit;
+                            EnterSwapGiveCargoSelect();
+                            break;
                     }
                 }
                 break;
@@ -421,6 +441,13 @@ public class BattleController : MonoBehaviour
                     case CargoSelectPurpose.Drop: OpenCommandMenu(); break;
                     case CargoSelectPurpose.TakeOver: EnterTakeOverCarrierSelect(); break;
                     case CargoSelectPurpose.ProxyDrop: EnterProxyCarrierSelect(); break;
+                    case CargoSelectPurpose.Give: EnterGiveReceiverSelect(); break;
+                    case CargoSelectPurpose.SwapGive: EnterSwapPartnerSelect(); break;
+                    case CargoSelectPurpose.SwapTake:
+                        // 自分の貨物を一覧から選んでいた（2体以上だった）なら一覧へ、1体で自動だったなら相手の選択へ
+                        if (RescueRules.GetGiveCargoes(context.unit, swapPartner).Count > 1) EnterSwapGiveCargoSelect();
+                        else EnterSwapPartnerSelect();
+                        break;
                 }
                 break;
 
@@ -582,9 +609,9 @@ public class BattleController : MonoBehaviour
             grid.AddHighlight(c, HighlightKind.MoveRange);
 
         // 攻撃可能マス（2026-07-18 作者要望）: 立てるマスから武器で届くマスを赤で示す。
-        // 救出・引き受け・降ろすの後は攻撃・杖コマンド自体が出ない（BuildCommands と同じ条件）ので表示しない。
+        // 救出・引き受け・降ろす・引き渡し・人交換の後は攻撃・杖コマンド自体が出ない（BuildCommands と同じ条件）ので表示しない。
         // 杖ユニットは攻撃できないので、攻撃フリンジの代わりに「杖が届くマス」を緑で示す（Phase 25・排他）
-        if (!context.usedRescue && !context.usedTakeOver && !context.usedDrop)
+        if (!context.usedRescue && !context.usedTakeOver && !context.usedDrop && !context.usedGive)
         {
             if (StaffRules.HasStaffEquipped(unit))
             {
@@ -664,8 +691,9 @@ public class BattleController : MonoBehaviour
         }
 
         // 降ろすを使った後は「再移動 → 待機」だけ（2026-07-26 作者仕様：降ろしても残りの移動力は使える）。
-        // 引き受けの後に降ろした場合もここに来るので、usedTakeOver より先に判定する
-        if (context.usedDrop)
+        // 引き受けの後に降ろした場合もここに来るので、usedTakeOver より先に判定する。
+        // 引き渡し・人交換の後も同じ（2026-10-26 作者合意＝降ろすと同じ扱い）
+        if (context.usedDrop || context.usedGive)
         {
             commands.Add(new ActionMenu.Entry("待機", FinishAction));
             return commands;
@@ -737,6 +765,15 @@ public class BattleController : MonoBehaviour
         // （通常の騎乗ユニットは徒歩の貨物のみ。輸送隊は何でも＝Phase 12）
         if (RescueRules.FindTakeOverCarriers(unit, grid).Count > 0)
             commands.Add(new ActionMenu.Entry("引き受け", EnterTakeOverCarrierSelect));
+
+        // 引き渡し：自分の貨物を、隣の空きのある騎乗の味方へ渡す（2026-10-26 作者要望。引き受けの逆向き）。
+        // 相手の行動は消費しない＝相手が未行動なら、そのターンのうちに運んで降ろせる（作者合意）
+        if (RescueRules.FindGiveReceivers(unit, grid).Count > 0)
+            commands.Add(new ActionMenu.Entry("引き渡し", EnterGiveReceiverSelect));
+
+        // 人交換：隣の救出中の騎乗の味方と、貨物を1体ずつ取り替える（2026-10-26 作者要望。扱いは引き渡しと同じ）
+        if (RescueRules.FindSwapPartners(unit, grid).Count > 0)
+            commands.Add(new ActionMenu.Entry("人交換", EnterSwapPartnerSelect));
 
         // 代わりに降ろす：徒歩ユニットが、隣接する輸送隊の貨物を降ろしてあげる
         // （2026-07-26 の仕様変更で運び手は輸送隊のみ。通常の騎乗ユニットの貨物は騎乗ユニットの
@@ -1054,6 +1091,8 @@ public class BattleController : MonoBehaviour
             case UnitSelectPurpose.Board: return "乗り込む先";
             case UnitSelectPurpose.Heal: return "杖の対象";
             case UnitSelectPurpose.Exchange: return "交換する相手";
+            case UnitSelectPurpose.Give: return "引き渡す相手";
+            case UnitSelectPurpose.Swap: return "人交換の相手";
             default: return "相手の情報";
         }
     }
@@ -1076,6 +1115,26 @@ public class BattleController : MonoBehaviour
         grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
         EnterUnitTargetSelect(UnitSelectPurpose.TakeOver,
                               RescueRules.FindTakeOverCarriers(context.unit, grid));
+    }
+
+    /// <summary>「引き渡し」の最初の段階：どの味方へ渡すかを選ぶ（2026-10-26）。</summary>
+    private void EnterGiveReceiverSelect()
+    {
+        // 貨物選択から戻ってきた場合もあるので、候補を取り直してハイライトも付け直す
+        grid.ResetAllHighlights();
+        grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
+        EnterUnitTargetSelect(UnitSelectPurpose.Give,
+                              RescueRules.FindGiveReceivers(context.unit, grid));
+    }
+
+    /// <summary>「人交換」の最初の段階：どの味方と貨物を取り替えるかを選ぶ（2026-10-26）。</summary>
+    private void EnterSwapPartnerSelect()
+    {
+        // 貨物選択から戻ってきた場合もあるので、候補を取り直してハイライトも付け直す
+        grid.ResetAllHighlights();
+        grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
+        EnterUnitTargetSelect(UnitSelectPurpose.Swap,
+                              RescueRules.FindSwapPartners(context.unit, grid));
     }
 
     // ===== 貨物選択（Phase 12）=====
@@ -1126,15 +1185,59 @@ public class BattleController : MonoBehaviour
                       cargo => { cargoMenu.Hide(); selectedCargo = cargo; EnterProxyDropTileSelect(); });
     }
 
-    /// <summary>貨物リストの情報パネルの見出し（降ろす・引き受け・代わりに降ろすで共通）。</summary>
+    /// <summary>
+    /// 「引き渡し」の貨物選択：自分の貨物からどれを渡すかを選ぶ（受け手が受け取れるものだけ。2026-10-26）。
+    /// 貨物を2体以上持てるのは輸送隊だけなので、リストが出るのは輸送隊が渡すときだけ。
+    /// </summary>
+    private void EnterGiveCargoSelect()
+    {
+        List<Unit> cargoes = RescueRules.GetGiveCargoes(context.unit, giveReceiver);
+        if (cargoes.Count == 1)
+        {
+            ExecuteGive(cargoes[0]);
+            return;
+        }
+        ShowCargoList(CargoSelectPurpose.Give, context.unit, cargoes,
+                      cargo => { cargoMenu.Hide(); ExecuteGive(cargo); }, giveReceiver);
+    }
+
+    /// <summary>「人交換」の貨物選択の1段目：自分の貨物からどれを出すかを選ぶ（相手が受け取れるものだけ。2026-10-26）。</summary>
+    private void EnterSwapGiveCargoSelect()
+    {
+        List<Unit> cargoes = RescueRules.GetGiveCargoes(context.unit, swapPartner);
+        if (cargoes.Count == 1)
+        {
+            selectedCargo = cargoes[0];
+            EnterSwapTakeCargoSelect();
+            return;
+        }
+        ShowCargoList(CargoSelectPurpose.SwapGive, context.unit, cargoes,
+                      cargo => { cargoMenu.Hide(); selectedCargo = cargo; EnterSwapTakeCargoSelect(); }, swapPartner);
+    }
+
+    /// <summary>「人交換」の貨物選択の2段目：相手の貨物からどれをもらうかを選ぶ（自分が受け取れるものだけ。2026-10-26）。</summary>
+    private void EnterSwapTakeCargoSelect()
+    {
+        List<Unit> cargoes = RescueRules.GetTakeOverCargoes(context.unit, swapPartner);
+        if (cargoes.Count == 1)
+        {
+            ExecuteSwap(selectedCargo, cargoes[0]);
+            return;
+        }
+        ShowCargoList(CargoSelectPurpose.SwapTake, swapPartner, cargoes,
+                      cargo => { cargoMenu.Hide(); ExecuteSwap(selectedCargo, cargo); });
+    }
+
+    /// <summary>貨物リストの情報パネルの見出し（降ろす・引き受け・代わりに降ろす・引き渡し・人交換で共通）。</summary>
     private const string CargoInfoTitle = "貨物の情報";
 
     /// <summary>
     /// 貨物リストメニューを開いて CargoSelect 状態に入る（共通処理）。
     /// cargoes は1体以上（呼び出し側が「2体以上のときだけ」リストを開く）。
+    /// partner … 自分の貨物のリストを出すときに、渡す相手（引き渡しの受け手・人交換の相手）も赤で示す（2026-10-26）。
     /// </summary>
     private void ShowCargoList(CargoSelectPurpose purpose, Unit anchor, List<Unit> cargoes,
-                               System.Action<Unit> onSelect)
+                               System.Action<Unit> onSelect, Unit partner = null)
     {
         menu.Hide();
         cargoSelectPurpose = purpose;
@@ -1143,6 +1246,8 @@ public class BattleController : MonoBehaviour
         grid.AddHighlight(context.unit.GridPosition, HighlightKind.Selection);
         if (anchor != context.unit)
             grid.AddHighlight(anchor.GridPosition, HighlightKind.TargetChoice);
+        if (partner != null)
+            grid.AddHighlight(partner.GridPosition, HighlightKind.TargetChoice);
 
         // 貨物の情報を右上に出す（2026-07-26 作者要望）。リストが出るのは貨物が2体以上のときだけで、
         // 先頭の貨物から表示し、行にマウスを重ねるとその貨物へ切り替わる
@@ -1213,6 +1318,50 @@ public class BattleController : MonoBehaviour
 
         Debug.Log($"{unit.Data.unitName} は {takeOverCarrier.Data.unitName} から {cargo.Data.unitName} を引き受けた");
         OpenCommandMenu();
+    }
+
+    /// <summary>
+    /// 引き渡しを実行（2026-10-26 作者要望）：自分の貨物を受け手へ移し、残り移動力での再移動へ移る
+    /// （作者合意＝降ろすと同じ扱い。以後は待機だけで、取り消し不能）。
+    /// 受け手の行動は消費しない＝受け手が未行動なら、自分の行動で運んで降ろせる（作者合意）。
+    /// </summary>
+    private void ExecuteGive(Unit cargo)
+    {
+        Unit unit = context.unit;
+        unit.RemoveCargo(cargo);
+        giveReceiver.StoreUnit(cargo);
+        context.MarkGive();
+        context.Commit(); // 相手の状態を変えたので巻き戻せない（ここが新しい「戻れる限界」になる）
+
+        Debug.Log($"{unit.Data.unitName} は {cargo.Data.unitName} を {giveReceiver.Data.unitName} に引き渡した" +
+                  $"（再移動できる移動力：{context.RemainingMove}）");
+
+        ShowMoveRange();
+        if (reachableCells.Count == 0)
+            OpenCommandMenu(); // 動けるマスが無ければそのまま待機メニューへ
+    }
+
+    /// <summary>
+    /// 人交換を実行（2026-10-26 作者要望）：自分の貨物 mine と相手の貨物 theirs を取り替え、
+    /// 残り移動力での再移動へ移る（扱いは引き渡しと同じ。相手の行動も消費しない）。
+    /// </summary>
+    private void ExecuteSwap(Unit mine, Unit theirs)
+    {
+        Unit unit = context.unit;
+        unit.RemoveCargo(mine);
+        swapPartner.RemoveCargo(theirs);
+        unit.StoreUnit(theirs);
+        swapPartner.StoreUnit(mine);
+        context.MarkGive();
+        context.Commit(); // 相手の状態を変えたので巻き戻せない（ここが新しい「戻れる限界」になる）
+
+        Debug.Log($"{unit.Data.unitName} は {swapPartner.Data.unitName} と人交換した" +
+                  $"（{mine.Data.unitName} を渡し、{theirs.Data.unitName} を受け取った。" +
+                  $"再移動できる移動力：{context.RemainingMove}）");
+
+        ShowMoveRange();
+        if (reachableCells.Count == 0)
+            OpenCommandMenu(); // 動けるマスが無ければそのまま待機メニューへ
     }
 
     /// <summary>乗り込むを実行：自分が輸送隊に格納され、行動を終える（輸送隊の行動は消費しない）。</summary>
@@ -1648,6 +1797,8 @@ public class BattleController : MonoBehaviour
         tileCandidates = null;
         proxyCarrier = null;
         takeOverCarrier = null;
+        giveReceiver = null;
+        swapPartner = null;
         selectedCargo = null;
         exchangePartner = null;
         exchangedCount = 0;

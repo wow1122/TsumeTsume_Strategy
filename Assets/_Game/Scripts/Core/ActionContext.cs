@@ -54,6 +54,18 @@ public class ActionContext
     }
 
     /// <summary>
+    /// 引き渡し・人交換（どちらも自分の貨物を相手へ渡す）を使ったか。
+    /// 以後は降ろすと同じく、残り移動力での再移動→待機のみ（2026-10-26 作者合意）。
+    /// </summary>
+    public bool usedGive { get; private set; }
+
+    /// <summary>引き渡し・人交換の使用を記録する（ExecuteGive / ExecuteSwap から呼ぶ）。</summary>
+    public void MarkGive()
+    {
+        usedGive = true;
+    }
+
+    /// <summary>
     /// 取り消し不能になったか。救出・引き受けを実行すると true になり、
     /// 以後は選択解除も元の位置への取り消しもできない（必ず待機等で行動を終える）。
     /// </summary>
@@ -66,7 +78,7 @@ public class ActionContext
     private int committedCost;
 
     // Commit 時点で「もう移動していた」か。取り消し（RevertMove）でこの値へ戻す。
-    // 救出・引き受け・降ろすは false（＝従来どおり移動済みを解除する）。
+    // 救出・引き受け・降ろす・引き渡し・人交換は false（＝従来どおり移動済みを解除する）。
     // 交換だけ true になりうる（下の Commit の説明を参照）。
     private bool committedHasMoved;
 
@@ -79,7 +91,7 @@ public class ActionContext
     }
 
     /// <summary>
-    /// ここまでの移動を確定して「取り消し不能点」を作る（救出・引き受け・降ろす・交換の実行時に呼ぶ）。
+    /// ここまでの移動を確定して「取り消し不能点」を作る（救出・引き受け・降ろす・交換・引き渡し・人交換の実行時に呼ぶ）。
     /// 以後の RevertMove は、行動開始位置ではなく「この時点の位置」へ戻る。
     ///
     /// keepHasMoved（フェーズ26で追加・既定 false ＝ 従来の3か所は挙動不変）：
