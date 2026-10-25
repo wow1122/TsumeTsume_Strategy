@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using UnityEngine;
 
 /// <summary>
 /// 攻撃するときに「どの武器で殴るか」を選ぶための共有ルール集（2026-08-09 作者要望）。
@@ -12,6 +13,8 @@ using System.Collections.Generic;
 ///  ・その武器で攻撃できるか … いまのメモリで払えるか（WeaponMemoryRules）を見たうえで、
 ///    一時的にその武器を装備して、既存の CombatRules.CanAttack を呼ぶ
 ///  ・その武器で狙える敵の一覧 … FindTargets（武器1本ぶん）と FindAllTargets（持っている武器の合算）
+///  ・攻撃が届くマス … GetAttackCellsFrom（立ち位置の候補から、持っている武器のどれかで届くマス。
+///    移動選択中の橙の範囲と、敵全員の攻撃範囲〔ThreatMap.GetThreatCells〕が使う。2026-10-25）
 ///  ・使えない理由 … 一覧の灰色の行に添える短い注記（メモリ不足／届く敵なし）
 ///  ・extraCost … 武器の消費とは別に一緒に払う量（必殺技の1本＝30）。必殺技では
 ///    「1本＋武器の消費」を両方払える武器だけが選べる（2026-10-24 の既定）
@@ -147,6 +150,53 @@ public static class WeaponChoiceRules
             }
         }
         return targets;
+    }
+
+    /// <summary>
+    /// unit が stands のどれかのマスに立ったとき、持っている武器のどれかで攻撃が届くマスの集合
+    /// （FindAllTargets の「相手」ではなく「マス」の版。そこに相手がいるかまでは見ない）。
+    /// 2026-10-25 に BattleController.ComputeAttackCells から切り出した。移動選択中の橙の範囲と
+    /// 敵全員の攻撃範囲（ThreatMap.GetThreatCells）が同じ計算を使うため。
+    /// 射程は実戦と同じ CombatRules.TryGetAttackRange を使うので、「後衛武器は移動すると最小射程ちょうどに縮む」
+    /// ルールも、メモリで払えない武器は届かない扱いになることもそのまま反映される。
+    /// 誰も立ち入れない壁マス（通行不可かつ飛行も不可）は入れない。立ち位置そのものも、届けば入る
+    /// （橙の範囲で移動できるマスを除くのは呼び出し側）。非武装なら空を返す。
+    /// </summary>
+    public static HashSet<Vector2Int> GetAttackCellsFrom(GridManager grid, Unit unit, List<Vector2Int> stands)
+    {
+        var result = new HashSet<Vector2Int>();
+        if (grid == null || unit == null || stands == null) return result;
+
+        foreach (WeaponData weapon in GetAttackWeapons(unit))
+        {
+            // その武器を装備した状態で射程を出す（probe。評価が終わると元の装備へ戻る）
+            WithWeapon(unit, weapon, () =>
+            {
+                foreach (Vector2Int stand in stands)
+                {
+                    // 現在地に居座る場合だけ hasMoved=false（後衛武器は武器上限まで届く）
+                    bool hasMoved = stand != unit.GridPosition;
+                    if (!CombatRules.TryGetAttackRange(unit, hasMoved, out int min, out int max)) continue;
+
+                    // stand を中心に、マンハッタン距離 min〜max のひし形の輪を集める
+                    for (int dx = -max; dx <= max; dx++)
+                    {
+                        int rest = max - Mathf.Abs(dx);
+                        for (int dy = -rest; dy <= rest; dy++)
+                        {
+                            if (Mathf.Abs(dx) + Mathf.Abs(dy) < min) continue; // 内側（射程未満）は届かない
+
+                            var cell = new Vector2Int(stand.x + dx, stand.y + dy);
+                            TileData tile = grid.GetTile(cell);
+                            if (tile == null) continue;                         // 盤外
+                            if (!tile.IsWalkable && !tile.CanFlyOver) continue; // 壁（誰も立てない）
+                            result.Add(cell);
+                        }
+                    }
+                }
+            });
+        }
+        return result;
     }
 
     /// <summary>

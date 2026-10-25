@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -6,6 +7,8 @@ using UnityEngine.InputSystem;
 /// 表示は優先度の高い順（Selection > TargetChoice > AttackRange > HealRange > MoveRange >
 /// 基本色）。ある種類だけを消すと、下に重なっていた種類の色が現れる。
 /// ※フェーズ32の補給圏（SupplyZone・薄紫）は 2026-10-24 に補給ごと撤廃した。
+/// ※Rキーで出す敵全員の攻撃範囲（赤紫・2026-10-25）はここに入れず、GridManager の別の層
+///   （SetDangerZone）で持つ。選択や解除のたびに呼ばれる ResetAllHighlights で消えないようにするため。
 /// </summary>
 [System.Flags]
 public enum HighlightKind
@@ -70,10 +73,18 @@ public class GridManager : MonoBehaviour
     [Tooltip("杖が届くマス・回復対象のマス（Phase 25）")]
     public Color healRangeColor = new Color(0.5f, 0.9f, 0.5f);    // 緑
 
+    [Header("敵の攻撃範囲（Rキーで表示切替・2026-10-25）")]
+    [Tooltip("敵の攻撃が届くマスに混ぜる色")]
+    public Color dangerZoneColor = new Color(0.85f, 0.3f, 0.75f); // 赤紫
+    [Tooltip("敵の攻撃範囲の色をどれだけ混ぜるか（小さいほど薄い。移動できるマスの水色にも同じ割合で重なる）")]
+    [Range(0f, 1f)]
+    public float dangerZoneBlend = 0.35f;
+
     // ── 内部データ ──
     private TileData[,] tiles;                 // 各マスの論理データ
     private SpriteRenderer[,] cellRenderers;   // 各マスの見た目（色を変える用）
     private HighlightKind[,] highlights;       // 各マスに重なっているハイライトの種類
+    private bool[,] dangerZone;                // 敵の攻撃範囲に入っているマス（ハイライトとは別の層・2026-10-25）
     private Sprite squareSprite;               // コードで生成する白い四角スプライト
     private Vector3 originWorld;               // マス(0,0)の中心のワールド座標
 
@@ -166,6 +177,7 @@ public class GridManager : MonoBehaviour
         tiles = new TileData[width, height];
         cellRenderers = new SpriteRenderer[width, height];
         highlights = new HighlightKind[width, height];
+        dangerZone = new bool[width, height];
 
         // グリッドの中心がこの GameObject の位置に来るよう、左下マスの基準点を計算
         originWorld = transform.position
@@ -351,6 +363,11 @@ public class GridManager : MonoBehaviour
     /// <summary>
     /// 重なっているハイライトのうち最も優先度の高い色を、地形色に混ぜて返す（無ければ地形色そのまま）。
     /// 完全な上書きではなく Color.Lerp で混ぜることで、ハイライト中でも下の地形が判別できる。
+    /// 敵の攻撃範囲（別の層）に入っているマスは、最後に赤紫を混ぜる（MixDangerZone）。
+    /// 混ぜるのは「ハイライトが無いマス」と「一番上が移動できるマス（水色）」だけ。
+    /// 水色は赤紫が混ざって青紫になり、移動先の安全・危険が選ぶ前に分かる（2026-10-25 作者合意）。
+    /// 黄（選択中）・赤（攻撃対象）・橙（攻撃が届く）・緑（杖）は、いま選んでいる操作の色なので
+    /// 混ぜずにそのまま見せる。
     /// </summary>
     private Color ResolveColor(int x, int y)
     {
@@ -363,9 +380,43 @@ public class GridManager : MonoBehaviour
         else if ((kinds & HighlightKind.AttackRange) != 0) highlightColor = attackRangeColor;
         else if ((kinds & HighlightKind.HealRange) != 0) highlightColor = healRangeColor;
         else if ((kinds & HighlightKind.MoveRange) != 0) highlightColor = moveRangeColor;
-        else return baseColor;
+        else return MixDangerZone(x, y, baseColor);
 
-        return Color.Lerp(baseColor, highlightColor, highlightBlend);
+        Color color = Color.Lerp(baseColor, highlightColor, highlightBlend);
+
+        // 水色は一番下の種類なので、「一番上が水色」＝水色だけが重なっているマス
+        return kinds == HighlightKind.MoveRange ? MixDangerZone(x, y, color) : color;
+    }
+
+    /// <summary>敵の攻撃範囲に入っているマスなら、color に赤紫を dangerZoneBlend の割合だけ混ぜて返す。</summary>
+    private Color MixDangerZone(int x, int y, Color color)
+    {
+        return dangerZone[x, y] ? Color.Lerp(color, dangerZoneColor, dangerZoneBlend) : color;
+    }
+
+    // ===== 敵の攻撃範囲（ハイライトとは別の層。2026-10-25 作者要望） =====
+
+    /// <summary>
+    /// 敵の攻撃範囲として赤紫を混ぜるマスを差し替える（null なら全部消す）。中身が変わったマスだけ塗り直す。
+    /// ハイライト（HighlightKind）とは別の層なので、ResetAllHighlights・ClearHighlights では消えない
+    /// （ユニットの選択や解除のたびに描き直さなくてよいように）。
+    /// 表示の切り替え（Rキー）と、どのマスが範囲かの計算は DangerZoneView が受け持つ。
+    /// </summary>
+    public void SetDangerZone(HashSet<Vector2Int> cells)
+    {
+        if (dangerZone == null) return;
+
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                bool inZone = cells != null && cells.Contains(new Vector2Int(x, y));
+                if (dangerZone[x, y] == inZone) continue;
+
+                dangerZone[x, y] = inZone;
+                RepaintCell(x, y);
+            }
+        }
     }
 
     // ===== カーソル下のマスの地形情報と座標（盤面の下の帯。2026-08-17 作者仕様） =====

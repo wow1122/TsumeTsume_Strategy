@@ -147,6 +147,10 @@ public class BattleController : MonoBehaviour
         // 出す相手はユニット情報パネルから自分で読むので、ここからの呼び出しは無い
         if (GetComponent<AIDebugPanel>() == null) gameObject.AddComponent<AIDebugPanel>();
 
+        // 敵全員の攻撃範囲を薄い赤紫で重ねる表示（Rキーで切り替え・2026-10-25）。
+        // キーの読み取りも範囲の計算し直しも自分で行うので、ここからの呼び出しは無い
+        if (GetComponent<DangerZoneView>() == null) gameObject.AddComponent<DangerZoneView>();
+
         // コマンド一覧の「状況」「設定」で出るパネル（2026-08-15）
         systemInfo = GetComponent<SystemInfoPanel>();
         if (systemInfo == null) systemInfo = gameObject.AddComponent<SystemInfoPanel>();
@@ -1651,41 +1655,13 @@ public class BattleController : MonoBehaviour
     /// 2026-08-09 から、持っている武器ぶんを合算する（攻撃の対象を「全武器で届く敵」に
     /// した合意に表示を合わせるため）。敵は装備中の1本だけが候補なので、
     /// 敵の行動範囲プレビューの見た目は従来と変わらない。
+    /// 2026-10-25 に、届くマスを集める本体を WeaponChoiceRules.GetAttackCellsFrom へ切り出した
+    /// （Rキーの「敵全員の攻撃範囲」が同じ計算を使うため。ここに残したのは移動範囲を除く部分だけ）。
     /// </summary>
     private HashSet<Vector2Int> ComputeAttackCells(Unit unit, HashSet<Vector2Int> reachable)
     {
-        var result = new HashSet<Vector2Int>();
-
         var stands = new List<Vector2Int>(reachable) { unit.GridPosition };
-        foreach (WeaponData weapon in WeaponChoiceRules.GetAttackWeapons(unit))
-        {
-            // その武器を装備した状態で射程を出す（probe。評価が終わると元の装備へ戻る）
-            WeaponChoiceRules.WithWeapon(unit, weapon, () =>
-            {
-                foreach (Vector2Int stand in stands)
-                {
-                    // 現在地に居座る場合だけ hasMoved=false（後衛武器は武器上限まで届く）
-                    bool hasMoved = stand != unit.GridPosition;
-                    if (!CombatRules.TryGetAttackRange(unit, hasMoved, out int min, out int max)) continue;
-
-                    // stand を中心に、マンハッタン距離 min〜max のひし形の輪を集める
-                    for (int dx = -max; dx <= max; dx++)
-                    {
-                        int rest = max - Mathf.Abs(dx);
-                        for (int dy = -rest; dy <= rest; dy++)
-                        {
-                            if (Mathf.Abs(dx) + Mathf.Abs(dy) < min) continue; // 内側（射程未満）は届かない
-
-                            var cell = new Vector2Int(stand.x + dx, stand.y + dy);
-                            TileData tile = grid.GetTile(cell);
-                            if (tile == null) continue;                         // 盤外
-                            if (!tile.IsWalkable && !tile.CanFlyOver) continue; // 壁（誰も立てない）
-                            result.Add(cell);
-                        }
-                    }
-                }
-            });
-        }
+        HashSet<Vector2Int> result = WeaponChoiceRules.GetAttackCellsFrom(grid, unit, stands);
 
         // 立てるマスは移動範囲（青）として見せたいので、赤にするのは「移動の外側」だけ
         result.ExceptWith(reachable);

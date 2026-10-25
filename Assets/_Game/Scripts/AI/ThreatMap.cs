@@ -3,9 +3,10 @@ using UnityEngine;
 
 /// <summary>
 /// 盤面から「次の相手フェイズにどんな危険があるか」を読み取る道具集（Phase 19〜）。
-/// 判定の部品は CombatRules / MovementCalculator / DamageCalculator にあるものを使い、
+/// 判定の部品は CombatRules / MovementCalculator / DamageCalculator / WeaponChoiceRules にあるものを使い、
 /// ここではそれを組み合わせるだけ（一元化の方針）。
-/// 扱う脅威は「挟撃の脅威」（Phase 19）。Phase 20 の「対空射程マス」は 2026-10-24 に飛翔ごと撤廃した。
+/// 扱う脅威は「挟撃の脅威」（Phase 19）と「攻撃が届くマス」（2026-10-25・Rキーで出す敵全員の攻撃範囲）。
+/// Phase 20 の「対空射程マス」は 2026-10-24 に飛翔ごと撤廃した。
 /// </summary>
 public static class ThreatMap
 {
@@ -144,5 +145,30 @@ public static class ThreatMap
                 return true;
         }
         return false;
+    }
+
+    // ===== 攻撃が届くマス（2026-10-25・Rキーで出す敵全員の攻撃範囲）=====
+
+    /// <summary>
+    /// faction のユニット全員が、次の自分のフェイズに攻撃を届かせられるマスの集合
+    /// （2026-10-25 作者要望・敵の攻撃範囲の表示用。DangerZoneView が Faction.Enemy で呼ぶ）。
+    /// 1体ごとに「移動できるマス＋いまのマス」を立ち位置の候補にして、WeaponChoiceRules.GetAttackCellsFrom で
+    /// 届くマスを集め、全員ぶんを合わせる。立ち位置の候補と射程の決まりは、敵AIが攻撃先を探すとき
+    /// （EnemyAI.Evaluate）と同じ。待ち伏せ型も区別しない（挑発される前でも、届く相手がいれば
+    /// 動いて攻撃してくる＝Phase 17）。行動済みかどうかも見ない（敵フェイズの途中に呼ぶと
+    /// 「いまの盤面から全員がもう一度動いたら」の範囲になる）。
+    /// 盤面はいまのまま読む＝ユニットが順番に動いて空いたマスに止まる分までは読まない（表示用の近似）。
+    /// </summary>
+    public static HashSet<Vector2Int> GetThreatCells(GridManager grid, Faction faction)
+    {
+        var result = new HashSet<Vector2Int>();
+        if (grid == null) return result;
+
+        foreach (Unit unit in UnitRegistry.GetUnits(faction))
+        {
+            var stands = new List<Vector2Int>(MovementCalculator.GetReachableCells(grid, unit)) { unit.GridPosition };
+            result.UnionWith(WeaponChoiceRules.GetAttackCellsFrom(grid, unit, stands));
+        }
+        return result;
     }
 }

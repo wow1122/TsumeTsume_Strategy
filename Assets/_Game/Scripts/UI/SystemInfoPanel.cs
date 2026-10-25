@@ -4,7 +4,7 @@ using UnityEngine;
 /// <summary>パネルの用途（コマンド一覧のどの項目から開かれたか）。</summary>
 public enum SystemInfoKind
 {
-    Status,   // 「状況」：ターン数・フェイズ・クリア条件・両軍の数
+    Status,   // 「状況」：ターン数・フェイズ・クリア条件・両軍の数・敵の攻撃範囲の表示状態
     Settings, // 「設定」：将来の調整項目（いまは枠だけ）
 }
 
@@ -43,6 +43,7 @@ public class SystemInfoPanel : MonoBehaviour
 
     private SystemInfoKind kind;
     private TurnManager turnManager;
+    private DangerZoneView dangerZoneView; // 敵の攻撃範囲の表示状態を読む（同じ GameObject にある。2026-10-25）
 
     /// <summary>パネルを表示する（BattleController から呼ぶ）。</summary>
     public void Show(SystemInfoKind kind, TurnManager turnManager)
@@ -100,7 +101,7 @@ public class SystemInfoPanel : MonoBehaviour
         return lines;
     }
 
-    /// <summary>「状況」の中身：ターン数・フェイズ・クリア条件・両軍の数。</summary>
+    /// <summary>「状況」の中身：ターン数・フェイズ・クリア条件・両軍の数・敵の攻撃範囲の表示状態。</summary>
     private List<string> BuildStatusLines()
     {
         var lines = new List<string>();
@@ -129,6 +130,14 @@ public class SystemInfoPanel : MonoBehaviour
         int enemies = UnitRegistry.CountAlive(Faction.Enemy);
         lines.Add($"味方 {players} 体（未行動 {CountUnacted(Faction.Player)}）");
         lines.Add($"敵　 {enemies} 体");
+
+        // Rキーで切り替える「敵の攻撃範囲」（2026-10-25 作者合意）。いまの状態を出しつつ、キーの案内も兼ねる
+        if (dangerZoneView == null) dangerZoneView = GetComponent<DangerZoneView>();
+        if (dangerZoneView != null)
+        {
+            lines.Add("");
+            lines.Add($"敵の攻撃範囲: {(dangerZoneView.IsVisible ? "表示中" : "非表示")}（Rキーで切り替え）");
+        }
 
         return lines;
     }
