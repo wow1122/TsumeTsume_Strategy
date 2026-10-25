@@ -199,9 +199,6 @@ public class Unit : MonoBehaviour
     /// <summary>覚醒ゲージ（再行動用）。Initialize で構築される。</summary>
     public GaugeState Momentum { get; private set; }
 
-    /// <summary>このターンすでに再行動を使ったか（1ターン1回まで。フェーズ30）。</summary>
-    public bool UsedRefreshThisTurn { get; private set; }
-
     /// <summary>メモリを増やす（フェイズ開始時の自然増加）。</summary>
     public void AddMemory(int amount)
     {
@@ -228,18 +225,6 @@ public class Unit : MonoBehaviour
     public bool SpendMomentum()
     {
         return Momentum != null && Momentum.SpendStock();
-    }
-
-    /// <summary>再行動を使った印をつける（同じターンに2回は使えない）。</summary>
-    public void MarkRefreshUsed()
-    {
-        UsedRefreshThisTurn = true;
-    }
-
-    /// <summary>再行動の「1ターン1回」の印を戻す（自陣営のフェイズ開始時）。</summary>
-    public void ResetRefresh()
-    {
-        UsedRefreshThisTurn = false;
     }
 
     // ── 敵AIの性格（Phase 17）──
@@ -298,7 +283,6 @@ public class Unit : MonoBehaviour
         Memory = new GaugeState(GaugeRules.MaxMemory, GaugeRules.MaxMemoryStock);
         Momentum = new GaugeState(GaugeRules.MaxMomentum, GaugeRules.MaxMomentumStock);
         Memory.Add(GaugeRules.InitialMemory(this));
-        UsedRefreshThisTurn = false;
 
         // 所持品をコピーし（ランタイム状態）、一番上の武器を初期装備にする（フェーズ22）。
         // 道具の残り回数も新品で入るので、マップが変わるたびに満タンに戻る

@@ -481,7 +481,7 @@ public class BattleController : MonoBehaviour
 
     /// <summary>
     /// 「再行動」が選ばれた（フェーズ30）：覚醒を1本使って行動済みを解除し、移動選択へ戻す。
-    /// 同じユニットは1ターンに1回しか使えない（MarkRefreshUsed）。
+    /// 覚醒が残っていれば、同じユニットが同じターンに何回でも使える（2026-10-25 作者指示で回数の制限を外した）。
     /// 移動力は新しい ActionContext ができることで全回復する（＝まっさらな1行動として扱う。
     /// 救出済みなどの制限もすべて解けるので、前の行動を引きずらない）。
     /// </summary>
@@ -500,10 +500,9 @@ public class BattleController : MonoBehaviour
         }
 
         unit.SpendMomentum();
-        unit.MarkRefreshUsed();
         unit.SetActed(false); // 行動済みの暗い表示も元に戻る
         Debug.Log($"再行動！ {unit.Data.unitName} がもう一度動けるようになった" +
-                  $"（覚醒ゲージの残り {unit.Momentum.Stock} 本・このターンはもう使えない）");
+                  $"（覚醒ゲージの残り {unit.Momentum.Stock} 本）");
 
         EnterMoveSelect(unit);
     }

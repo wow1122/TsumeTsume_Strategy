@@ -213,12 +213,12 @@ public static class GaugeRules
 
     /// <summary>
     /// 再行動（覚醒1本消費）が使える状態か（フェーズ30）。
-    /// 行動済みのユニットだけが対象で、同じターンに2回は使えない。
+    /// 行動済みのユニットだけが対象。覚醒が残っていれば、同じターンに何回でも使える
+    /// （2026-10-25 作者指示で「1ターン1回」の制限を外した。制限が要るときは作者から相談する）。
     /// </summary>
     public static bool CanRefresh(Unit unit)
     {
         return unit != null && unit.IsAlive && unit.HasActed
-               && !unit.UsedRefreshThisTurn
                && unit.Momentum != null && unit.Momentum.HasStock;
     }
 
