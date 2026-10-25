@@ -29,7 +29,7 @@ public enum HighlightKind
 ///  ・ワールド座標 ⇔ グリッド座標 の変換を行う
 ///  ・マスの色（ハイライト）を変える道具を提供する
 ///  ・敵の攻撃範囲の赤紫（Rキー）と、印を付けた敵の範囲の赤い外枠を描く（2026-10-25。
-///    中身の計算といつ描き直すかは DangerZoneView）
+///    中身の計算といつ描き直すかは DangerZoneView。印を付けた敵を赤く染める色 markedUnitTint もここに置く）
 /// クリックや選択の操作は BattleController が担当します（役割分担）。
 /// グリッドの中心が、この GameObject の位置に来るように配置されます。
 /// </summary>
@@ -82,12 +82,14 @@ public class GridManager : MonoBehaviour
     [Range(0f, 1f)]
     public float dangerZoneBlend = 0.35f;
 
-    [Header("印を付けた敵の範囲の外枠（敵のクリックで付け外し・2026-10-25）")]
-    [Tooltip("外枠の線の色")]
+    [Header("印を付けた敵（敵のクリックで付け外し・2026-10-25）")]
+    [Tooltip("範囲の外枠の線の色")]
     public Color markedOutlineColor = new Color(0.7f, 0f, 0f);    // 濃い赤
-    [Tooltip("外枠の線の太さ（マスの一辺に対する割合。0.08 で Stage_01 の約4ピクセル）")]
+    [Tooltip("範囲の外枠の線の太さ（マスの一辺に対する割合。0.08 で Stage_01 の約4ピクセル）")]
     [Range(0.02f, 0.3f)]
     public float markedOutlineThickness = 0.08f;
+    [Tooltip("印を付けた敵の絵に掛け合わせる色（赤く染めて、範囲を調べている途中の敵だと示す。白にすると染めない）")]
+    public Color markedUnitTint = new Color(1f, 0.35f, 0.35f);    // 赤
 
     // ── 内部データ ──
     private TileData[,] tiles;                 // 各マスの論理データ

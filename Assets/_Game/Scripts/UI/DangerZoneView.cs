@@ -18,6 +18,8 @@ using UnityEngine.InputSystem; // 新 Input System
 /// その敵の範囲（移動＋攻撃。ThreatMap.GetUnitRangeCells）の外枠が残る。何体でも付けられ、
 /// 印の付いた敵をもう一度クリックすると外れる（付け外しの入口は BattleController の ToggleMark 呼び出し）。
 /// ・印を付けた敵が複数いるときは、範囲を合わせた外周を1本の枠で囲む（作者合意）。描くのは GridManager（SetMarkedOutline）
+/// ・印の付いた敵の絵は赤く染まる＝範囲を調べている途中の敵だと分かる（作者要望。色は GridManager.markedUnitTint、
+///   染めるのは Unit.SetMarkTint。印を外すと元の色に戻る）
 /// ・ターンをまたいでも残り、敵が動けば付いていく。倒れた敵の印は自動で外れる。ESC や右クリックでは外れない
 ///
 /// 【描き直すタイミング】ユニットが動く・倒れる・救出で盤上から消える・敵の装備やメモリが変わると、範囲も変わる。
@@ -56,7 +58,7 @@ public class DangerZoneView : MonoBehaviour
     /// <summary>
     /// 敵に印を付ける／外す（BattleController が、何も選んでいないときの敵のクリックで呼ぶ）。
     /// 付けたら true、外したら false を返す（呼び出し側は、付けたときだけ青・橙の下見表示も出す）。
-    /// 外枠は次の Update で描き直す。
+    /// 外枠と赤く染めるのは次の Update で行う（RefreshMarks）。外したときの色戻しはここで行う。
     /// </summary>
     public bool ToggleMark(Unit enemy)
     {
@@ -65,6 +67,7 @@ public class DangerZoneView : MonoBehaviour
         marksDirty = true;
         if (markedEnemies.Remove(enemy))
         {
+            enemy.SetMarkTint(Color.white); // 赤く染めていたのを元の色に戻す
             Debug.Log($"印を外した: {enemy.Data.unitName}（印の付いた敵 {markedEnemies.Count} 体）");
             return false;
         }
@@ -137,9 +140,14 @@ public class DangerZoneView : MonoBehaviour
         }
     }
 
-    /// <summary>印の付いた敵の範囲を合わせて、外枠を描き直す（印が無ければ消す）。</summary>
+    /// <summary>印の付いた敵を赤く染め、範囲を合わせた外枠を描き直す（印が無ければ枠を消す）。</summary>
     private void RefreshMarks()
     {
+        // 範囲を調べている途中の敵だと分かるように赤く染める（作者要望）。
+        // Inspector で色を変えたときにも次の描き直しで追随するよう、毎回塗り直す
+        foreach (Unit enemy in markedEnemies)
+            enemy.SetMarkTint(grid.markedUnitTint);
+
         if (markedEnemies.Count == 0)
         {
             grid.SetMarkedOutline(null);

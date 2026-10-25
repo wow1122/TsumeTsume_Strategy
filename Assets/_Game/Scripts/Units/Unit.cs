@@ -255,6 +255,7 @@ public class Unit : MonoBehaviour
 
     private SpriteRenderer spriteRenderer;
     private Color baseColor;   // 行動済みで暗くする前の、元の色
+    private Color markTint = Color.white; // 印を付けた敵（範囲を調べている途中）を染める色。白＝染めない（2026-10-25）
     private GridManager grid;  // 戦闘不能時にマスの占有を外すため保持
 
     /// <summary>
@@ -364,18 +365,42 @@ public class Unit : MonoBehaviour
 
     /// <summary>
     /// 行動済み状態を設定する。行動済みなら暗く表示し、
-    /// フェイズが新しくなったら false に戻して元の色に戻す。
+    /// フェイズが新しくなったら false に戻して元の色に戻す（印の赤とは重ねがけ。RefreshColor）。
     /// </summary>
     public void SetActed(bool acted)
     {
         HasActed = acted;
-        if (spriteRenderer != null)
+        RefreshColor();
+    }
+
+    /// <summary>
+    /// 印を付けた敵（範囲を調べている途中）を赤く染める／元に戻す（2026-10-25 作者要望。DangerZoneView が呼ぶ）。
+    /// tint を元の色に掛け合わせる（白を渡すと元の色に戻る）。行動済みの暗さとは重ねがけになる。
+    /// </summary>
+    public void SetMarkTint(Color tint)
+    {
+        markTint = tint;
+        RefreshColor();
+    }
+
+    /// <summary>
+    /// 絵の色を決め直す：元の色 × 印の色（印が無ければ白＝そのまま）× 行動済みなら RGB を半分。
+    /// 透明度は元の色のまま保つ。
+    /// </summary>
+    private void RefreshColor()
+    {
+        if (spriteRenderer == null) return;
+
+        Color color = baseColor * markTint; // 色どうしの掛け算＝成分ごとに掛ける
+        if (HasActed)
         {
-            // 行動済みは暗く（RGBだけ半分に。透明度は保つ）
-            spriteRenderer.color = acted
-                ? new Color(baseColor.r * 0.5f, baseColor.g * 0.5f, baseColor.b * 0.5f, baseColor.a)
-                : baseColor;
+            // 行動済みは暗く（RGBだけ半分に）
+            color.r *= 0.5f;
+            color.g *= 0.5f;
+            color.b *= 0.5f;
         }
+        color.a = baseColor.a;
+        spriteRenderer.color = color;
     }
 
     // ===== 救出の実務（格納・解放）=====
