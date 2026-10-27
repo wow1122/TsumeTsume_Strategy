@@ -191,6 +191,9 @@ Combat/WeaponChoiceRules に集約し、**probe（お試し装備）方式**で�
 2026-10-28、作者要望で**Rキーの赤紫の境目に、塗りより少し濃い紫の線**を足した（「敵の攻撃範囲の表示の合意仕様」の節）。
 範囲に囲まれた穴は、攻撃が届かない安全なマスだけ線で囲み、壁は囲まない（作者合意）。紫と印の赤い外枠が重なる所は赤が上。
 コミットは feat a256554 → docs（この CLAUDE.md）。作者 Play 確認済み（Stage_01）。スクリプトのみでアセット変更なし。
+同日続けて、作者要望で**印を付けた敵の範囲を薄い赤で塗り**、**黄・青・橙の下見は印の付いた敵にマウスを乗せている間だけ**
+出す形に変えた（クリックで出して残す形はやめた。薄い赤は青い移動範囲に混ぜない。どちらも作者合意）。
+コミットは feat 6790b65 → docs（この CLAUDE.md）。作者 Play 確認済み（Stage_01）。スクリプトのみでアセット変更なし。
 
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
@@ -309,8 +312,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   （旧「敵以外クリックで待機」は廃止）。メニューはユニット右隣・画面端で左に回り込み
 - マスのハイライトは HighlightKind の優先度付き多層管理
   （Selection > TargetChoice > AttackRange > HealRange > MoveRange > 市松模様）。色設定は GridManager に集約。
-  敵の攻撃範囲の赤紫（Rキー）とその紫の外枠、印を付けた敵の外枠は、ハイライトとは別の層
-  （2026-10-25・紫の外枠は 2026-10-28。「敵の攻撃範囲の表示の合意仕様」の節）
+  敵の攻撃範囲の赤紫（Rキー）とその紫の外枠、印を付けた敵の薄い赤と外枠は、ハイライトとは別の層
+  （2026-10-25・紫の外枠と薄い赤は 2026-10-28。「敵の攻撃範囲の表示の合意仕様」の節）
 
 ### 救出システムの合意仕様（Phase 11・2026-07-11 作者合意）
 
@@ -568,6 +571,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   空きマスクリック/ESC/右クリック/自軍選択/敵フェイズ開始で解除）。
   ※2026-10-25 から敵のクリックは印の付け外しを兼ねる＝下見が出るのは印を付けたときで、
   印の付いた敵をもう一度クリックすると下見も印も消える（「敵の攻撃範囲の表示の合意仕様」の節）。
+  ※2026-10-28 から、下見は何も選んでいないときに印の付いた敵へマウスを乗せている間だけ出る
+  （クリックでは出さない・残さない。BattleController.UpdateHoverPreview）。
   色の注記: スクリプト既定の attackRangeColor は赤 (1, 0.5, 0.5) だが、シーンの直列化値は
   オレンジ (1, 0.7, 0.5) のままで作者テスト済み・承認済み
   （変える場合は GridManager の Inspector で色を変えて Ctrl+S 保存→シーンをコミット）
@@ -1385,15 +1390,22 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   作者の「FE if を参考に」という要望に対し、FE if の画面そのものは確かめられなかったので、作者の説明どおり
   「塗りの境目を同じ系統の濃い色でなぞる」形にした
 - **何も選んでいないときに敵をクリックすると印が付き**、その敵の範囲（移動できるマス＋本人のマス＋攻撃が届くマス。
-  ThreatMap.GetUnitRangeCells）の**外枠が濃い赤で残る**。何体でも付けられ、
-  **印の付いた敵をもう一度クリックすると外れる**
-  - 印を付ける1回目のクリックでは、今までどおり青・橙の下見表示も出る（作者合意）。下見は今までの条件
-    （別のマスのクリック・右クリック/ESC・味方の選択・敵フェイズ開始）で消えるが、外枠は残る。
-    2回目のクリックでは下見も印と一緒に消える
-  - 印が複数あるときは、**範囲を合わせた外周を1本の枠で囲む**（作者合意）
+  ThreatMap.GetUnitRangeCells）が**薄い赤で塗られ、外枠が濃い赤で残る**（薄い赤は 2026-10-28 作者要望）。
+  何体でも付けられ、**印の付いた敵をもう一度クリックすると外れる**
+  - **黄・青・橙の下見は、何も選んでいないときに、印の付いた敵へマウスを乗せている間だけ出る**（2026-10-28 作者要望・合意）。
+    下見はハイライトなので、薄い赤や赤紫より上に見える。印を付けたクリックではマウスが敵の上にあるので、そのまま下見が出る。
+    印の無い敵に乗せても何も出ない（作者の指定）。味方を選んで移動先を選んでいる間などは出さない（自分の青い範囲が隠れるため）。
+    経緯: 2026-10-25 は「1回目のクリックで下見も出し、別のマスのクリック・右クリック/ESC・味方の選択・敵フェイズ開始まで残す」
+    だった（作者合意）。薄い赤を入れると、残った下見がクリックした敵の薄い赤を隠すので、マウスを乗せている間だけに変えた。
+    何も選んでいないときの右クリック/ESC は、今は何もしない
+  - 印が複数あるときは、**範囲を合わせて塗り、外周を1本の枠で囲む**（作者合意）
+  - **薄い赤を塗るのは範囲のマスそのもの**（2026-10-28）。混ぜるのはハイライトの無いマスだけで、赤紫（Rキー）より優先する。
+    **青い移動範囲には混ぜない**（作者合意。青＋薄い赤と青＋赤紫が似た色になって見分けにくいため。境目は赤い線で見える）。
+    黄・赤・橙・緑にも混ぜない（赤紫と同じ）。色と濃さは Inspector の markedFillColor / markedFillBlend
+    （既定 (1,0.45,0.45)＝攻撃対象の候補の赤と同じ色・0.35＝赤紫と同じ濃さ。見本で3案を比べて大差なし）
   - 外枠なので、範囲に囲まれた内側の穴（城の壁など）は囲まない。盤面の端では端に沿って閉じる。
-    そのため**枠の内側にも、実際には届かないマスが入ることがある**（Stage_01 の (5,9) の弓兵の死角 (1,9)・(2,8) など。
-    2026-10-25 に作者へ報告済み・現状のまま）
+    そのため枠の内側にも、実際には届かないマスが入る（Stage_01 の (5,9) の弓兵の死角 (1,9)・(2,8) など）。
+    2026-10-28 からは、そうしたマスは薄い赤で塗られないので見分けられる
   - 印はターンをまたいでも残り、敵が動けば付いていく。倒れた敵の印は自動で外れる。ESC・右クリックでは外れない
   - 線の色と太さは Inspector の markedOutlineColor / markedOutlineThickness
     （既定 (0.7,0,0)・マスの一辺の8%＝Stage_01 で約4px）
@@ -1412,7 +1424,9 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 - 参考の数字: Stage_01 の1ターン目は 168 マス中 140 マス（83%）が赤紫（WSL での事前計算と Play のログが一致）。
   移動6の敵4体を除くと 99 マス。紫の線は 54 本（盤の端に沿う 33 本＋味方の初期配置側との境目 21 本。
   表示に切り替えた直後のログに本数も出る）。範囲の中の壁 (4,8)(7,8) は囲まない。
-  敵槍騎兵2体に印を付けると、赤い線 42 本のうち 16 本が紫と重なる（どれも WSL での事前計算）
+  敵槍騎兵2体に印を付けると、赤い線 42 本のうち 16 本が紫と重なる（どれも WSL での事前計算）。
+  同じ2体の印で薄い赤は 59 マス（R も押すと赤紫は残り 81 マス）、(12,7) の印を外すと 56 マス。
+  敵弓兵 (5,9) に印を付けると、枠の内側 52 マスのうち塗るのは 48 マス（死角 (1,9)(2,8) と壁 (4,8)(7,8) は塗らない）
 - 範囲に囲まれた安全なマスは、今あるステージの1ターン目には無く、Stage_01 で味方1体を動かしても出ない（総当たりで確認）。
   確かめるなら Stage_01 の1ターン目に 味方兵 (4,1)→(4,4)・味方兵 (5,1)→(4,2)・味方騎兵 (3,1)→(3,3)・
   味方斧兵 (6,1)→(5,3) と動かすと、まん中の (4,3) が紫の四角で囲まれる（139 マス・線 60 本の見込み）
@@ -1436,8 +1450,10 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   攻撃可能マス表示ComputeAttackCells※2026-10-25 から届くマスの計算本体は WeaponChoiceRules.GetAttackCellsFrom〔ここは移動範囲と自分のマスを除くだけ〕・
   持ち物コマンド（2段階サブメニュー: 装備/外す/道具使用/捨てる・ホバー詳細は右下固定）・杖コマンド（回復対象選択→ExecuteHeal・杖が届くマス表示ComputeHealCells）・
   交換コマンド（相手選択→2列の交換画面。左右共用のBuildExchangeColumn/TransferItem・列見出しBuildExchangeHeader・行動は消費せず1個目でCommit）・
-  敵の行動範囲プレビューShowEnemyPreview※2026-10-25 から敵のクリックは印の付け外しを兼ねる〔DangerZoneView.ToggleMark が
-  true＝印を付けたら下見を出す・false＝外したら ClearEnemyPreview〕・被ダメ確認の閲覧状態もここ・
+  敵の行動範囲プレビューShowEnemyPreview※2026-10-28 から印の付いた敵にマウスを乗せている間だけ〔Update の最後で、
+  Idle なら UpdateHoverPreview＝マウスの下の敵が DangerZoneView.IsMarked なら下見を出し、離れたら ClearEnemyPreview・
+  乗せている敵が変わったときだけ描き直す・ユニット情報パネルの上は無視。敵のクリックは DangerZoneView.ToggleMark だけ・
+  Idle の右クリック/ESC は何もしない〕・被ダメ確認の閲覧状態もここ・
   必殺技コマンド※フェーズ29〔武器・対象の選び方は攻撃と共通のEnterWeaponSelect(critical)・criticalPending〕・
   攻撃の武器選択→対象選択※2026-08-09〔EnterWeaponSelect(bool critical)（武器1本でも必ず一覧を出す）→
   BuildWeaponEntries（押せる＝その武器で狙える敵がいること。使えない武器は理由付きの灰色行）→
@@ -1482,9 +1498,11 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   混ぜるのはResolveColorの最後のMixDangerZoneで、ハイライトの無いマスと水色だけのマス・dangerZoneColor/dangerZoneBlend。
   ※2026-10-28 から塗りと一緒に紫の外枠も引く＝FillEnclosedWalls（囲まれた穴のうち誰も立てない壁だけ埋める）→DrawOutline・
   dangerZoneOutlineColor/dangerZoneOutlineThickness・引いた本数DangerZoneOutlineCount（ログ用）〕・
-  印を付けた敵の範囲の外枠SetMarkedOutline※2026-10-25〔FillHolesで内側の穴を全部埋めてから DrawOutline・
-  markedOutlineColor/markedOutlineThickness。印の敵を染める色markedUnitTintもここ〕・
-  外枠の線の描き方DrawOutline※2026-10-28 に SetMarkedOutline から切り出し〔境目ごとに細長い四角（OutlineBar_n）を
+  印を付けた敵の範囲の薄い赤と外枠SetMarkedZone※2026-10-28 に SetMarkedOutline（2026-10-25）から改名〔塗りは範囲のマスそのもの
+  ＝markedFill 層（ResolveColor でハイライトの無いマスだけ・赤紫より先に判定・markedFillColor/markedFillBlend）、
+  外枠は FillHoles で内側の穴を全部埋めてから DrawOutline・markedOutlineColor/markedOutlineThickness。
+  印の敵を染める色markedUnitTintもここ〕・別の層の差し替えは SetLayer が共通（SetDangerZone も使う）・
+  外枠の線の描き方DrawOutline※2026-10-28 に当時の SetMarkedOutline から切り出し〔境目ごとに細長い四角（OutlineBar_n）を
   境目の真上に置く・線ひと組＝OutlineSet（入れ物・SpriteRenderer の使い回し・描画順）を紫と赤で1組ずつ・
   描画順は紫1・赤2＝マス0とユニット3の間・穴の判定は FindOutside が共通〕・
   地形適用ApplyTerrain・地形情報を**盤面の真下の帯に1行で表示**※2026-08-17
@@ -1553,7 +1571,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   Rキーで敵全員の赤紫IsVisibleを切り替え〔ThreatMap.GetThreatCells→GridManager.SetDangerZone。紫の外枠も一緒に出る※2026-10-28・
   表示に切り替えた直後にマス数と外枠の線の本数をログに出す〕・
   印の付いた敵の一覧と付け外しToggleMark〔BattleControllerが何も選んでいないときの敵のクリックで呼ぶ。
-  範囲はThreatMap.GetUnitRangeCellsの合算→GridManager.SetMarkedOutline。印の敵はUnit.SetMarkTintで赤く・外したら白に戻す・
+  範囲はThreatMap.GetUnitRangeCellsの合算→GridManager.SetMarkedZone（薄い赤＋外枠）。印の敵はUnit.SetMarkTintで赤く・外したら白に戻す・
+  印が付いているかを答える IsMarked※2026-10-28〔BattleController のマウスを乗せた下見用・倒れた敵は false〕・
   倒れた敵の印は自動で外す〕・描き直しは盤面の様子ReadBoardState〔全ユニットの識別番号・位置・生死・盤上にいるか＋
   敵の装備とメモリ〕を毎フレーム比べて変わったときだけ〔何も表示していない間は見張らない〕),
   UnitInfoPanel(ユニット情報パネル・右上・幅500px※2026-08-16に旧DebugUnitPanelと統合〔DebugUnitPanel.csは削除〕。
@@ -1854,10 +1873,10 @@ docs a51b575〔作者の変更〕→ feat 21939a6 → data da097e5 → docs）�
 **2026-10-25〜26: 敵の攻撃範囲の表示**（「敵の攻撃範囲の表示の合意仕様」の節。作者 Play 確認済み・
 feat 21676cf → fff0db0 → 707a2e9 → docs）。宿題（作者と相談すること）:
 - 外枠は内側の穴を埋めて描くので、枠の内側に実際には届かないマス（弓兵の死角など）が入ることがある。
-  気になるなら「誰も入れない壁の穴だけ埋める」形に変えられる（2026-10-28 に紫の外枠用に作った
-  GridManager.FillEnclosedWalls を、SetMarkedOutline の FillHoles と差し替えるだけ）
+  2026-10-28 からは薄い赤で塗られないので見分けられる。線でも囲みたくなったら「誰も入れない壁の穴だけ埋める」形に
+  変えられる（紫の外枠用に作った GridManager.FillEnclosedWalls を、SetMarkedZone の FillHoles と差し替えるだけ）
 - 色と太さの欄はまだシーンに保存されていない。Inspector で変えて Ctrl+S したら、シーンの差分を確かめてからコミットする
-  （2026-10-28 の紫の外枠の色と太さの欄も同じ）
+  （2026-10-28 の紫の外枠の色と太さ、薄い赤の色と濃さの欄も同じ）
 
 **2026-10-26: 引き渡し・人交換**（「救出システムの合意仕様」の節。作者 Play 確認済み・feat 3850ab4 → docs）。
 宿題（作者と相談すること）:
