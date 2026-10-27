@@ -114,6 +114,7 @@ public class BattleController : MonoBehaviour
 
     private ActionContext context;              // いま行動中のユニットの文脈（移動取り消し用）
     private HashSet<Vector2Int> reachableCells; // 移動できるマス
+    private readonly HashSet<Vector2Int> passThroughCells = new HashSet<Vector2Int>(); // 移動力の範囲にいる仲間のマス（止まれないが青で見せる）
     private Dictionary<Vector2Int, int> moveCosts = new Dictionary<Vector2Int, int>(); // 各マスまでの移動コスト（再移動の予算計算用）
     private List<Unit> attackTargets;           // 攻撃できる敵（メニュー＝全武器の合算／対象選択＝選んだ武器ぶん）
     private bool criticalPending;               // 武器・対象選択中の攻撃が必殺技かどうか（フェーズ29）
@@ -504,7 +505,7 @@ public class BattleController : MonoBehaviour
         menu.Hide();
         context = new ActionContext(unit);
         ShowMoveRange();
-        Debug.Log($"選択: {unit.Data.unitName}（移動できるマス {reachableCells.Count} 個）");
+        Debug.Log($"選択: {unit.Data.unitName}（移動できるマス {reachableCells.Count} 個・範囲内の仲間のマス {passThroughCells.Count} 個）");
     }
 
     /// <summary>
@@ -609,12 +610,17 @@ public class BattleController : MonoBehaviour
         menu.Hide();
 
         unitInfo.Hide(); // 相手選択から移動選択へ移る（救出の直後など）ときは相手情報を消す
-        reachableCells = MovementCalculator.GetReachableCells(grid, unit, context.RemainingMove, moveCosts);
+        reachableCells = MovementCalculator.GetReachableCells(grid, unit, context.RemainingMove, moveCosts, passThroughCells);
 
         grid.ResetAllHighlights();
 
+        // 移動力の範囲を青で示す。止まれるマスに加えて、仲間がいて通り抜けるだけのマスも青にする
+        // （2026-10-28 作者要望。それまでは赤・緑・色なしのどれかだった）。止まれないのは今までどおりで、
+        // そこをクリックしたときは、その味方への選び直し（行動済みなら選択解除）になる
         grid.AddHighlight(unit.GridPosition, HighlightKind.Selection);
         foreach (Vector2Int c in reachableCells)
+            grid.AddHighlight(c, HighlightKind.MoveRange);
+        foreach (Vector2Int c in passThroughCells)
             grid.AddHighlight(c, HighlightKind.MoveRange);
 
         // 攻撃可能マス（2026-07-18 作者要望）: 立てるマスから武器で届くマスを赤で示す。
@@ -624,12 +630,12 @@ public class BattleController : MonoBehaviour
         {
             if (StaffRules.HasStaffEquipped(unit))
             {
-                foreach (Vector2Int c in ComputeHealCells(unit, reachableCells))
+                foreach (Vector2Int c in ComputeHealCells(unit, reachableCells, passThroughCells))
                     grid.AddHighlight(c, HighlightKind.HealRange);
             }
             else
             {
-                foreach (Vector2Int c in ComputeAttackCells(unit, reachableCells))
+                foreach (Vector2Int c in ComputeAttackCells(unit, reachableCells, passThroughCells))
                     grid.AddHighlight(c, HighlightKind.AttackRange);
             }
         }
@@ -646,18 +652,22 @@ public class BattleController : MonoBehaviour
     /// ハイライトなので、印の範囲の薄い赤や赤紫より上に見える（GridManager.ResolveColor）。
     /// 経緯: 2026-07-18 は敵のクリックで出し、別のマスのクリック・右クリック/ESC・味方の選択・敵フェイズ開始まで残していた。
     /// 2026-10-25 に敵のクリックが印の付け外しを兼ねるようになり、10-28 にマウスを乗せている間だけに変えた。
+    /// 移動力の範囲にいるほかの敵のマス（通り抜けるだけのマス）も青にする（2026-10-28 作者合意。味方を選んだときと同じ決まり）。
     /// </summary>
     private void ShowEnemyPreview(Unit enemy)
     {
         previewedEnemy = enemy;
 
-        HashSet<Vector2Int> reachable = MovementCalculator.GetReachableCells(grid, enemy);
+        var passThrough = new HashSet<Vector2Int>();
+        HashSet<Vector2Int> reachable = MovementCalculator.GetReachableCells(grid, enemy, enemy.Move, null, passThrough);
 
         grid.ResetAllHighlights();
         grid.AddHighlight(enemy.GridPosition, HighlightKind.Selection);
         foreach (Vector2Int c in reachable)
             grid.AddHighlight(c, HighlightKind.MoveRange);
-        foreach (Vector2Int c in ComputeAttackCells(enemy, reachable))
+        foreach (Vector2Int c in passThrough)
+            grid.AddHighlight(c, HighlightKind.MoveRange);
+        foreach (Vector2Int c in ComputeAttackCells(enemy, reachable, passThrough))
             grid.AddHighlight(c, HighlightKind.AttackRange);
     }
 
@@ -1853,14 +1863,16 @@ public class BattleController : MonoBehaviour
     /// 敵の行動範囲プレビューの見た目は従来と変わらない。
     /// 2026-10-25 に、届くマスを集める本体を WeaponChoiceRules.GetAttackCellsFrom へ切り出した
     /// （Rキーの「敵全員の攻撃範囲」が同じ計算を使うため。ここに残したのは移動範囲を除く部分だけ）。
+    /// passThrough（移動力の範囲にいる仲間のマス）は、立てるマスではないが青で見せるので赤から除く（2026-10-28）。
     /// </summary>
-    private HashSet<Vector2Int> ComputeAttackCells(Unit unit, HashSet<Vector2Int> reachable)
+    private HashSet<Vector2Int> ComputeAttackCells(Unit unit, HashSet<Vector2Int> reachable, HashSet<Vector2Int> passThrough)
     {
         var stands = new List<Vector2Int>(reachable) { unit.GridPosition };
         HashSet<Vector2Int> result = WeaponChoiceRules.GetAttackCellsFrom(grid, unit, stands);
 
-        // 立てるマスは移動範囲（青）として見せたいので、赤にするのは「移動の外側」だけ
+        // 移動力の範囲（青）として見せたいマスは赤にしない＝赤にするのは「移動の外側」だけ
         result.ExceptWith(reachable);
+        result.ExceptWith(passThrough);
         result.Remove(unit.GridPosition);
         return result;
     }
@@ -1871,8 +1883,10 @@ public class BattleController : MonoBehaviour
     /// 立てるマス自体は除く（そこは青で見せる）。杖は攻撃と違い、移動しても射程は縮まない。
     /// 表示用の下見なので、そこに回復対象がいるかまでは見ない。
     /// 誰も立ち入れない壁マスは塗らない。杖を装備していなければ空を返す。
+    /// passThrough（移動力の範囲にいる仲間のマス）も青で見せるので緑から除く（2026-10-28 作者合意。
+    /// それまでは回復できる仲間が緑で見えていたが、移動力の範囲は青の決まりにそろえた）。
     /// </summary>
-    private HashSet<Vector2Int> ComputeHealCells(Unit unit, HashSet<Vector2Int> reachable)
+    private HashSet<Vector2Int> ComputeHealCells(Unit unit, HashSet<Vector2Int> reachable, HashSet<Vector2Int> passThrough)
     {
         var result = new HashSet<Vector2Int>();
         if (!StaffRules.TryGetStaffRange(unit, out int min, out int max)) return result;
@@ -1897,8 +1911,9 @@ public class BattleController : MonoBehaviour
             }
         }
 
-        // 立てるマスは移動範囲（青）として見せたいので、緑にするのは「移動の外側」だけ
+        // 移動力の範囲（青）として見せたいマスは緑にしない＝緑にするのは「移動の外側」だけ
         result.ExceptWith(reachable);
+        result.ExceptWith(passThrough);
         result.Remove(unit.GridPosition);
         return result;
     }

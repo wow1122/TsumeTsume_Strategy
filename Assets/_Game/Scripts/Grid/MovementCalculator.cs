@@ -43,10 +43,14 @@ public static class MovementCalculator
     /// 「移動力 − すでに使った移動コスト」を予算にして呼ぶ（Phase 11）。
     /// costOut を渡すと、到達できる各マスまでの最短移動コストを書き込んで返す
     /// （呼び出し側が「どこまで移動したらコストいくつ使ったか」を記録できる）。
+    /// passThroughOut を渡すと、移動力の範囲に入るが仲間がいて止まれないマス（通り抜けるだけのマス）を
+    /// 書き込んで返す（2026-10-28。範囲の表示で、そこも移動できるマスと同じ青で見せるため）。
     /// </summary>
     public static HashSet<Vector2Int> GetReachableCells(
-        GridManager grid, Unit unit, int moveBudget, Dictionary<Vector2Int, int> costOut)
+        GridManager grid, Unit unit, int moveBudget, Dictionary<Vector2Int, int> costOut,
+        HashSet<Vector2Int> passThroughOut = null)
     {
+        passThroughOut?.Clear();
         var reachable = new HashSet<Vector2Int>();
         var costSoFar = new Dictionary<Vector2Int, int>();
         var open = new List<Vector2Int>();      // まだ展開していないマス（探索候補）
@@ -93,6 +97,7 @@ public static class MovementCalculator
                     costSoFar[next] = newCost;
                     open.Add(next);
                     if (!occupied) reachable.Add(next); // 誰かがいるマスには止まれない
+                    else passThroughOut?.Add(next);     // 仲間のマス（敵のマスは CanTraverse で入れない）
                 }
             }
         }
