@@ -6,12 +6,14 @@ using UnityEngine.InputSystem; // 新 Input System
 /// 敵の攻撃範囲を盤面に重ねて見せる（2026-10-25 作者要望）。見るだけの機能で、ゲームの状態は一切変えない。
 /// 2つの表示を受け持つ：
 ///
-/// 【敵全員の攻撃範囲（薄い赤紫の塗り）】Rキーで表示／非表示を切り替える（戦闘開始時は非表示）。
+/// 【敵全員の攻撃範囲（薄い赤紫の塗り＋紫の外枠）】Rキーで表示／非表示を切り替える（戦闘開始時は非表示）。
 /// ・赤紫になるのは「次の敵フェイズに、どれかの敵の攻撃が届くマス」（ThreatMap.GetThreatCells。
 ///   敵AIが攻撃先を探すときと同じ決まり＝待ち伏せ型の敵も含む）
 /// ・Rキーはいつでも効く（自軍フェイズのどの操作の途中でも・敵フェイズ中でも・決着後でも）
 /// ・塗るのは GridManager（SetDangerZone）。移動範囲などのハイライトとは別の層なので、選択や解除で消えない。
 ///   青い移動範囲にも重なって青紫になる＝移動先の安全・危険が選ぶ前に分かる（作者合意。混ぜ方は GridManager.ResolveColor）
+/// ・塗りの境目には、塗りより少し濃い紫の線を引く（2026-10-28 作者要望。SetDangerZone が塗りと一緒に引く）。
+///   範囲に囲まれた攻撃の届かないマスは線で囲み、壁は囲まない（作者合意）
 /// ・いまの状態（表示中か）は、コマンド一覧の「状況」パネルが1行で案内する（SystemInfoPanel が IsVisible を読む）
 ///
 /// 【印を付けた敵の範囲（濃い赤の外枠）】何も選んでいないときに敵をクリックすると印が付き、
@@ -44,7 +46,7 @@ public class DangerZoneView : MonoBehaviour
     private readonly List<int> boardState = new List<int>();
     private readonly List<int> paintedBoardState = new List<int>();
 
-    private bool zoneDirty;  // 赤紫の塗りを描き直す必要がある（Rキー・盤面の変化）
+    private bool zoneDirty;  // 赤紫の塗りと紫の外枠を描き直す必要がある（Rキー・盤面の変化）
     private bool marksDirty; // 赤い外枠を描き直す必要がある（印の付け外し・盤面の変化）
     private bool announce;   // 赤紫を表示に切り替えた直後の計算で、何マスになったかをログに出す
 
@@ -121,7 +123,7 @@ public class DangerZoneView : MonoBehaviour
         }
     }
 
-    /// <summary>敵全員の攻撃範囲の赤紫を描き直す（非表示なら消す）。</summary>
+    /// <summary>敵全員の攻撃範囲の赤紫と、その外枠の紫の線を描き直す（非表示なら消す）。</summary>
     private void RefreshZone()
     {
         if (!IsVisible)
@@ -135,7 +137,7 @@ public class DangerZoneView : MonoBehaviour
 
         if (announce)
         {
-            Debug.Log($"敵の攻撃範囲: 表示（{cells.Count} マス。もう一度 R キーで消える）");
+            Debug.Log($"敵の攻撃範囲: 表示（{cells.Count} マス・外枠の線 {grid.DangerZoneOutlineCount} 本。もう一度 R キーで消える）");
             announce = false;
         }
     }

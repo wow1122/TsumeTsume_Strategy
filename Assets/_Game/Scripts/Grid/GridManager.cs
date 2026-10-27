@@ -28,7 +28,7 @@ public enum HighlightKind
 ///  ・カメラを盤面全体が収まる位置・表示範囲に自動調整する（Phase 15）
 ///  ・ワールド座標 ⇔ グリッド座標 の変換を行う
 ///  ・マスの色（ハイライト）を変える道具を提供する
-///  ・敵の攻撃範囲の赤紫（Rキー）と、印を付けた敵の範囲の赤い外枠を描く（2026-10-25。
+///  ・敵の攻撃範囲の赤紫（Rキー）とその外枠の紫の線（2026-10-28）、印を付けた敵の範囲の赤い外枠を描く（2026-10-25。
 ///    中身の計算といつ描き直すかは DangerZoneView。印を付けた敵を赤く染める色 markedUnitTint もここに置く）
 /// クリックや選択の操作は BattleController が担当します（役割分担）。
 /// グリッドの中心が、この GameObject の位置に来るように配置されます。
@@ -81,6 +81,11 @@ public class GridManager : MonoBehaviour
     [Tooltip("敵の攻撃範囲の色をどれだけ混ぜるか（小さいほど薄い。移動できるマスの水色にも同じ割合で重なる）")]
     [Range(0f, 1f)]
     public float dangerZoneBlend = 0.35f;
+    [Tooltip("敵の攻撃範囲の外枠の線の色（塗りの赤紫より少し濃い紫。2026-10-28）")]
+    public Color dangerZoneOutlineColor = new Color(0.65f, 0.2f, 0.6f); // 濃い赤紫
+    [Tooltip("敵の攻撃範囲の外枠の線の太さ（マスの一辺に対する割合。印の赤い外枠と同じ 0.08 が既定）")]
+    [Range(0.02f, 0.3f)]
+    public float dangerZoneOutlineThickness = 0.08f;
 
     [Header("印を付けた敵（敵のクリックで付け外し・2026-10-25）")]
     [Tooltip("範囲の外枠の線の色")]
@@ -96,8 +101,10 @@ public class GridManager : MonoBehaviour
     private SpriteRenderer[,] cellRenderers;   // 各マスの見た目（色を変える用）
     private HighlightKind[,] highlights;       // 各マスに重なっているハイライトの種類
     private bool[,] dangerZone;                // 敵の攻撃範囲に入っているマス（ハイライトとは別の層・2026-10-25）
-    private Transform outlineRoot;             // 印を付けた敵の範囲の外枠の線をまとめる入れ物（初めて描くときに作る）
-    private readonly List<SpriteRenderer> outlineBars = new List<SpriteRenderer>(); // 外枠の線（隠して使い回す）
+    private readonly OutlineSet dangerZoneOutline = // 敵の攻撃範囲の外枠の線（紫・2026-10-28）
+        new OutlineSet("DangerZoneOutline", DangerZoneOutlineSortingOrder);
+    private readonly OutlineSet markedOutline =     // 印を付けた敵の範囲の外枠の線（赤）
+        new OutlineSet("MarkedOutline", MarkedOutlineSortingOrder);
     private Sprite squareSprite;               // コードで生成する白い四角スプライト
     private Vector3 originWorld;               // マス(0,0)の中心のワールド座標
 
@@ -410,7 +417,8 @@ public class GridManager : MonoBehaviour
     // ===== 敵の攻撃範囲（ハイライトとは別の層。2026-10-25 作者要望） =====
 
     /// <summary>
-    /// 敵の攻撃範囲として赤紫を混ぜるマスを差し替える（null なら全部消す）。中身が変わったマスだけ塗り直す。
+    /// 敵の攻撃範囲として赤紫を混ぜるマスを差し替え、その外枠に紫の線を引く（null なら両方とも消す）。
+    /// 塗りは中身が変わったマスだけ塗り直す。外枠の線は毎回引き直す（2026-10-28 作者要望）。
     /// ハイライト（HighlightKind）とは別の層なので、ResetAllHighlights・ClearHighlights では消えない
     /// （ユニットの選択や解除のたびに描き直さなくてよいように）。
     /// 表示の切り替え（Rキー）と、どのマスが範囲かの計算は DangerZoneView が受け持つ。
@@ -430,12 +438,24 @@ public class GridManager : MonoBehaviour
                 RepaintCell(x, y);
             }
         }
+
+        // 塗りの境目をなぞる紫の線。範囲に囲まれた壁は囲まず、攻撃が届かない安全なマスは囲む（2026-10-28 作者合意）
+        bool any = cells != null && cells.Count > 0;
+        DangerZoneOutlineCount = DrawOutline(dangerZoneOutline, any ? FillEnclosedWalls(cells) : null,
+                                             dangerZoneOutlineColor, dangerZoneOutlineThickness);
     }
 
-    // ===== 印を付けた敵の範囲の外枠（2026-10-25 作者要望） =====
+    /// <summary>敵の攻撃範囲の外枠の、いま引いている紫の線の本数（マスの1辺で1本。DangerZoneView のログ用）。</summary>
+    public int DangerZoneOutlineCount { get; private set; }
 
-    /// <summary>外枠の線の描画順。マス(0)より手前・ユニットの絵(2。Unit.Initialize)より奥。</summary>
-    private const int OutlineSortingOrder = 1;
+    // ===== 範囲の外枠の線（印を付けた敵の赤・2026-10-25／敵の攻撃範囲の紫・2026-10-28 作者要望） =====
+
+    /// <summary>
+    /// 外枠の線の描画順（奥から: マス 0 → 紫 1 → 赤 2 → ユニットの絵 3。Unit.Initialize）。
+    /// 紫と赤が同じ境目に重なったら赤が上に見える（自分で選んだ印のほうが細かい情報のため。2026-10-28）。
+    /// </summary>
+    private const int DangerZoneOutlineSortingOrder = 1;
+    private const int MarkedOutlineSortingOrder = 2;
 
     /// <summary>上下左右の4方向（外枠の境目さがしと穴埋めで使う）。</summary>
     private static readonly Vector2Int[] Directions =
@@ -446,50 +466,102 @@ public class GridManager : MonoBehaviour
     /// <summary>
     /// area（印を付けた敵の範囲を合わせたもの）の外枠を濃い赤の線で描く（null か空なら消す）。
     /// 「外枠」なので、範囲に囲まれた内側の穴（城の壁のような入れないマスなど）は囲まない（FillHoles）。
-    /// 盤面の端に接する所は、盤面の端に沿って線を引いて閉じる。
-    /// 線は「範囲のマス」と「範囲の外（または盤外）」の境目ごとに1本の細長い四角で、境目の真上に置く。
-    /// 両端を線の太さの半分ずつ伸ばしてあるので、角で縦と横の線がすき間なくつながる。
     /// どの敵に印が付いているかの管理と、いつ描き直すかは DangerZoneView が受け持つ。
     /// </summary>
     public void SetMarkedOutline(HashSet<Vector2Int> area)
     {
+        bool any = area != null && area.Count > 0;
+        DrawOutline(markedOutline, any ? FillHoles(area) : null, markedOutlineColor, markedOutlineThickness);
+    }
+
+    /// <summary>
+    /// area の境目に outline の組の線を引き、引いた本数を返す（null か空なら、その組の線を全部隠して 0）。
+    /// 線は「範囲のマス」と「範囲の外（または盤外）」の境目ごとに1本の細長い四角で、境目の真上に置く。
+    /// 両端を線の太さの半分ずつ伸ばしてあるので、角で縦と横の線がすき間なくつながる。
+    /// 盤面の端に接する所は、盤面の端に沿って線を引いて閉じる。
+    /// 内側の穴をどこまで囲むかは、呼び出し側が穴を埋めた area を渡して決める（FillHoles・FillEnclosedWalls）。
+    /// </summary>
+    private int DrawOutline(OutlineSet outline, HashSet<Vector2Int> area, Color color, float thicknessRatio)
+    {
         int used = 0;
         if (area != null && area.Count > 0)
         {
-            HashSet<Vector2Int> filled = FillHoles(area);
             float half = cellSize * 0.5f;
-            float thickness = cellSize * markedOutlineThickness;
+            float thickness = cellSize * thicknessRatio;
             float length = cellSize + thickness;
 
-            foreach (Vector2Int cell in filled)
+            foreach (Vector2Int cell in area)
             {
                 Vector3 center = CellToWorld(cell);
                 foreach (Vector2Int dir in Directions)
                 {
-                    if (filled.Contains(cell + dir)) continue; // 隣も範囲の中なら境目ではない
+                    if (area.Contains(cell + dir)) continue; // 隣も範囲の中なら境目ではない
 
-                    SpriteRenderer bar = GetOutlineBar(used++);
+                    SpriteRenderer bar = GetOutlineBar(outline, used++);
                     bar.transform.position = center + new Vector3(dir.x * half, dir.y * half, 0f);
                     bar.transform.localScale = (dir.x != 0)
                         ? new Vector3(thickness, length, 1f)   // 左右の境目は縦の線
                         : new Vector3(length, thickness, 1f);  // 上下の境目は横の線
-                    bar.color = markedOutlineColor;
+                    bar.color = color;
                     bar.enabled = true;
                 }
             }
         }
 
         // 今回使わなかった線は隠す（消さずに取っておき、次に使い回す）
-        for (int i = used; i < outlineBars.Count; i++)
-            outlineBars[i].enabled = false;
+        for (int i = used; i < outline.Bars.Count; i++)
+            outline.Bars[i].enabled = false;
+        return used;
     }
 
     /// <summary>
-    /// 範囲に囲まれた内側の穴を埋めた範囲を返す（外枠だけを描くため）。
-    /// 盤面の外周にある「範囲の外のマス」から、範囲の外のマスだけをたどって外側を広げていき、
-    /// たどり着けなかった「範囲の外のマス」を、範囲に囲まれた穴として範囲に加える。
+    /// 範囲に囲まれた内側の穴を、すべて埋めた範囲を返す（印の赤い外枠用。外周だけを描くため）。
     /// </summary>
     private HashSet<Vector2Int> FillHoles(HashSet<Vector2Int> area)
+    {
+        HashSet<Vector2Int> outside = FindOutside(area);
+        var filled = new HashSet<Vector2Int>(area);
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                var cell = new Vector2Int(x, y);
+                if (!outside.Contains(cell)) filled.Add(cell);
+            }
+        }
+        return filled;
+    }
+
+    /// <summary>
+    /// 範囲に囲まれた内側の穴のうち、誰も立てないマス（壁）だけを埋めた範囲を返す
+    /// （敵の攻撃範囲の紫の外枠用。2026-10-28 作者合意）。
+    /// 壁は誰も立てないので、囲んでも線が増えるだけになる。攻撃が届かない安全なマスは穴のまま残し、線で囲んで目立たせる。
+    /// 「誰も立てない」の決まりは、攻撃が届くマスから壁を外すとき（WeaponChoiceRules.GetAttackCellsFrom）と同じ。
+    /// </summary>
+    private HashSet<Vector2Int> FillEnclosedWalls(HashSet<Vector2Int> area)
+    {
+        HashSet<Vector2Int> outside = FindOutside(area);
+        var filled = new HashSet<Vector2Int>(area);
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                var cell = new Vector2Int(x, y);
+                if (outside.Contains(cell)) continue; // 範囲に囲まれていない（外側につながっている）
+
+                TileData tile = tiles[x, y];
+                if (!tile.IsWalkable && !tile.CanFlyOver) filled.Add(cell);
+            }
+        }
+        return filled;
+    }
+
+    /// <summary>
+    /// 範囲の外側（範囲の外のマスのうち、範囲に囲まれていないもの）を返す。
+    /// 盤面の外周にある「範囲の外のマス」から、範囲の外のマスだけをたどって外側を広げていく。
+    /// たどり着けなかった「範囲の外のマス」が、範囲に囲まれた内側の穴になる。
+    /// </summary>
+    private HashSet<Vector2Int> FindOutside(HashSet<Vector2Int> area)
     {
         var outside = new HashSet<Vector2Int>();
         var stack = new Stack<Vector2Int>();
@@ -509,38 +581,46 @@ public class GridManager : MonoBehaviour
             foreach (Vector2Int dir in Directions)
                 stack.Push(cell + dir);
         }
-
-        var filled = new HashSet<Vector2Int>(area);
-        for (int x = 0; x < width; x++)
-        {
-            for (int y = 0; y < height; y++)
-            {
-                var cell = new Vector2Int(x, y);
-                if (!outside.Contains(cell)) filled.Add(cell);
-            }
-        }
-        return filled;
+        return outside;
     }
 
-    /// <summary>index 番目の外枠の線を返す（まだ無ければ作る）。</summary>
-    private SpriteRenderer GetOutlineBar(int index)
+    /// <summary>outline の組の index 番目の線を返す（まだ無ければ作る）。</summary>
+    private SpriteRenderer GetOutlineBar(OutlineSet outline, int index)
     {
-        if (outlineRoot == null)
+        if (outline.Root == null)
         {
-            outlineRoot = new GameObject("MarkedOutline").transform;
-            outlineRoot.SetParent(transform, false);
+            outline.Root = new GameObject(outline.Name).transform;
+            outline.Root.SetParent(transform, false);
         }
 
-        while (outlineBars.Count <= index)
+        while (outline.Bars.Count <= index)
         {
-            var bar = new GameObject($"OutlineBar_{outlineBars.Count}");
-            bar.transform.SetParent(outlineRoot, false);
+            var bar = new GameObject($"OutlineBar_{outline.Bars.Count}");
+            bar.transform.SetParent(outline.Root, false);
             var sr = bar.AddComponent<SpriteRenderer>();
             sr.sprite = squareSprite;               // マスと同じ白い四角を細長く伸ばして使う
-            sr.sortingOrder = OutlineSortingOrder;
-            outlineBars.Add(sr);
+            sr.sortingOrder = outline.SortingOrder;
+            outline.Bars.Add(sr);
         }
-        return outlineBars[index];
+        return outline.Bars[index];
+    }
+
+    /// <summary>
+    /// 外枠の線ひと組（敵の攻撃範囲の紫と、印を付けた敵の赤で1組ずつ）。
+    /// 線は使わない分も消さずに隠しておき、次に描くときに使い回す。入れ物は初めて描くときに作る。
+    /// </summary>
+    private sealed class OutlineSet
+    {
+        public readonly string Name;      // 線をまとめる入れ物の名前（Hierarchy で見分ける用）
+        public readonly int SortingOrder; // 描画順
+        public Transform Root;            // 線をまとめる入れ物
+        public readonly List<SpriteRenderer> Bars = new List<SpriteRenderer>();
+
+        public OutlineSet(string name, int sortingOrder)
+        {
+            Name = name;
+            SortingOrder = sortingOrder;
+        }
     }
 
     // ===== カーソル下のマスの地形情報と座標（盤面の下の帯。2026-08-17 作者仕様） =====
