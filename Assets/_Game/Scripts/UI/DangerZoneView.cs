@@ -16,10 +16,13 @@ using UnityEngine.InputSystem; // 新 Input System
 ///   範囲に囲まれた攻撃の届かないマスは線で囲み、壁は囲まない（作者合意）
 /// ・いまの状態（表示中か）は、コマンド一覧の「状況」パネルが1行で案内する（SystemInfoPanel が IsVisible を読む）
 ///
-/// 【印を付けた敵の範囲（濃い赤の外枠）】何も選んでいないときに敵をクリックすると印が付き、
-/// その敵の範囲（移動＋攻撃。ThreatMap.GetUnitRangeCells）の外枠が残る。何体でも付けられ、
+/// 【印を付けた敵の範囲（薄い赤の塗り＋濃い赤の外枠）】何も選んでいないときに敵をクリックすると印が付き、
+/// その敵の範囲（移動＋攻撃。ThreatMap.GetUnitRangeCells）が薄い赤で塗られ、外枠が残る。何体でも付けられ、
 /// 印の付いた敵をもう一度クリックすると外れる（付け外しの入口は BattleController の ToggleMark 呼び出し）。
-/// ・印を付けた敵が複数いるときは、範囲を合わせた外周を1本の枠で囲む（作者合意）。描くのは GridManager（SetMarkedOutline）
+/// ・印を付けた敵が複数いるときは、範囲を合わせて塗り、外周を1本の枠で囲む（作者合意）。描くのは GridManager（SetMarkedZone）
+/// ・薄い赤は範囲のマスそのものを塗る（2026-10-28 作者要望）。赤紫より優先し、ハイライトのあるマスには混ぜない
+/// ・印の付いた敵にマウスを乗せている間は、その敵の下見（黄・青・橙）が薄い赤より優先して出る
+///   （2026-10-28 作者要望。出すのは BattleController。印が付いているかは IsMarked で答える）
 /// ・印の付いた敵の絵は赤く染まる＝範囲を調べている途中の敵だと分かる（作者要望。色は GridManager.markedUnitTint、
 ///   染めるのは Unit.SetMarkTint。印を外すと元の色に戻る）
 /// ・ターンをまたいでも残り、敵が動けば付いていく。倒れた敵の印は自動で外れる。ESC や右クリックでは外れない
@@ -47,7 +50,7 @@ public class DangerZoneView : MonoBehaviour
     private readonly List<int> paintedBoardState = new List<int>();
 
     private bool zoneDirty;  // 赤紫の塗りと紫の外枠を描き直す必要がある（Rキー・盤面の変化）
-    private bool marksDirty; // 赤い外枠を描き直す必要がある（印の付け外し・盤面の変化）
+    private bool marksDirty; // 薄い赤の塗りと赤い外枠を描き直す必要がある（印の付け外し・盤面の変化）
     private bool announce;   // 赤紫を表示に切り替えた直後の計算で、何マスになったかをログに出す
 
     void Start()
@@ -59,8 +62,8 @@ public class DangerZoneView : MonoBehaviour
 
     /// <summary>
     /// 敵に印を付ける／外す（BattleController が、何も選んでいないときの敵のクリックで呼ぶ）。
-    /// 付けたら true、外したら false を返す（呼び出し側は、付けたときだけ青・橙の下見表示も出す）。
-    /// 外枠と赤く染めるのは次の Update で行う（RefreshMarks）。外したときの色戻しはここで行う。
+    /// 付けたら true、外したら false を返す。
+    /// 塗り・外枠・赤く染めるのは次の Update で行う（RefreshMarks）。外したときの色戻しはここで行う。
     /// </summary>
     public bool ToggleMark(Unit enemy)
     {
@@ -77,6 +80,15 @@ public class DangerZoneView : MonoBehaviour
         markedEnemies.Add(enemy);
         Debug.Log($"印を付けた: {enemy.Data.unitName}（印の付いた敵 {markedEnemies.Count} 体。もう一度クリックで外す）");
         return true;
+    }
+
+    /// <summary>
+    /// その敵に印が付いているか（BattleController が、マウスを乗せた敵の下見を出すかどうかを決めるのに使う。2026-10-28）。
+    /// 倒れた敵は、Update で印を外す前でも false を返す。
+    /// </summary>
+    public bool IsMarked(Unit unit)
+    {
+        return unit != null && unit.IsAlive && markedEnemies.Contains(unit);
     }
 
     void Update()
@@ -142,7 +154,7 @@ public class DangerZoneView : MonoBehaviour
         }
     }
 
-    /// <summary>印の付いた敵を赤く染め、範囲を合わせた外枠を描き直す（印が無ければ枠を消す）。</summary>
+    /// <summary>印の付いた敵を赤く染め、範囲を合わせた薄い赤の塗りと外枠を描き直す（印が無ければ両方消す）。</summary>
     private void RefreshMarks()
     {
         // 範囲を調べている途中の敵だと分かるように赤く染める（作者要望）。
@@ -152,14 +164,14 @@ public class DangerZoneView : MonoBehaviour
 
         if (markedEnemies.Count == 0)
         {
-            grid.SetMarkedOutline(null);
+            grid.SetMarkedZone(null);
             return;
         }
 
         var area = new HashSet<Vector2Int>();
         foreach (Unit enemy in markedEnemies)
             area.UnionWith(ThreatMap.GetUnitRangeCells(grid, enemy));
-        grid.SetMarkedOutline(area);
+        grid.SetMarkedZone(area);
     }
 
     /// <summary>

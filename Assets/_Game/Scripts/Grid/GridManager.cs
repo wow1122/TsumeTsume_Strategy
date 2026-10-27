@@ -7,8 +7,9 @@ using UnityEngine.InputSystem;
 /// 表示は優先度の高い順（Selection > TargetChoice > AttackRange > HealRange > MoveRange >
 /// 基本色）。ある種類だけを消すと、下に重なっていた種類の色が現れる。
 /// ※フェーズ32の補給圏（SupplyZone・薄紫）は 2026-10-24 に補給ごと撤廃した。
-/// ※Rキーで出す敵全員の攻撃範囲（赤紫・2026-10-25）はここに入れず、GridManager の別の層
-///   （SetDangerZone）で持つ。選択や解除のたびに呼ばれる ResetAllHighlights で消えないようにするため。
+/// ※Rキーで出す敵全員の攻撃範囲（赤紫・2026-10-25）と、印を付けた敵の範囲（薄い赤・2026-10-28）はここに入れず、
+///   GridManager の別の層（SetDangerZone・SetMarkedZone）で持つ。選択や解除のたびに呼ばれる ResetAllHighlights で
+///   消えないようにするため。
 /// </summary>
 [System.Flags]
 public enum HighlightKind
@@ -28,8 +29,9 @@ public enum HighlightKind
 ///  ・カメラを盤面全体が収まる位置・表示範囲に自動調整する（Phase 15）
 ///  ・ワールド座標 ⇔ グリッド座標 の変換を行う
 ///  ・マスの色（ハイライト）を変える道具を提供する
-///  ・敵の攻撃範囲の赤紫（Rキー）とその外枠の紫の線（2026-10-28）、印を付けた敵の範囲の赤い外枠を描く（2026-10-25。
-///    中身の計算といつ描き直すかは DangerZoneView。印を付けた敵を赤く染める色 markedUnitTint もここに置く）
+///  ・敵の攻撃範囲の赤紫（Rキー）とその外枠の紫の線（2026-10-28）、印を付けた敵の範囲の赤い外枠（2026-10-25）と
+///    薄い赤の塗り（2026-10-28）を描く（中身の計算といつ描き直すかは DangerZoneView。
+///    印を付けた敵を赤く染める色 markedUnitTint もここに置く）
 /// クリックや選択の操作は BattleController が担当します（役割分担）。
 /// グリッドの中心が、この GameObject の位置に来るように配置されます。
 /// </summary>
@@ -93,6 +95,11 @@ public class GridManager : MonoBehaviour
     [Tooltip("範囲の外枠の線の太さ（マスの一辺に対する割合。0.08 で Stage_01 の約4ピクセル）")]
     [Range(0.02f, 0.3f)]
     public float markedOutlineThickness = 0.08f;
+    [Tooltip("範囲のマスに混ぜる色（外枠の線や赤く染める色より薄く見せる。2026-10-28）")]
+    public Color markedFillColor = new Color(1f, 0.45f, 0.45f);   // 薄い赤（攻撃対象の候補の赤と同じ色を、薄く混ぜる）
+    [Tooltip("範囲の色をどれだけ混ぜるか（小さいほど薄い。敵の攻撃範囲の赤紫と同じ 0.35 が既定）")]
+    [Range(0f, 1f)]
+    public float markedFillBlend = 0.35f;
     [Tooltip("印を付けた敵の絵に掛け合わせる色（赤く染めて、範囲を調べている途中の敵だと示す。白にすると染めない）")]
     public Color markedUnitTint = new Color(1f, 0.35f, 0.35f);    // 赤
 
@@ -101,6 +108,7 @@ public class GridManager : MonoBehaviour
     private SpriteRenderer[,] cellRenderers;   // 各マスの見た目（色を変える用）
     private HighlightKind[,] highlights;       // 各マスに重なっているハイライトの種類
     private bool[,] dangerZone;                // 敵の攻撃範囲に入っているマス（ハイライトとは別の層・2026-10-25）
+    private bool[,] markedFill;                // 印を付けた敵の範囲に入っているマス（薄い赤。別の層・2026-10-28）
     private readonly OutlineSet dangerZoneOutline = // 敵の攻撃範囲の外枠の線（紫・2026-10-28）
         new OutlineSet("DangerZoneOutline", DangerZoneOutlineSortingOrder);
     private readonly OutlineSet markedOutline =     // 印を付けた敵の範囲の外枠の線（赤）
@@ -198,6 +206,7 @@ public class GridManager : MonoBehaviour
         cellRenderers = new SpriteRenderer[width, height];
         highlights = new HighlightKind[width, height];
         dangerZone = new bool[width, height];
+        markedFill = new bool[width, height];
 
         // グリッドの中心がこの GameObject の位置に来るよう、左下マスの基準点を計算
         originWorld = transform.position
@@ -388,6 +397,9 @@ public class GridManager : MonoBehaviour
     /// 水色は赤紫が混ざって青紫になり、移動先の安全・危険が選ぶ前に分かる（2026-10-25 作者合意）。
     /// 黄（選択中）・赤（攻撃対象）・橙（攻撃が届く）・緑（杖）は、いま選んでいる操作の色なので
     /// 混ぜずにそのまま見せる。
+    /// 印を付けた敵の範囲（別の層）の薄い赤を混ぜるのは「ハイライトが無いマス」だけで、赤紫より優先する
+    /// （2026-10-28 作者合意。水色に混ぜると、青＋薄い赤と青＋赤紫が似た色になって見分けにくいため。
+    /// 印の付いた敵にマウスを乗せたときの下見〔黄・水色・橙〕もハイライトなので、薄い赤より上に見える）。
     /// </summary>
     private Color ResolveColor(int x, int y)
     {
@@ -400,6 +412,7 @@ public class GridManager : MonoBehaviour
         else if ((kinds & HighlightKind.AttackRange) != 0) highlightColor = attackRangeColor;
         else if ((kinds & HighlightKind.HealRange) != 0) highlightColor = healRangeColor;
         else if ((kinds & HighlightKind.MoveRange) != 0) highlightColor = moveRangeColor;
+        else if (markedFill[x, y]) return Color.Lerp(baseColor, markedFillColor, markedFillBlend);
         else return MixDangerZone(x, y, baseColor);
 
         Color color = Color.Lerp(baseColor, highlightColor, highlightBlend);
@@ -414,7 +427,7 @@ public class GridManager : MonoBehaviour
         return dangerZone[x, y] ? Color.Lerp(color, dangerZoneColor, dangerZoneBlend) : color;
     }
 
-    // ===== 敵の攻撃範囲（ハイライトとは別の層。2026-10-25 作者要望） =====
+    // ===== 敵の攻撃範囲と印を付けた敵の範囲（ハイライトとは別の層。2026-10-25・10-28 作者要望） =====
 
     /// <summary>
     /// 敵の攻撃範囲として赤紫を混ぜるマスを差し替え、その外枠に紫の線を引く（null なら両方とも消す）。
@@ -427,17 +440,7 @@ public class GridManager : MonoBehaviour
     {
         if (dangerZone == null) return;
 
-        for (int x = 0; x < width; x++)
-        {
-            for (int y = 0; y < height; y++)
-            {
-                bool inZone = cells != null && cells.Contains(new Vector2Int(x, y));
-                if (dangerZone[x, y] == inZone) continue;
-
-                dangerZone[x, y] = inZone;
-                RepaintCell(x, y);
-            }
-        }
+        SetLayer(dangerZone, cells);
 
         // 塗りの境目をなぞる紫の線。範囲に囲まれた壁は囲まず、攻撃が届かない安全なマスは囲む（2026-10-28 作者合意）
         bool any = cells != null && cells.Count > 0;
@@ -447,6 +450,43 @@ public class GridManager : MonoBehaviour
 
     /// <summary>敵の攻撃範囲の外枠の、いま引いている紫の線の本数（マスの1辺で1本。DangerZoneView のログ用）。</summary>
     public int DangerZoneOutlineCount { get; private set; }
+
+    /// <summary>
+    /// 印を付けた敵の範囲（area＝印の付いた敵ぜんぶの範囲を合わせたもの）を薄い赤で塗り、
+    /// その外枠を濃い赤の線で描く（null か空なら両方とも消す）。
+    /// 塗るのは範囲のマスそのもの＝範囲に囲まれた届かないマス（弓兵の死角など）や壁は塗らない（2026-10-28 作者要望）。
+    /// 外枠は「外枠」なので、そうした内側の穴は囲まない（FillHoles。2026-10-25）。
+    /// 塗りは SetDangerZone と同じく別の層で、赤紫より優先して混ぜる（混ぜ方は ResolveColor）。
+    /// どの敵に印が付いているかの管理と、いつ描き直すかは DangerZoneView が受け持つ。
+    /// </summary>
+    public void SetMarkedZone(HashSet<Vector2Int> area)
+    {
+        if (markedFill == null) return;
+
+        SetLayer(markedFill, area);
+
+        bool any = area != null && area.Count > 0;
+        DrawOutline(markedOutline, any ? FillHoles(area) : null, markedOutlineColor, markedOutlineThickness);
+    }
+
+    /// <summary>
+    /// 別の層（マスごとの true / false）を cells に合わせて差し替え、中身が変わったマスだけ塗り直す
+    /// （cells が null なら全部外す）。
+    /// </summary>
+    private void SetLayer(bool[,] layer, HashSet<Vector2Int> cells)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                bool inLayer = cells != null && cells.Contains(new Vector2Int(x, y));
+                if (layer[x, y] == inLayer) continue;
+
+                layer[x, y] = inLayer;
+                RepaintCell(x, y);
+            }
+        }
+    }
 
     // ===== 範囲の外枠の線（印を付けた敵の赤・2026-10-25／敵の攻撃範囲の紫・2026-10-28 作者要望） =====
 
@@ -462,17 +502,6 @@ public class GridManager : MonoBehaviour
     {
         Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right,
     };
-
-    /// <summary>
-    /// area（印を付けた敵の範囲を合わせたもの）の外枠を濃い赤の線で描く（null か空なら消す）。
-    /// 「外枠」なので、範囲に囲まれた内側の穴（城の壁のような入れないマスなど）は囲まない（FillHoles）。
-    /// どの敵に印が付いているかの管理と、いつ描き直すかは DangerZoneView が受け持つ。
-    /// </summary>
-    public void SetMarkedOutline(HashSet<Vector2Int> area)
-    {
-        bool any = area != null && area.Count > 0;
-        DrawOutline(markedOutline, any ? FillHoles(area) : null, markedOutlineColor, markedOutlineThickness);
-    }
 
     /// <summary>
     /// area の境目に outline の組の線を引き、引いた本数を返す（null か空なら、その組の線を全部隠して 0）。

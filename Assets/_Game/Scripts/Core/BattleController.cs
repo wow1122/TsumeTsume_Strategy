@@ -79,6 +79,8 @@ using UnityEngine.InputSystem; // 新 Input System
 ///  何も選んでいないときに敵をクリックすると、その敵に印が付き、範囲の外枠が濃い赤で残る（何体でも）。
 ///  印の付いた敵は絵が赤く染まる（範囲を調べている途中の敵だと分かるように）。
 ///  印の付いた敵をもう一度クリックすると外れる。印を付けたときは今までどおり青・橙の下見表示も出る。
+///  2026-10-28 から: 印の範囲は薄い赤で塗られ、青・橙の下見は「印の付いた敵にマウスを乗せている間だけ」出る
+///  （何も選んでいないときだけ。クリックで出して残すのはやめた。作者合意。UpdateHoverPreview）。
 ///
 /// 2026-10-26 の追加（引き渡し・人交換。作者要望）：
 ///  「引き渡し」→ 隣の空きのある騎乗の味方を選択 →（輸送隊が渡すときは貨物リストで選ぶ）→ 貨物を渡す
@@ -142,8 +144,8 @@ public class BattleController : MonoBehaviour
     private UnitInfoPanel unitInfo;             // ユニット情報パネル（IMGUI・右上・2026-08-16 に統合）
     private SystemInfoPanel systemInfo;         // 「状況」「設定」のパネル（IMGUI・2026-08-15）
     private Vector2Int systemMenuCell;          // コマンド一覧を出している空きマス（パネルから戻る先）
-    private Unit previewedEnemy;                // 行動範囲を下見表示中の敵（Idle のときだけ使う）
-    private DangerZoneView dangerZone;          // 敵の攻撃範囲の表示（Rキーの赤紫・印を付けた敵の赤い外枠。2026-10-25）
+    private Unit previewedEnemy;                // 行動範囲を下見表示中の敵＝マウスを乗せている印の敵（Idle のときだけ使う）
+    private DangerZoneView dangerZone;          // 敵の攻撃範囲の表示（Rキーの赤紫・印を付けた敵の薄い赤と赤い外枠。2026-10-25）
 
     void Awake()
     {
@@ -167,7 +169,8 @@ public class BattleController : MonoBehaviour
         if (GetComponent<AIDebugPanel>() == null) gameObject.AddComponent<AIDebugPanel>();
 
         // 敵の攻撃範囲の表示（2026-10-25）。敵全員の赤紫（Rキー）はキーの読み取りも計算し直しも自分で行う。
-        // ここから呼ぶのは、何も選んでいないときの敵のクリックで印（赤い外枠）を付け外しする ToggleMark だけ
+        // ここから呼ぶのは、何も選んでいないときの敵のクリックで印（薄い赤と赤い外枠）を付け外しする ToggleMark と、
+        // マウスを乗せた敵に印が付いているかを聞く IsMarked（2026-10-28）だけ
         dangerZone = GetComponent<DangerZoneView>();
         if (dangerZone == null) dangerZone = gameObject.AddComponent<DangerZoneView>();
 
@@ -227,6 +230,10 @@ public class BattleController : MonoBehaviour
             else if (state == State.MoveSelect && !context.committed)
                 CancelAll(); // 盤外クリックで選択解除（取り消し不能後・対象選択中は無視）
         }
+
+        // 何も選んでいないときは、印の付いた敵にマウスを乗せている間だけ下見を出す（2026-10-28 作者合意）。
+        // クリックの処理の後に見るので、印を付けた・外したクリックの結果がこのフレームのうちに表示へ反映される
+        if (state == State.Idle) UpdateHoverPreview();
     }
 
     private void OnCellClicked(Vector2Int cell)
@@ -254,13 +261,14 @@ public class BattleController : MonoBehaviour
                     ClearEnemyPreview();
                     EnterRefreshMenu(clickedUnit);
                 }
-                // 敵をクリック → 印（その敵の範囲の赤い外枠。他の操作をしても残る）を付け外しする（2026-10-25 作者要望）。
-                // 印を付けたときは、その敵の移動できるマス（青）と攻撃可能マス（赤）の下見表示も今までどおり出す
-                // （2026-07-18 作者要望）。印の付いた敵をもう一度クリックすると、印も下見表示も消える
+                // 敵をクリック → 印（その敵の範囲の薄い赤と赤い外枠。他の操作をしても残る）を付け外しする
+                // （2026-10-25 作者要望・薄い赤は 2026-10-28）。印の付いた敵をもう一度クリックすると外れる。
+                // 移動できるマス（青）と攻撃可能マス（橙）の下見（2026-07-18 作者要望）は、2026-10-28 から
+                // 印の付いた敵にマウスを乗せている間だけ出す（Update の最後の UpdateHoverPreview）。
+                // 印を付けたクリックではマウスが敵の上にあるので、そのまま下見が出る
                 else if (clickedUnit != null && clickedUnit.Faction == Faction.Enemy)
                 {
-                    if (dangerZone.ToggleMark(clickedUnit)) ShowEnemyPreview(clickedUnit);
-                    else ClearEnemyPreview();
+                    dangerZone.ToggleMark(clickedUnit);
                 }
                 // ユニットがいないマス → コマンド一覧（状況・設定・終了）を出す（2026-08-15）
                 else if (clickedUnit == null)
@@ -367,7 +375,8 @@ public class BattleController : MonoBehaviour
         switch (state)
         {
             case State.Idle:
-                ClearEnemyPreview(); // 敵の範囲プレビューを消すだけ（選択は無いので他に戻るものが無い）
+                // 何もしない（選択は無いので戻るものが無い）。敵の範囲プレビューは 2026-10-28 から
+                // マウスを乗せている間だけ出るので、ここで消してもすぐ出直すだけになる（UpdateHoverPreview）
                 break;
 
             case State.RefreshMenu:
@@ -631,11 +640,12 @@ public class BattleController : MonoBehaviour
     // ===== 敵の行動範囲プレビュー（2026-07-18 作者要望）=====
 
     /// <summary>
-    /// クリックした敵の移動できるマス（青）と攻撃可能マス（赤）を下見表示する。
+    /// 敵の移動できるマス（青）と攻撃可能マス（橙）を下見表示する（本人のマスは黄）。
     /// 見るだけの機能で、選択状態（Idle のまま）も敵の状態も一切変えない。
-    /// 別のマスのクリック・右クリック/ESC・味方の選択・敵フェイズ開始で消える。
-    /// 2026-10-25 から、敵のクリックは印（赤い外枠）の付け外しを兼ねる。下見表示が出るのは印を付けたときで、
-    /// 印の付いた敵の2回目のクリックでは印と一緒に消える（印の外枠は下見表示が消えても残る＝DangerZoneView）。
+    /// 2026-10-28 から、出すのは印の付いた敵にマウスを乗せている間だけ（UpdateHoverPreview が呼ぶ。作者合意）。
+    /// ハイライトなので、印の範囲の薄い赤や赤紫より上に見える（GridManager.ResolveColor）。
+    /// 経緯: 2026-07-18 は敵のクリックで出し、別のマスのクリック・右クリック/ESC・味方の選択・敵フェイズ開始まで残していた。
+    /// 2026-10-25 に敵のクリックが印の付け外しを兼ねるようになり、10-28 にマウスを乗せている間だけに変えた。
     /// </summary>
     private void ShowEnemyPreview(Unit enemy)
     {
@@ -657,6 +667,28 @@ public class BattleController : MonoBehaviour
         if (previewedEnemy == null) return;
         previewedEnemy = null;
         grid.ResetAllHighlights();
+    }
+
+    /// <summary>
+    /// 何も選んでいないとき（Idle）に毎フレーム呼ぶ。マウスが印の付いた敵の上にあれば、その敵の下見を出し、
+    /// 離れたら消す（2026-10-28 作者要望・合意）。印の無い敵の上では何も出さない（作者の指定どおり）。
+    /// 下見を描き直すのは、乗せている敵が変わったときだけ。
+    /// ユニット情報パネルの上にマウスがあるときは、盤面を指していないものとして扱う（クリックと同じ）。
+    /// </summary>
+    private void UpdateHoverPreview()
+    {
+        Unit hovered = null;
+        Vector2 screenPos = Mouse.current.position.ReadValue();
+        if (!unitInfo.ContainsScreenPoint(screenPos)
+            && grid.TryWorldToCell(Camera.main.ScreenToWorldPoint(screenPos), out Vector2Int cell))
+        {
+            Unit occupant = grid.GetTile(cell).Occupant;
+            if (dangerZone.IsMarked(occupant)) hovered = occupant;
+        }
+
+        if (hovered == previewedEnemy) return;
+        if (hovered != null) ShowEnemyPreview(hovered);
+        else ClearEnemyPreview();
     }
 
     /// <summary>行動メニューを開く（移動直後・静止選択時・対象選択からの戻りで呼ばれる）。</summary>
