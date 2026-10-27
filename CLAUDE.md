@@ -194,6 +194,9 @@ Combat/WeaponChoiceRules に集約し、**probe（お試し装備）方式**で�
 同日続けて、作者要望で**印を付けた敵の範囲を薄い赤で塗り**、**黄・青・橙の下見は印の付いた敵にマウスを乗せている間だけ**
 出す形に変えた（クリックで出して残す形はやめた。薄い赤は青い移動範囲に混ぜない。どちらも作者合意）。
 コミットは feat 6790b65 → docs（この CLAUDE.md）。作者 Play 確認済み（Stage_01）。スクリプトのみでアセット変更なし。
+同日続けて、作者要望で**移動力の範囲にいる仲間のマス（通り抜けるだけで止まれないマス）を、移動できるマスと同じ青**にした
+（それまでは赤・緑・色なしのどれか。杖ユニットと敵の下見も同じ決まりにそろえた＝どちらも作者合意）。止まれるマスの判定は変えていない。
+コミットは feat e5ffca2 → docs（この CLAUDE.md）。作者 Play 確認済み（Stage_01）。スクリプトのみでアセット変更なし。
 
 過去のロードマップ3本（いずれも完走済み。経緯・キックオフ合意の参照用）:
 Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume-st-elegant-parasol.md`、
@@ -312,6 +315,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   （旧「敵以外クリックで待機」は廃止）。メニューはユニット右隣・画面端で左に回り込み
 - マスのハイライトは HighlightKind の優先度付き多層管理
   （Selection > TargetChoice > AttackRange > HealRange > MoveRange > 市松模様）。色設定は GridManager に集約。
+  移動力の範囲（MoveRange）には、仲間がいて通り抜けるだけのマスも含める＝赤・緑にしない（2026-10-28 作者要望。
+  味方の選択・救出などの後の再移動・敵の下見で共通。杖ユニットと敵の下見も含めることは作者合意）。
   敵の攻撃範囲の赤紫（Rキー）とその紫の外枠、印を付けた敵の薄い赤と外枠は、ハイライトとは別の層
   （2026-10-25・紫の外枠と薄い赤は 2026-10-28。「敵の攻撃範囲の表示の合意仕様」の節）
 
@@ -573,6 +578,8 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   印の付いた敵をもう一度クリックすると下見も印も消える（「敵の攻撃範囲の表示の合意仕様」の節）。
   ※2026-10-28 から、下見は何も選んでいないときに印の付いた敵へマウスを乗せている間だけ出る
   （クリックでは出さない・残さない。BattleController.UpdateHoverPreview）。
+  ※2026-10-28 から、移動力の範囲にいる仲間のマス（通り抜けるだけで止まれない）は赤ではなく水色で見せる
+  （それまでは赤か、周りも仲間で武器が届かない所は色なし。下見の中のほかの敵のマスも同じ）。
   色の注記: スクリプト既定の attackRangeColor は赤 (1, 0.5, 0.5) だが、シーンの直列化値は
   オレンジ (1, 0.7, 0.5) のままで作者テスト済み・承認済み
   （変える場合は GridManager の Inspector で色を変えて Ctrl+S 保存→シーンをコミット）
@@ -798,7 +805,9 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   最大HPは超えない（Unit.Heal でクランプ）。回復対象＝同陣営・生存・HP満タン未満・射程内
 - 範囲の緑表示: 選択時に移動範囲（水色）の外側へ「杖が届くマス」を緑フリンジで表示
   （HighlightKind.HealRange。攻撃フリンジとは排他。BattleController.ComputeHealCells）。回復対象の選択ハイライトも緑。
-  杖の射程は攻撃の後衛武器と違い、移動しても縮まない（杖は攻撃ではないため）
+  杖の射程は攻撃の後衛武器と違い、移動しても縮まない（杖は攻撃ではないため）。
+  移動力の範囲にいる仲間のマスは緑ではなく水色（2026-10-28 作者合意。それまでは回復できる仲間が緑で見えていたが、
+  「移動力の範囲は水色」の決まりにそろえた。緑は移動の外側だけに残る）
 - 可否・回復量の判定は Combat/StaffRules.cs に一元化（CombatRules / RescueRules と同じ方針。
   HasStaffEquipped / TryGetStaffRange / FindHealTargets / HealAmount）。対象選択は既存 State.UnitTargetSelect に
   purpose Heal を追加して再利用（ハイライト色を引数化＝救出系は赤、杖は緑）
@@ -1452,7 +1461,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
 
 - Core/ … BattleController(操作の司令塔・16状態FSM: Idle/MoveSelect/CommandMenu/WeaponSelect/TargetSelect/UnitTargetSelect/TileSelect/CargoSelect/DamageCheck/ItemSelect/ItemActionSelect/ExchangeSelect/RefreshMenu/SystemMenu/SystemInfo/CantoSelect。
   ※飛翔・着陸コマンドと飛翔の段階取り消し（CancelFlightAndReturn・CanUseFlightCommand）は 2026-10-24 に撤廃・
-  攻撃可能マス表示ComputeAttackCells※2026-10-25 から届くマスの計算本体は WeaponChoiceRules.GetAttackCellsFrom〔ここは移動範囲と自分のマスを除くだけ〕・
+  攻撃可能マス表示ComputeAttackCells※2026-10-25 から届くマスの計算本体は WeaponChoiceRules.GetAttackCellsFrom〔ここは移動範囲（通り抜けるだけの仲間のマスも含む※2026-10-28。ComputeHealCells も同じ）と自分のマスを除くだけ〕・
   持ち物コマンド（2段階サブメニュー: 装備/外す/道具使用/捨てる・ホバー詳細は右下固定）・杖コマンド（回復対象選択→ExecuteHeal・杖が届くマス表示ComputeHealCells）・
   交換コマンド（相手選択→2列の交換画面。左右共用のBuildExchangeColumn/TransferItem・列見出しBuildExchangeHeader・行動は消費せず1個目でCommit）・
   敵の行動範囲プレビューShowEnemyPreview※2026-10-28 から印の付いた敵にマウスを乗せている間だけ〔Update の最後で、
@@ -1521,6 +1530,7 @@ Phase 8〜15 は `/home/wawo/.claude/plans/tsumetsume-strategy-phase8-tsumetsume
   兵種別の IsWalkableFor/MoveCostFor※2026-10-24 から飛行兵の決まり〔CanFlyOver・コスト1〕も先頭で受け持つ＝地形の扱いはここに一本化),
   TerrainType(地形enum+TerrainDef定義。城壁Rampart・飛行兵が入れるかcanFlyOver・騎兵の mountedWalkable/mountedCost),
   MovementCalculator(ダイクストラ移動範囲・味方すり抜け（敵のマスは誰も通れない）・兵種別コスト/通行制限〔TileData へ委ねる〕・
+  通り抜けるだけのマス（仲間のマス）も返せる GetReachableCells の passThroughOut※2026-10-28〔範囲表示で水色にするため。省略可〕・
   通行判定はCanTraverseに集約・目標マス群への距離マップGetDistanceMap※敵AIの接近用・
   隣の1マスだけ動けるマスGetStepCells※2026-10-24〔剣の撃破後1マス再移動。地形コストは問わない〕)
 - UI/ … MenuPlacement(盤上のユニットの隣に出るメニューの置き場所を決める共通処理※2026-08-17。
