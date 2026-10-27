@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
   m_Name: Unit_Player_Flier
   m_EditorClassIdentifier: Assembly-CSharp::UnitData
-  unitName: "味方飛行兵"
+  unitName: "\u5473\u65B9\u98DB\u884C\u5175"
   faction: 0
   unitClass: 2
   classData: {fileID: 11400000, guid: 9a6b9e3315e9470f92457148a6ab07de, type: 2}
@@ -25,3 +25,6 @@ MonoBehaviour:
   resistance: 3
   move: 6
   weapon: {fileID: 11400000, guid: c9f7b534f81e457bb18b74a09a7f5897, type: 2}
+  items:
+  - {fileID: 11400000, guid: c9f7b534f81e457bb18b74a09a7f5897, type: 2}
+  - {fileID: 11400000, guid: 1d9940d7aa0247fd9da63dde54661597, type: 2}

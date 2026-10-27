@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f10135314f1761844abb88ac64144924, type: 3}
   m_Name: Unit_Player_Cavalry
   m_EditorClassIdentifier: Assembly-CSharp::UnitData
-  unitName: "味方騎兵"
+  unitName: "\u5473\u65B9\u9A0E\u5175"
   faction: 0
   unitClass: 1
   classData: {fileID: 11400000, guid: 74787bae67984d70b61e3db4eb3c7ada, type: 2}
@@ -29,4 +29,4 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 9bd17bf5451e17949960a7fc64eb7eca, type: 2}
   - {fileID: 11400000, guid: c9f7b534f81e457bb18b74a09a7f5897, type: 2}
   - {fileID: 11400000, guid: 1810b25d39ba4f3ba731a27dacc416cb, type: 2}
-  - {fileID: 11400000, guid: 24f7f91498304a8f887b077f3ce90cf7, type: 2}
+  - {fileID: 11400000, guid: 1d9940d7aa0247fd9da63dde54661597, type: 2}

@@ -25,4 +25,5 @@ MonoBehaviour:
   resistance: 4
   move: 3
   weapon: {fileID: 11400000, guid: be484356b68e18b438842f424b940060, type: 2}
-  items: []
+  items:
+  - {fileID: 11400000, guid: be484356b68e18b438842f424b940060, type: 2}
