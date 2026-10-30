@@ -1,44 +1,83 @@
 # ステージとアセットの仕様
 
-### Phase 15 の合意仕様（統合仕上げ・2026-07-16 作者合意）
+勝敗条件、ステージの作り、検証ステージ、アセットのファイル名と中身の対応。
 
-- 勝敗条件はテスト用ではなく本番システム。今回は**ターン制限のみ追加**
-  （StageData.turnLimit。0=無制限。最終ターンの敵フェイズ終了時に勝敗未決なら敗北。
-  判定は増加前に行うので表示が制限を超えない。制限中は「ターン n／上限」表示）。
-  拠点到達などの勝利条件バリエーションは次期ロードマップへ先送り（作者合意）
-- 盤面サイズはステージごとに可変（StageData.gridWidth / gridHeight。0以下なら GridManager の
-  Inspector 値）。カメラは GridManager.FitCamera が自動フィット（余白は cameraMargin）
-- 新ユニット5種: 味方斧兵・味方斧騎兵・敵魔道士・敵槍飛行兵・敵斧騎兵（能力値は初期案。作者が調整）
-- 正式ステージ Stage_01: 14×12・ターン制限20・味方10体対敵12体。南が自軍、中央に山脈と森、
-  北に城壁（門は敵弓兵が守る。当時は対空の役。飛行兵は城壁を越えられる）。BattleScene の BattleSetup は Stage_01 を参照中
-  （Stage_Test に戻すのも Inspector の差し替えだけ）
-アセット実体: Assets/_Game/Data/
-（Unit_Player, Unit_Enemy, Unit_Player_Archer, Unit_Player_Mage, Unit_Player_Cavalry,
-  Unit_Player_Transport, Unit_Player_Flier, Unit_Player_AxeFighter, Unit_Player_AxeCavalry,
-  Unit_Enemy_Lancer, Unit_Enemy_Archer, Unit_Enemy_Flier, Unit_Enemy_Mage, Unit_Enemy_LanceFlier,
-  Unit_Enemy_AxeCavalry, Unit_Test_Dummy, Unit_Test_Dummy_Weak（弱ダミーHP12・集中攻撃の検証用）,
-  Unit_Player_Monk（味方修道士・杖ユニット。Phase 25）,
-  武器28本＋W_Live（杖・ライブ。Phase 25。消費0）※2026-10-24 に作り替え〔名前と数値は「メモリゲージで払う武器の合意仕様」の節の一覧。
-  W_Sword＝鉄の剣・W_Lance＝鉄の槍・W_Axe＝鉄の斧・W_Bow＝鉄の弓・W_Tome＝初級魔導・W_Dragonslayer＝ドラゴンキラー・
-  W_WindCutter＝風薙ぎの剣・W_DragonHammer＝ドラゴンアクス のようにファイル名は旧名のまま〕,
-  Tool_Vulnerary（傷薬。道具・Phase 24）, Stage_Test, Stage_01, Stage_AITest_Path,
-  Stage_AITest_Ambush, Stage_AITest_Pincer, Stage_AITest_Guard,
-  Stage_AITest_Focus, TerrainTable（※Stage_AITest_Flight は 2026-10-24 に飛翔ごと削除）,
-  ゲージ検証用（フェーズ28。すべて兵種＝剣闘士・武器＝鉄の剣。ファイル名の Mana はマナ時代のまま）:
-  Unit_Test_Mana31（検証・技31＝開始時1本＋1）, Unit_Test_Mana_Mag20（毎ターン+2）,
-  Unit_Test_Mana_Mag30（毎ターン+3）, Unit_Test_Speed50（1体目+25・2連続目+50・3連続目以降+100※2026-10-25・力20で弱敵を一撃）,
-  Unit_Test_Enemy_Weak（HP1・守備0＝連続撃破を作る）,
-  Unit_Test_Enemy_Tough（HP99・力0・守備5・待ち伏せ型＝倒せないので連鎖リセットと必殺技の確認用）,
-  Stage_GaugeTest（12×10・全平地・ターン制限なし。y6に硬敵/弱敵6体/硬敵、y5にその真下へ味方7体。
-  弱敵を3体連続撃破すると速さ50の覚醒が1本＋75、4体で2本＋75 貯まる※2026-10-25。旧版は5体連続でちょうど1本）,
-  ※補給の検証用 Stage_SupplyTest は 2026-10-24 に補給ごと削除。
-  武器の検証用（2026-10-24）: Stage_WeaponTest（「メモリゲージで払う武器の合意仕様」の節）と
-  試験ユニット8体 Unit_Test_Memory_Sword/Lance/Axe/Critical/Support/Tome・Unit_Test_Sniper・Unit_Test_Archer_Longbow。
-  Classes/ サブフォルダに兵種 ClassData 38種: Class_Tactician（軍師）〜Class_MaligKnight（魔竜騎兵）。
-  飛行兵は Class_SkyKnight（白翼騎兵）・Class_FalconKnight（聖白翼騎兵）・Class_KinshiKnight（金鵄兵）・
-  Class_DragonKnight（竜騎兵）・Class_WyvernLord（大竜騎兵）・Class_MaligKnight（魔竜騎兵）
-  ※2026-10-24 に Class_PegasusKnight→Class_SkyKnight、Class_WyvernRider→Class_DragonKnight へ改名（GUID 不変。
-  中の兵種名は同日さらに白翼騎兵・竜騎兵へ改めたが、ファイル名は据え置き）。
-  ※Unit_Player_AxeCavalry / Unit_Enemy_AxeCavalry はファイル名こそ旧名だが中身は槍騎兵（兵種データ導入時に持ち替え））
-シーン: Assets/_Game/Scenes/BattleScene.unity
-絵: Assets/_Game/Art/Units/（マップ上のユニットの .aseprite。「兵種データの合意仕様」の節の「マップ上のユニットの絵」参照）
+- アセットの実体は `Assets/_Game/Data/`、兵種は `Data/Classes/`、シーンは `Assets/_Game/Scenes/BattleScene.unity`、絵は `Assets/_Game/Art/Units/`
+- 数値の正はアセット。ここに書くのは作りと意図で、能力値の一覧は持たない
+- `BattleScene` の `BattleSetup.stage` は Stage_01 を指す。検証のときだけ Inspector で差し替え、終わったら戻す（差し替えはコミットしない）
+
+## 勝敗条件
+
+- 勝敗条件は本番のシステム
+- 勝利: 敵の全滅
+- 敗北: 味方の全滅／味方の輸送隊が倒される／ターン制限の超過
+- 全滅の判定は `UnitRegistry.CountAlive` で数える（格納中の貨物も生存に数える）
+- ターン制限は `StageData.turnLimit`（0＝無制限）。最終ターンの敵フェイズが終わって決着していなければ敗北。
+  判定はターン数を増やす前に行うので、表示が制限を超えない
+- 画面の「クリア条件」はコードの判定から作る（[ui-board.md](ui-board.md) のコマンド一覧の節）
+
+## ステージの作り（StageData）
+
+- 配置（ユニット・マス・敵の性格 `aiProfile`）・地形マップ `terrainRows`・地形表・盤面サイズ・ターン制限を持つ
+- 盤面サイズはステージごとに可変（`gridWidth` / `gridHeight`。0以下なら `GridManager` の Inspector の値）。
+  カメラは `GridManager.FitCamera` が自動で合わせる（余白は `cameraMargin`）
+- 配置するマスはその兵種が立てる地形でなければ警告する（飛行兵は城壁・山にも置ける）
+
+## 正式ステージ Stage_01
+
+- 14×12・ターン制限20・味方11体対敵12体。南が自軍、中央に山脈と森、北に城壁（門は敵弓兵が守る。飛行兵は城壁を越えられる）
+- 待ち伏せ型は城内4体（[enemy-ai.md](enemy-ai.md)）。修道士は (7,0)
+- 持ち物の配布: 味方兵［鉄の剣・斬馬刀・風薙ぎの剣・鋼の剣］／味方騎兵［鉄の剣・鉄の槍・ホースキラー・鋼の槍］／
+  味方弓兵［鉄の弓・鋼の弓］／味方斧兵［鉄の斧・鋼の斧］／味方飛行兵［鉄の槍・鋼の槍］／味方魔道士［初級魔導］／
+  味方修道士［ライブ・傷薬］。初期装備はそれぞれ一番上の武器
+- 味方騎兵は剣と槍を持ち替えられる。傷薬は修道士の分だけ
+- 特効武器は敵には配らない
+
+## 検証ステージ
+
+どれも `BattleSetup.stage` を差し替えて使う。訓練用ダミー（`Unit_Test_Dummy`。力1の殴り台）は AI の検証で共用する。
+
+| ステージ | 盤面 | 確かめること |
+|---|---|---|
+| Stage_Test | 10×10 | 開発の初期から使う小さなステージ。地形と味方の兵種がひととおりある |
+| Stage_AITest_Path | 10×10 | 接近の経路。壁の列 y=5 の門 x=8 へ回り込む。敵兵(2,7)・敵弓兵(6,8) 対 ダミー(1,2)(2,1) |
+| Stage_AITest_Ambush | 10×10 | 待ち伏せ型。砦(7,7)の敵兵と(2,8)の敵弓兵が挑発されるまで動かない。1ターン目は敵の射程に入っていない |
+| Stage_AITest_Pincer | 10×10 | 挟撃。ダミー(3,3)を敵兵(3,6)が平地(2,3)からお膳立て→敵兵(6,5)が(4,3)で挟撃完成。味方兵(1,1)を隣接させるとガードでお膳立てが消えて森(3,4)に戻る。北東のダミー3体＋敵兵(8,5)はガード役潰しの確認用で、ダミーのHPを一時的に5へ下げると「撃破・ガード役潰し」が見える |
+| Stage_AITest_Guard | 10×10 | ガード。味方騎兵(4,0)(6,0)・敵兵(2,6)(2,4)・待ち伏せ型の敵魔道士(5,6)。敵兵が(4,6)へ守りに動き「ガード・最大12ダメージ防止」、2体目は接近（重複ガードしない）、騎兵を退げると守りをやめる |
+| Stage_AITest_Focus | 10×10 | 集中攻撃。弱ダミー(4,4)(8,6)・通常ダミー(2,4)・敵兵4体。ターン1で「弱ダミーへ収束→撃破→もう1体へ再選定」、ターン2で「目標なし」のログが見える |
+| Stage_GaugeTest | 12×10 | メモリ・覚醒。y=6 に硬敵/弱敵6体/硬敵、y=5 にその真下へ味方7体。弱敵を3体連続撃破すると速さ50の覚醒が1本＋75、4体で2本＋75 貯まる |
+| Stage_EffectiveTest | 10×10 | 有効と特効。敵は全員が待ち伏せ型で機動力の順に階段状に置いてあり、1ターン目は誰も届かない。鎧騎馬兵は騎馬＋重装の重複の確認用、頑丈な竜騎兵（HP40）は竜騎兵属性の殴り台 |
+| Stage_WeaponTest | 10×10 | メモリで払う武器（下に流れを書く） |
+
+**Stage_WeaponTest の中身と確かめた流れ**
+
+- 味方: 試験兵（剣）(0,1)・試験・必殺 (1,1)（技31＝1本＋1）・試験・支援 (2,1)（技5・銀の剣を持ったまま始まる）・
+  試験・剣 (3,1)（技14）・試験・斧 (5,1)・試験・槍 (6,1)（騎兵の鋼で速さ0）・試験・魔導 (8,1)・試験・弓聖 (6,0)（長弓）・試験・弓使 (8,0)（長弓は装備不可）
+- 殴り台（待ち伏せ型）: 弱敵 (1,3)(7,3)・硬敵 (4,3)。奥は Stage_EffectiveTest と同じ階段配置
+- 流れ: 試験・剣が銀の剣で硬敵を攻撃 → メモリ 14→5 で銀の剣のまま／試験・支援を (3,3) で鋼の剣に替え、試験・斧が (5,3) から攻撃 → 支援役も 5→0／
+  試験・必殺の必殺技で鋼の剣は「メモリ不足」・鉄の剣なら 31→1／剣で弱敵を倒すと1マス再移動／長弓は静止で (7,3)（距離4）に届く
+
+**検証用ユニット**
+
+- ゲージ（兵種＝剣闘士・武器＝鉄の剣）: `Unit_Test_Mana31`（技31）・`Unit_Test_Mana_Mag20`（毎ターン+2）・`Unit_Test_Mana_Mag30`（毎ターン+3）・
+  `Unit_Test_Speed50`（1体目+25・2連続目+50・3連続目以降+100・力20で弱敵を一撃）・`Unit_Test_Enemy_Weak`（HP1・守備0＝連続撃破を作る）・
+  `Unit_Test_Enemy_Tough`（HP99・力0・守備5＝倒せないので連鎖リセットと必殺技の確認用）
+- 武器: `Unit_Test_Memory_Sword/Lance/Axe/Critical/Support/Tome`・`Unit_Test_Sniper`・`Unit_Test_Archer_Longbow`
+- 有効と特効: `Unit_Test_Sword_Effective`・`Unit_Test_Lance_Effective`・`Unit_Test_Axe_Effective`・`Unit_Test_Dragon_Tough`
+
+## ファイル名と中身の対応
+
+GUID を保つため、名前を変えてもファイル名は据え置くことがある。
+
+| ファイル名 | 中身 |
+|---|---|
+| `Unit_Player_AxeCavalry` / `Unit_Enemy_AxeCavalry` | 味方槍騎兵／敵槍騎兵 |
+| `Unit_Test_Mana*` | メモリの検証ユニット（マナゲージ時代の名前） |
+| `W_Sword`・`W_Lance`・`W_Axe`・`W_Bow`・`W_Tome` | 鉄の剣・鉄の槍・鉄の斧・鉄の弓・初級魔導 |
+| `W_Dragonslayer` | ドラゴンキラー |
+| `W_WindCutter` | 風薙ぎの剣 |
+| `W_DragonHammer` | ドラゴンアクス |
+| `Class_SkyKnight` / `Class_FalconKnight` / `Class_KinshiKnight` | 白翼騎兵／聖白翼騎兵／金鵄兵 |
+| `Class_DragonKnight` / `Class_WyvernLord` / `Class_MaligKnight` | 竜騎兵／大竜騎兵／魔竜騎兵 |
+
+武器の全一覧は [weapons.md](weapons.md)。
