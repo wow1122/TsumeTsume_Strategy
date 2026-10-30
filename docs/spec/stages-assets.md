@@ -21,7 +21,7 @@
 - 配置（ユニット・マス・敵の性格 `aiProfile`）・地形マップ `terrainRows`・地形表・盤面サイズ・ターン制限を持つ
 - 盤面サイズはステージごとに可変（`gridWidth` / `gridHeight`。0以下なら `GridManager` の Inspector の値）。
   カメラは `GridManager.FitCamera` が自動で合わせる（余白は `cameraMargin`）
-- 配置するマスはその兵種が立てる地形でなければ警告する（飛行兵は城壁・山にも置ける）
+- 配置するマスがその兵種の立てない地形なら、警告して置かない（飛行兵は城壁・山にも置ける）
 
 ## 正式ステージ Stage_01
 
